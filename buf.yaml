@@ -7,6 +7,7 @@ modules:
   - path: proto
   # Per-crate test fixtures.
   - path: crates/protowire-pxf/testdata
+  - path: crates/protowire-sbe/testdata
 lint:
   use:
     - STANDARD
@@ -18,6 +19,7 @@ lint:
     # Test fixtures use kebab-case filenames and per-test packages on
     # purpose so they round-trip cleanly through pxf parsing.
     - crates/protowire-pxf/testdata
+    - crates/protowire-sbe/testdata
 breaking:
   use:
     - FILE
