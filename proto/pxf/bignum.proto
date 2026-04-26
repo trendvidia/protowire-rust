@@ -1,0 +1,29 @@
+syntax = "proto3";
+package pxf;
+
+// Arbitrary-precision signed integer.
+// Wire: unsigned big-endian absolute value + sign flag.
+// PXF text: bare integer literal.
+message BigInt {
+  bytes abs = 1;
+  bool negative = 2;
+}
+
+// Arbitrary-precision exact decimal: value = (-1)^negative × unscaled × 10^(-scale).
+// Wire: unsigned big-endian unscaled value + scale + sign flag.
+// PXF text: decimal literal preserving exact scale (e.g. "1.00" has scale=2).
+message Decimal {
+  bytes unscaled = 1;
+  int32 scale = 2;
+  bool negative = 3;
+}
+
+// Arbitrary-precision binary floating point.
+// Wire: unsigned big-endian integer mantissa + binary exponent + precision + sign flag.
+// PXF text: float literal with arbitrary mantissa precision.
+message BigFloat {
+  bytes mantissa = 1;
+  int32 exponent = 2;
+  uint32 prec = 3;
+  bool negative = 4;
+}

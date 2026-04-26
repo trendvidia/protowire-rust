@@ -1,0 +1,15 @@
+[package]
+name = "protowire-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "protowire command-line tool (encode/decode/validate/fmt)."
+
+[[bin]]
+name = "protowire"
+path = "src/main.rs"
+
+[dependencies]
+protowire = { workspace = true }

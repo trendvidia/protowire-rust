@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/protowire",
+    "crates/protowire-pb",
+    "crates/protowire-envelope",
+    "crates/protowire-pxf",
+    "crates/protowire-sbe",
+    "crates/protowire-cli",
+    "crates/dump-envelope",
+]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/trendvidia/protowire4rust"
+authors = ["Trendvidia"]
+
+[workspace.dependencies]
+protowire = { path = "crates/protowire", version = "0.0.0" }
+protowire-pb = { path = "crates/protowire-pb", version = "0.0.0" }
+protowire-envelope = { path = "crates/protowire-envelope", version = "0.0.0" }
+protowire-pxf = { path = "crates/protowire-pxf", version = "0.0.0" }
+protowire-sbe = { path = "crates/protowire-sbe", version = "0.0.0" }
+
+prost = "0.13"
+prost-build = "0.13"
+prost-reflect = "0.14"
+prost-types = "0.13"
+bytes = "1.7"
+thiserror = "1.0"
+quick-xml = "0.36"

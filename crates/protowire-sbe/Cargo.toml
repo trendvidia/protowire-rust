@@ -1,0 +1,15 @@
+[package]
+name = "protowire-sbe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "FIX SBE binary codec — Rust port of github.com/trendvidia/protowire/encoding/sbe"
+
+[dependencies]
+prost = { workspace = true }
+prost-reflect = { workspace = true }
+prost-types = { workspace = true }
+quick-xml = { workspace = true }
+thiserror = { workspace = true }

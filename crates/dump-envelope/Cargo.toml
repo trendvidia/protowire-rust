@@ -1,0 +1,17 @@
+[package]
+name = "dump-envelope"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish = false
+description = "Cross-port wire-compatibility check: emit canonical envelope as hex."
+
+[[bin]]
+name = "dump-envelope"
+path = "src/main.rs"
+
+[dependencies]
+protowire-pb = { workspace = true }
+protowire-envelope = { workspace = true }
