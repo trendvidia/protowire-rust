@@ -4,11 +4,30 @@
 //   protowire4cpp/cmd/dump_envelope/main.cc
 //   protowire4ts/scripts/dump-envelope.ts
 //   protowire4java/dump-envelope
-//
-// Slice 0 stub. Slice 1 (envelope) replaces this with real envelope::err()
-// + pb::marshal() output.
+
+use protowire_envelope::Envelope;
+use protowire_pb::marshal;
 
 fn main() {
-    eprintln!("dump-envelope: not yet implemented (lands in Slice 1: envelope)");
-    std::process::exit(2);
+    let mut env = Envelope::err(
+        402,
+        "INSUFFICIENT_FUNDS",
+        "balance too low",
+        vec!["$3.50".into(), "$10.00".into()],
+    );
+    env.data = vec![0xDE, 0xAD, 0xBE, 0xEF];
+    env.error
+        .as_mut()
+        .expect("err builder sets error")
+        .with_field(
+            "amount",
+            "MIN_VALUE",
+            "below minimum",
+            vec!["10.00".into()],
+        )
+        .with_meta("request_id", "req-123");
+
+    let bytes = marshal(&env);
+    let hex: String = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+    println!("{}", hex);
 }

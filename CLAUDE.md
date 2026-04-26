@@ -47,9 +47,10 @@ Total target: ~305 tests across ~12,000 LOC.
 
 - `pb`: signed-int fields default to proto3 `int32`/`int64` (plain varint,
   10-byte sign-extension on negatives). Use `sint32`/`sint64` only when
-  explicitly tagged. All four ports agree per
-  `protowire/scripts/cross_envelope_check.sh`. Canonical envelope: 138
-  bytes starting `08 92 03 1a 04 de ad be ef 22 76 …`.
+  explicitly tagged. All five ports (Go/C++/TS/Java/Rust) agree per
+  `protowire/scripts/cross_envelope_check.sh`. Canonical envelope: 129
+  bytes (258 hex chars) starting `08 92 03 1a 04 de ad be ef 22 76 …`
+  (the `22 76` is tag 4 length 118, framing a nested `AppError`).
 - `pxf` annotations: `pxf.required` = 50000, `pxf.default` = 50001;
   `_null` field of type `google.protobuf.FieldMask` carries null-survival
   across binary.

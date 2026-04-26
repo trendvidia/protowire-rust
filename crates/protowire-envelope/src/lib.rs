@@ -6,9 +6,10 @@
 //!
 //! Wire format mirrors the Go `protowire/envelope` package: field tags
 //! 1..N on each struct map to a binary protobuf wire format. The binary
-//! codec (driven by `protowire-pb`) lands alongside this module once
-//! the `pb` slice is in; this file defines the data shapes, builders,
-//! and queries.
+//! codec lives in [`codec`] and uses the [`protowire_pb::Message`] trait;
+//! this file defines the data shapes, builders, and queries.
+
+mod codec;
 
 use std::collections::HashMap;
 
