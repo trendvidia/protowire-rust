@@ -12,8 +12,8 @@
 //! directly into a `prost_reflect::DynamicMessage`. No intermediate AST.
 
 use prost_reflect::{
-    DynamicMessage, FieldDescriptor, Kind, MessageDescriptor, OneofDescriptor, ReflectMessage,
-    Value,
+    DynamicMessage, FieldDescriptor, Kind, MapKey, MessageDescriptor, OneofDescriptor,
+    ReflectMessage, Value,
 };
 use std::collections::HashMap;
 
@@ -244,15 +244,17 @@ impl<'a> Decoder<'a> {
         fd: &FieldDescriptor,
     ) -> Result<(), PxfError> {
         if fd.is_map() {
-            return Err(self.err(format!(
-                "map field {:?} not supported in this slice",
-                fd.name()
-            )));
+            return self.decode_map_inline(msg, fd);
         }
         if fd.is_list() {
             return self.decode_list_inline(msg, fd);
         }
         if let Kind::Message(inner_desc) = fd.kind() {
+            let mut sub = DynamicMessage::new(inner_desc);
+            if self.try_decode_wkt(&mut sub)? {
+                msg.set_field(fd, Value::Message(sub));
+                return Ok(());
+            }
             if !matches!(self.current.kind, TokenKind::LBrace) {
                 return Err(self.err(format!(
                     "expected '{{' for message field {:?}",
@@ -260,7 +262,6 @@ impl<'a> Decoder<'a> {
                 )));
             }
             self.advance();
-            let mut sub = DynamicMessage::new(inner_desc);
             self.decode_fields(&mut sub, true)?;
             msg.set_field(fd, Value::Message(sub));
             return Ok(());
@@ -300,12 +301,14 @@ impl<'a> Decoder<'a> {
             }
             let v = match &element_kind {
                 Kind::Message(inner_desc) => {
-                    if !matches!(self.current.kind, TokenKind::LBrace) {
-                        return Err(self.err("expected '{' for repeated message element"));
-                    }
-                    self.advance();
                     let mut sub = DynamicMessage::new(inner_desc.clone());
-                    self.decode_fields(&mut sub, true)?;
+                    if !self.try_decode_wkt(&mut sub)? {
+                        if !matches!(self.current.kind, TokenKind::LBrace) {
+                            return Err(self.err("expected '{' for repeated message element"));
+                        }
+                        self.advance();
+                        self.decode_fields(&mut sub, true)?;
+                    }
                     Value::Message(sub)
                 }
                 Kind::Enum(_) => self.consume_enum(fd)?,
@@ -324,6 +327,134 @@ impl<'a> Decoder<'a> {
 
         msg.set_field(fd, Value::List(elems));
         Ok(())
+    }
+
+    fn decode_map_inline(
+        &mut self,
+        msg: &mut DynamicMessage,
+        fd: &FieldDescriptor,
+    ) -> Result<(), PxfError> {
+        if !matches!(self.current.kind, TokenKind::LBrace) {
+            return Err(
+                self.err(format!("expected '{{' for map field {:?}", fd.name())),
+            );
+        }
+        self.advance();
+
+        let map_entry_desc = match fd.kind() {
+            Kind::Message(m) => m,
+            _ => {
+                return Err(self.err(format!(
+                    "internal: map field {:?} kind is not message",
+                    fd.name()
+                )))
+            }
+        };
+        let key_fd = map_entry_desc.map_entry_key_field();
+        let val_fd = map_entry_desc.map_entry_value_field();
+
+        let mut map: HashMap<MapKey, Value> = HashMap::new();
+
+        while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof) {
+            let pos = self.current.pos;
+            let tk = self.current.kind;
+            if !matches!(
+                tk,
+                TokenKind::Ident | TokenKind::String | TokenKind::Int | TokenKind::Bool
+            ) {
+                return Err(self.err_at(pos, format!("expected map key, got {}", tk)));
+            }
+            let key_str = self.current.value.clone();
+            self.advance();
+
+            match self.current.kind {
+                TokenKind::Colon => self.advance(),
+                TokenKind::Equals => {
+                    return Err(self.err("unexpected '=' in map, use ':' for map entries"))
+                }
+                _ => {
+                    return Err(self.err(format!(
+                        "expected ':' after map key, got {}",
+                        self.current.kind
+                    )))
+                }
+            }
+
+            let key = decode_map_key(&key_fd, &key_str, pos)?;
+
+            if matches!(self.current.kind, TokenKind::Null) {
+                return Err(self.err(format!(
+                    "null is not allowed as map value in field {:?}",
+                    fd.name()
+                )));
+            }
+
+            let value = if let Kind::Message(inner_desc) = val_fd.kind() {
+                let mut sub = DynamicMessage::new(inner_desc);
+                if !self.try_decode_wkt(&mut sub)? {
+                    if !matches!(self.current.kind, TokenKind::LBrace) {
+                        return Err(self.err("expected '{' for map message value"));
+                    }
+                    self.advance();
+                    self.decode_fields(&mut sub, true)?;
+                }
+                Value::Message(sub)
+            } else if matches!(val_fd.kind(), Kind::Enum(_)) {
+                self.consume_enum(&val_fd)?
+            } else {
+                self.consume_scalar(&val_fd)?
+            };
+
+            map.insert(key, value);
+        }
+
+        if !matches!(self.current.kind, TokenKind::RBrace) {
+            return Err(self.err(format!("expected '}}', got {}", self.current.kind)));
+        }
+        self.advance();
+
+        msg.set_field(fd, Value::Map(map));
+        Ok(())
+    }
+
+    /// Try to consume a Timestamp / Duration / wrapper sugar value into `target`.
+    /// Returns `Ok(true)` if a WKT shortcut matched and was consumed, `Ok(false)`
+    /// to fall through to a regular `{ ... }` block decode.
+    fn try_decode_wkt(&mut self, target: &mut DynamicMessage) -> Result<bool, PxfError> {
+        let desc = target.descriptor();
+        let full = desc.full_name().to_string();
+
+        if full == "google.protobuf.Timestamp"
+            && matches!(self.current.kind, TokenKind::Timestamp)
+        {
+            let pos = self.current.pos;
+            let (seconds, nanos) = parse_rfc3339(&self.current.value).map_err(|e| {
+                PxfError::new(pos, format!("invalid timestamp {:?}: {}", self.current.value, e))
+            })?;
+            set_seconds_nanos(target, seconds, nanos);
+            self.advance();
+            return Ok(true);
+        }
+        if full == "google.protobuf.Duration"
+            && matches!(self.current.kind, TokenKind::Duration)
+        {
+            let pos = self.current.pos;
+            let (seconds, nanos) = parse_go_duration(&self.current.value).map_err(|e| {
+                PxfError::new(pos, format!("invalid duration {:?}: {}", self.current.value, e))
+            })?;
+            set_seconds_nanos(target, seconds, nanos);
+            self.advance();
+            return Ok(true);
+        }
+        if is_wrapper_full_name(&full) && !matches!(self.current.kind, TokenKind::LBrace) {
+            let value_fd = desc
+                .get_field_by_name("value")
+                .ok_or_else(|| self.err(format!("internal: wrapper {} missing 'value' field", full)))?;
+            let v = self.consume_scalar(&value_fd)?;
+            target.set_field(&value_fd, v);
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     fn consume_scalar(&mut self, fd: &FieldDescriptor) -> Result<Value, PxfError> {
@@ -541,6 +672,220 @@ impl<'a> Decoder<'a> {
             self.advance();
         }
     }
+}
+
+fn is_wrapper_full_name(full: &str) -> bool {
+    matches!(
+        full,
+        "google.protobuf.DoubleValue"
+            | "google.protobuf.FloatValue"
+            | "google.protobuf.Int64Value"
+            | "google.protobuf.UInt64Value"
+            | "google.protobuf.Int32Value"
+            | "google.protobuf.UInt32Value"
+            | "google.protobuf.BoolValue"
+            | "google.protobuf.StringValue"
+            | "google.protobuf.BytesValue"
+    )
+}
+
+fn set_seconds_nanos(target: &mut DynamicMessage, seconds: i64, nanos: i32) {
+    let desc = target.descriptor();
+    if let Some(s_fd) = desc.get_field_by_name("seconds") {
+        target.set_field(&s_fd, Value::I64(seconds));
+    }
+    if let Some(n_fd) = desc.get_field_by_name("nanos") {
+        target.set_field(&n_fd, Value::I32(nanos));
+    }
+}
+
+fn decode_map_key(
+    key_fd: &FieldDescriptor,
+    key: &str,
+    pos: Position,
+) -> Result<MapKey, PxfError> {
+    match key_fd.kind() {
+        Kind::String => Ok(MapKey::String(key.to_string())),
+        Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => key
+            .parse::<i32>()
+            .map(MapKey::I32)
+            .map_err(|_| PxfError::new(pos, format!("invalid int32 map key: {}", key))),
+        Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => key
+            .parse::<i64>()
+            .map(MapKey::I64)
+            .map_err(|_| PxfError::new(pos, format!("invalid int64 map key: {}", key))),
+        Kind::Uint32 | Kind::Fixed32 => key
+            .parse::<u32>()
+            .map(MapKey::U32)
+            .map_err(|_| PxfError::new(pos, format!("invalid uint32 map key: {}", key))),
+        Kind::Uint64 | Kind::Fixed64 => key
+            .parse::<u64>()
+            .map(MapKey::U64)
+            .map_err(|_| PxfError::new(pos, format!("invalid uint64 map key: {}", key))),
+        Kind::Bool => match key {
+            "true" => Ok(MapKey::Bool(true)),
+            "false" => Ok(MapKey::Bool(false)),
+            _ => Err(PxfError::new(pos, format!("invalid bool map key: {}", key))),
+        },
+        other => Err(PxfError::new(
+            pos,
+            format!("unsupported map key kind: {:?}", other),
+        )),
+    }
+}
+
+/// Parse an RFC 3339 timestamp into seconds-since-epoch and a non-negative
+/// nanos remainder. The lexer has already validated syntactic shape, so this
+/// only reads the slots it knows are there. Hand-rolled to avoid pulling in
+/// a chrono/time crate dependency just for two well-defined formats.
+fn parse_rfc3339(s: &str) -> Result<(i64, i32), String> {
+    let bytes = s.as_bytes();
+    if bytes.len() < 20 {
+        return Err("too short".into());
+    }
+    let year = parse_int_n(&bytes[0..4])? as i32;
+    let month = parse_int_n(&bytes[5..7])? as u32;
+    let day = parse_int_n(&bytes[8..10])? as u32;
+    let hour = parse_int_n(&bytes[11..13])? as i64;
+    let minute = parse_int_n(&bytes[14..16])? as i64;
+    let second = parse_int_n(&bytes[17..19])? as i64;
+
+    let mut i = 19;
+    let mut nanos: i32 = 0;
+    if i < bytes.len() && bytes[i] == b'.' {
+        i += 1;
+        let frac_start = i;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        let mut digits: Vec<u8> = bytes[frac_start..i].to_vec();
+        if digits.len() > 9 {
+            digits.truncate(9);
+        }
+        while digits.len() < 9 {
+            digits.push(b'0');
+        }
+        nanos = parse_int_n(&digits)? as i32;
+    }
+
+    let mut offset_seconds: i64 = 0;
+    if i >= bytes.len() {
+        return Err("missing zone".into());
+    }
+    match bytes[i] {
+        b'Z' | b'z' => {}
+        b'+' | b'-' => {
+            if bytes.len() < i + 6 {
+                return Err("malformed offset".into());
+            }
+            let neg = bytes[i] == b'-';
+            let off_h = parse_int_n(&bytes[i + 1..i + 3])? as i64;
+            let off_m = parse_int_n(&bytes[i + 4..i + 6])? as i64;
+            offset_seconds = (off_h * 3600 + off_m * 60) * if neg { -1 } else { 1 };
+        }
+        _ => return Err("unexpected zone".into()),
+    }
+
+    let days = days_from_civil(year, month, day);
+    let seconds = days * 86400 + hour * 3600 + minute * 60 + second - offset_seconds;
+    Ok((seconds, nanos))
+}
+
+fn parse_int_n(bytes: &[u8]) -> Result<u64, String> {
+    let mut n: u64 = 0;
+    for &b in bytes {
+        if !b.is_ascii_digit() {
+            return Err("non-digit".into());
+        }
+        n = n * 10 + (b - b'0') as u64;
+    }
+    Ok(n)
+}
+
+/// Howard Hinnant's "days from civil" — converts a (year, month, day) in the
+/// proleptic Gregorian calendar to days since the Unix epoch (1970-01-01).
+fn days_from_civil(y: i32, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y / 400 } else { (y - 399) / 400 };
+    let yoe = (y - era * 400) as u32;
+    let m_shift = if m > 2 { m - 3 } else { m + 9 };
+    let doy = (153 * m_shift + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era as i64 * 146097 + doe as i64 - 719468
+}
+
+/// Parse a Go-style duration (`1h30m`, `-2.5s`, `100ms`, …) into proto
+/// Duration `seconds` + `nanos`. Both fields share the overall sign per the
+/// proto Duration invariant. Lexer has pre-validated the syntax.
+fn parse_go_duration(s: &str) -> Result<(i64, i32), String> {
+    if s == "0" {
+        return Ok((0, 0));
+    }
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    let mut neg = false;
+    if !bytes.is_empty() && (bytes[0] == b'-' || bytes[0] == b'+') {
+        neg = bytes[0] == b'-';
+        i = 1;
+    }
+    let mut total_nanos: i128 = 0;
+    while i < bytes.len() {
+        let int_start = i;
+        while i < bytes.len() && bytes[i].is_ascii_digit() {
+            i += 1;
+        }
+        if i == int_start {
+            return Err("missing digits".into());
+        }
+        let int_part: i128 = std::str::from_utf8(&bytes[int_start..i])
+            .map_err(|_| "invalid utf-8")?
+            .parse()
+            .map_err(|_| "int overflow")?;
+        let mut frac_int: i128 = 0;
+        let mut frac_len = 0usize;
+        if i < bytes.len() && bytes[i] == b'.' {
+            i += 1;
+            let frac_start = i;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            if i == frac_start {
+                return Err("missing fractional digits".into());
+            }
+            frac_int = std::str::from_utf8(&bytes[frac_start..i])
+                .map_err(|_| "invalid utf-8")?
+                .parse()
+                .map_err(|_| "frac overflow")?;
+            frac_len = i - frac_start;
+        }
+        if i >= bytes.len() {
+            return Err("missing unit".into());
+        }
+        let next = bytes.get(i + 1).copied();
+        let (unit_nanos, unit_len): (i128, usize) = match (bytes[i], next) {
+            (b'n', Some(b's')) => (1, 2),
+            (b'u', Some(b's')) => (1_000, 2),
+            (b'm', Some(b's')) => (1_000_000, 2),
+            (b's', _) => (1_000_000_000, 1),
+            (b'm', _) => (60_000_000_000, 1),
+            (b'h', _) => (3_600_000_000_000, 1),
+            _ => return Err("unknown unit".into()),
+        };
+        total_nanos += int_part * unit_nanos;
+        if frac_len > 0 {
+            let denom: i128 = 10i128.pow(frac_len as u32);
+            total_nanos += (frac_int * unit_nanos) / denom;
+        }
+        i += unit_len;
+    }
+    if neg {
+        total_nanos = -total_nanos;
+    }
+    let sign: i128 = if total_nanos < 0 { -1 } else { 1 };
+    let abs = total_nanos * sign;
+    let seconds = (abs / 1_000_000_000) * sign;
+    let nanos = (abs % 1_000_000_000) * sign;
+    Ok((seconds as i64, nanos as i32))
 }
 
 /// Decode a base64 string, accepting both standard (padded) and raw (unpadded)
