@@ -5,6 +5,7 @@
 
 pub mod ast;
 pub mod errors;
+pub mod format;
 pub mod lexer;
 pub mod parser;
 pub mod token;
@@ -14,6 +15,7 @@ pub use ast::{
     FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, TimestampVal, Value,
 };
 pub use errors::PxfError;
+pub use format::{format, format_with_options, FormatOptions};
 pub use lexer::Lexer;
 pub use parser::parse;
 pub use token::{Position, Token, TokenKind};
