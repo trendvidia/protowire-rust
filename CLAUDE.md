@@ -19,29 +19,31 @@ sources under `proto/`.
 
 ## Slice plan
 
-Module dependency order: `envelope + pb` → `sbe` → `pxf` → `cli`.
+All 15 slices have landed (one commit each on `main`, mirroring
+`protowire4ts/`'s git log). Module dependency order followed:
+`envelope + pb` → `pxf` → `cli` → `sbe`.
 
-Slice targets (from the TS port; aim for parity):
+| Slice | Tests | Status |
+|---|---|---|
+| 1. envelope | 11 | done |
+| 2. pb wire + Message-trait codec + dump-envelope | 28 | done |
+| 3. pxf-A tokens + lexer | 46 | done |
+| 4. pxf-B AST + parser | 33 | done |
+| 5. pxf-C formatter | 22 | done |
+| 6. pxf-D1 scalars/nested/repeated/enum/oneof | 30 | done |
+| 7. pxf-D2 maps + WKT | 18 | done |
+| 8. pxf-D3 Any | 5 | done |
+| 9. pxf-D4 annotations + `_null` FieldMask + `unmarshal_full` | 13 | done |
+| 10. pxf-E encoder | 26 | done |
+| 11. pxf-F CLI | 13 | done |
+| 12. sbe-A annotations + template + codec | 6 | done |
+| 13. sbe-B marshal + unmarshal | 9 | done |
+| 14. sbe-C View / GroupView | 8 | done |
+| 15. sbe-D XML — saxlite + parse_xml_schema + xml_to_proto + proto_to_xml | 26 | done |
 
-| Slice | Tests |
-|---|---|
-| envelope | 11 |
-| pb | 28 |
-| pxf-A tokens + lexer | 46 |
-| pxf-B AST + parser | 33 |
-| pxf-C formatter | 22 |
-| pxf-D1 scalars/nested/repeated/enum/oneof | 30 |
-| pxf-D2 maps + WKT | 18 |
-| pxf-D3 Any | 5 |
-| pxf-D4 annotations + `_null` FieldMask + `unmarshal_full` | 13 |
-| pxf-E encoder | 26 |
-| pxf-F CLI | 13 |
-| sbe-A annotations + template + codec | 6 |
-| sbe-B marshal + unmarshal | 9 |
-| sbe-C View / GroupView | 8 |
-| sbe-D XML — D1 reader, D2 ParseXMLSchema, D3 XMLToProto, D4 ProtoToXML | 26 |
-
-Total target: ~305 tests across ~12,000 LOC.
+Workspace currently runs **304 tests** (one shy of the ~305 target —
+one TS view test was inlined into another). `cargo clippy --workspace
+--tests` is clean.
 
 ## Cross-port wire contracts (don't re-derive)
 
@@ -66,22 +68,32 @@ Total target: ~305 tests across ~12,000 LOC.
    protoreflect / TS protobuf-es analog). `prost` for codegen of WKT
    types and annotation extension messages. Pure `prost` codegen would
    force concrete types and break the descriptor-driven decoder.
-3. **PXF lexer/parser**: hand-rolled. Matches Go and TS line-for-line.
-   Rejected `nom`/`chumsky` to avoid semantic drift.
-4. **XML library**: `quick-xml`. TS hand-rolled SAX only because of
-   npm dep aversion; we have no such constraint.
-5. **Fixture pipeline**: `protoc --include_imports --descriptor_set_out=…`
-   checked-in `.binpb` files, loaded via
-   `prost_reflect::DescriptorPool::decode_file_descriptor_set`.
+3. **PXF lexer/parser/decoder**: hand-rolled. Matches Go and TS
+   line-for-line. Rejected `nom`/`chumsky` to avoid semantic drift.
+   The decoder is the *fused single-pass* path (mirrors Go's
+   `decode_fast.go`), not an AST-walking variant — there's no separate
+   slow path to swap in.
+4. **XML library**: hand-rolled mini SAX (`crates/protowire-sbe/src/saxlite.rs`).
+   The original plan was `quick-xml`, but the SBE schema vocabulary is
+   small enough that a ~250-line hand-rolled parser maps line-for-line
+   to the TS port and gives full control over error messages. Revisit
+   if we ever support the full SBE XML grammar.
+5. **Fixture pipeline**: checked-in `.binpb` `FileDescriptorSet` files
+   loaded via `prost_reflect::DescriptorPool::decode`. Local fixtures
+   build via `buf` against the repo-root `buf.yaml` workspace
+   (`crates/protowire-{pxf,sbe}/testdata/*.binpb`); the shared canary
+   `test.binpb` still uses `protoc` because its source lives in the
+   sibling `protowire/` repo. Regenerate via `scripts/gen-testdata.sh`.
 6. **Errors**: `thiserror` per crate.
-7. **Annotations**: vendored locally in `proto/`. The decoder reads
-   extension field numbers from raw `FieldOptions` unknown bytes (same
-   approach as the TS port) — no global extension registration.
+7. **Annotations**: vendored locally in `proto/`. Read via
+   `prost_reflect::DescriptorPool::get_extension_by_name` — when the
+   FDS includes the annotations file (via `--include_imports`),
+   prost-reflect resolves the extensions as known fields on
+   `FieldOptions` / `MessageOptions` / `FileOptions`, so we don't need
+   the TS port's raw-unknown-bytes fallback.
 
 ## Explicitly deferred
 
-- `decode_fast.go` (~925 LOC fused single-pass decoder) — use the AST
-  path for clarity; fast path lands when benchmarks demand it.
 - pxf `BigInt` / `Decimal` / `BigFloat` (`bignum_test.go`) — not in any
   port yet.
 - SBE XML round-trip via in-process protoc — Go has it (protocompile),
@@ -89,10 +101,12 @@ Total target: ~305 tests across ~12,000 LOC.
 
 ## Conventions
 
-- One commit per slice (mirror `protowire4ts/` git log).
-- After every `pb` change: `WITH_RUST=1 bash ../protowire/scripts/cross_envelope_check.sh`.
-- The cross-port script is gated on `WITH_RUST=1` until Slice 1 lands —
-  flip the default in Slice 1's commit.
+- One commit per slice (mirror `protowire4ts/` git log). The slice plan
+  has finished; further work is on a per-task basis.
+- After every `pb` change: `bash ../protowire/scripts/cross_envelope_check.sh`.
+  The script defaults to `WITH_RUST=1`; set `WITH_RUST=0` to skip Rust.
+  Last verified all five ports (Go/C++/TS/Java/Rust) produce the same
+  129-byte envelope.
 - Shared canary: `../protowire/testdata/test.proto` + `example.pxf`.
   Don't fork — it's the cross-language contract. Compile to
   `FileDescriptorSet` `.binpb` at fixture-build time; per-port fixtures
@@ -103,10 +117,6 @@ Total target: ~305 tests across ~12,000 LOC.
 - The shared `test.proto` is intentionally NOT modified for port-specific
   tests. Add fixtures under `crates/<crate>/testdata/` and a separate
   generation script.
-- `pxf.required` / `pxf.default` extensions aren't registered globally.
-  Read from `FieldOptions` unknown bytes for field numbers 50000 (varint
-  bool) and 50001 (length-delimited string). Length-delimited unknown
-  payloads are recorded *with* the length prefix — strip it.
 - "Null suppresses default": a field set to `null` in PXF is *present*
   (intentionally null), so post-decode must not overwrite it with a
   default. Required-validation skips null too.
@@ -123,7 +133,10 @@ Total target: ~305 tests across ~12,000 LOC.
 - BigInt: Rust has native `i64`/`u64`.
 - No in-process protoc: same constraint in Rust unless we bind libprotoc;
   keep checked-in `.binpb` fixtures.
-- npm dep aversion: doesn't apply — use `quick-xml`, `thiserror`, etc.
+- Raw `FieldOptions` unknown-bytes parsing: Rust uses
+  `DescriptorPool::get_extension_by_name` instead. The TS port had to
+  hand-decode varints because protobuf-es doesn't surface extensions as
+  known fields; prost-reflect does.
 
 ## Useful sibling references
 
