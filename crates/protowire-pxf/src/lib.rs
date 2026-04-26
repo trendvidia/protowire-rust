@@ -4,6 +4,7 @@
 //! Slices A through F.
 
 pub mod ast;
+pub mod decode;
 pub mod errors;
 pub mod format;
 pub mod lexer;
@@ -14,6 +15,7 @@ pub use ast::{
     Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, Document, DurationVal, Entry,
     FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, TimestampVal, Value,
 };
+pub use decode::{unmarshal, UnmarshalOptions};
 pub use errors::PxfError;
 pub use format::{format, format_with_options, FormatOptions};
 pub use lexer::Lexer;

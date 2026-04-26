@@ -12,3 +12,6 @@ prost = { workspace = true }
 prost-reflect = { workspace = true }
 prost-types = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+bytes = { workspace = true }
