@@ -7,9 +7,18 @@ repository.workspace = true
 authors.workspace = true
 description = "protowire command-line tool (encode/decode/validate/fmt)."
 
+[lib]
+name = "protowire_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "protowire"
 path = "src/main.rs"
 
 [dependencies]
-protowire = { workspace = true }
+protowire-pxf = { workspace = true }
+prost = { workspace = true }
+prost-reflect = { workspace = true }
+
+[dev-dependencies]
+bytes = { workspace = true }

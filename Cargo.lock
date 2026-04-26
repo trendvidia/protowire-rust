@@ -115,7 +115,10 @@ dependencies = [
 name = "protowire-cli"
 version = "0.0.0"
 dependencies = [
- "protowire",
+ "bytes",
+ "prost",
+ "prost-reflect",
+ "protowire-pxf",
 ]
 
 [[package]]
