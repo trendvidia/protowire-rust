@@ -18,8 +18,10 @@ use prost_reflect::{
 };
 use std::collections::HashMap;
 
+use crate::annotations::{find_null_mask_field, get_default, is_required};
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
+use crate::result::Presence;
 use crate::token::{Position, Token, TokenKind};
 
 /// Resolves `google.protobuf.Any` type URLs to message descriptors. Mirrors the
@@ -59,7 +61,40 @@ pub fn unmarshal(
     desc: &MessageDescriptor,
     options: UnmarshalOptions<'_>,
 ) -> Result<DynamicMessage, PxfError> {
-    let mut decoder = Decoder::new(data, options.discard_unknown, options.type_resolver);
+    let (msg, _) = unmarshal_inner(data, desc, options, false)?;
+    Ok(msg)
+}
+
+/// Decode PXF text into a fresh [`DynamicMessage`] *and* return field-presence
+/// metadata. Differs from [`unmarshal`] in that it:
+///
+/// - tracks which dotted paths were explicitly set, set to null, or absent;
+/// - validates `(pxf.required) = true` fields and errors when absent;
+/// - applies `(pxf.default) = "…"` strings to absent (non-null) fields;
+/// - mirrors null state into the root message's `_null` `FieldMask`, if one
+///   is declared.
+pub fn unmarshal_full(
+    data: &str,
+    desc: &MessageDescriptor,
+    options: UnmarshalOptions<'_>,
+) -> Result<(DynamicMessage, Presence), PxfError> {
+    let (msg, presence) = unmarshal_inner(data, desc, options, true)?;
+    let presence = presence.expect("presence requested");
+    Ok((msg, presence))
+}
+
+fn unmarshal_inner(
+    data: &str,
+    desc: &MessageDescriptor,
+    options: UnmarshalOptions<'_>,
+    track_presence: bool,
+) -> Result<(DynamicMessage, Option<Presence>), PxfError> {
+    let mut decoder = Decoder::new(
+        data,
+        options.discard_unknown,
+        options.type_resolver,
+        track_presence,
+    );
     decoder.advance();
 
     if matches!(decoder.current.kind, TokenKind::AtType) {
@@ -75,7 +110,37 @@ pub fn unmarshal(
 
     let mut msg = DynamicMessage::new(desc.clone());
     decoder.decode_fields(&mut msg, false)?;
-    Ok(msg)
+
+    let presence = if track_presence {
+        let null_mask_fd = find_null_mask_field(desc);
+        let presence = decoder.into_presence();
+        post_decode(&mut msg, &presence, null_mask_fd.as_ref(), "")?;
+        // Mirror null paths into the root's _null FieldMask, if any.
+        if let Some(null_mask_fd) = null_mask_fd {
+            let mut paths: Vec<String> = presence.null_paths().map(|s| s.to_string()).collect();
+            if !paths.is_empty() {
+                paths.sort();
+                let inner_desc = match null_mask_fd.kind() {
+                    Kind::Message(m) => m,
+                    _ => unreachable!("null mask field is FieldMask"),
+                };
+                let mut fm = DynamicMessage::new(inner_desc);
+                let paths_fd = fm
+                    .descriptor()
+                    .get_field_by_name("paths")
+                    .expect("FieldMask.paths");
+                fm.set_field(
+                    &paths_fd,
+                    Value::List(paths.into_iter().map(Value::String).collect()),
+                );
+                msg.set_field(&null_mask_fd, Value::Message(fm));
+            }
+        }
+        Some(presence)
+    } else {
+        None
+    };
+    Ok((msg, presence))
 }
 
 struct Decoder<'a> {
@@ -83,6 +148,8 @@ struct Decoder<'a> {
     current: Token,
     discard_unknown: bool,
     type_resolver: Option<&'a dyn TypeResolver>,
+    presence: Option<Presence>,
+    path_prefix: String,
 }
 
 impl<'a> Decoder<'a> {
@@ -90,12 +157,35 @@ impl<'a> Decoder<'a> {
         input: &'a str,
         discard_unknown: bool,
         type_resolver: Option<&'a dyn TypeResolver>,
+        track_presence: bool,
     ) -> Self {
         Self {
             lex: Lexer::new(input),
             current: Token::new(TokenKind::Eof, "", Position::new(1, 1)),
             discard_unknown,
             type_resolver,
+            presence: if track_presence {
+                Some(Presence::new())
+            } else {
+                None
+            },
+            path_prefix: String::new(),
+        }
+    }
+
+    fn into_presence(self) -> Presence {
+        self.presence.expect("presence not requested")
+    }
+
+    fn mark_present(&mut self, fd: &FieldDescriptor) {
+        if let Some(p) = self.presence.as_mut() {
+            p.mark_present(format!("{}{}", self.path_prefix, fd.name()));
+        }
+    }
+
+    fn mark_null(&mut self, fd: &FieldDescriptor) {
+        if let Some(p) = self.presence.as_mut() {
+            p.mark_null(format!("{}{}", self.path_prefix, fd.name()));
         }
     }
 
@@ -171,9 +261,11 @@ impl<'a> Decoder<'a> {
                     };
                     self.check_oneof(&fd, &mut set_oneofs, pos)?;
                     if matches!(self.current.kind, TokenKind::Null) {
+                        self.mark_null(&fd);
                         self.advance();
                         continue;
                     }
+                    self.mark_present(&fd);
                     self.decode_field_value(msg, &fd)?;
                 }
                 TokenKind::LBrace => {
@@ -219,6 +311,7 @@ impl<'a> Decoder<'a> {
                         ));
                     }
                     self.check_oneof(&fd, &mut set_oneofs, pos)?;
+                    self.mark_present(&fd);
                     let inner_desc = match fd.kind() {
                         Kind::Message(m) => m,
                         _ => unreachable!(),
@@ -230,7 +323,12 @@ impl<'a> Decoder<'a> {
                     {
                         self.decode_any_inner(&mut sub)?;
                     } else {
+                        let saved = self.path_prefix.clone();
+                        if self.presence.is_some() {
+                            self.path_prefix = format!("{}{}.", saved, fd.name());
+                        }
                         self.decode_fields(&mut sub, true)?;
+                        self.path_prefix = saved;
                     }
                     msg.set_field(&fd, Value::Message(sub));
                 }
@@ -306,7 +404,12 @@ impl<'a> Decoder<'a> {
             {
                 self.decode_any_inner(&mut sub)?;
             } else {
+                let saved = self.path_prefix.clone();
+                if self.presence.is_some() {
+                    self.path_prefix = format!("{}{}.", saved, fd.name());
+                }
                 self.decode_fields(&mut sub, true)?;
+                self.path_prefix = saved;
             }
             msg.set_field(fd, Value::Message(sub));
             return Ok(());
@@ -779,6 +882,215 @@ impl<'a> Decoder<'a> {
 
 fn is_any_full_name(full: &str) -> bool {
     full == "google.protobuf.Any"
+}
+
+/// Validate `(pxf.required)` annotations and apply `(pxf.default)` values to
+/// absent fields. Recurses into present, non-null nested message fields,
+/// matching the Go reference's `postDecode`. The `_null` field itself is
+/// skipped since it carries metadata, not user data.
+fn post_decode(
+    parent: &mut DynamicMessage,
+    presence: &Presence,
+    null_mask_fd: Option<&FieldDescriptor>,
+    path_prefix: &str,
+) -> Result<(), PxfError> {
+    let desc = parent.descriptor();
+    let pos = Position::new(1, 1);
+    let fields: Vec<FieldDescriptor> = desc.fields().collect();
+    for fd in &fields {
+        if let Some(null_fd) = null_mask_fd {
+            if fd.number() == null_fd.number() {
+                continue;
+            }
+        }
+        let path = format!("{}{}", path_prefix, fd.name());
+        if presence.is_absent(&path) {
+            if is_required(fd) {
+                return Err(PxfError::new(
+                    pos,
+                    format!("required field {:?} is absent", path),
+                ));
+            }
+            if let Some(def) = get_default(fd) {
+                apply_default(parent, fd, &def, pos)?;
+            }
+            continue;
+        }
+        if presence.is_null(&path) {
+            continue;
+        }
+        if let Kind::Message(inner) = fd.kind() {
+            if !fd.is_list()
+                && !fd.is_map()
+                && !is_wkt_skip_recursion(inner.full_name())
+                && parent.has_field(fd)
+            {
+                let mut sub = match parent.get_field(fd).into_owned() {
+                    Value::Message(m) => m,
+                    _ => continue,
+                };
+                let next_prefix = format!("{}.", path);
+                post_decode(&mut sub, presence, None, &next_prefix)?;
+                parent.set_field(fd, Value::Message(sub));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_wkt_skip_recursion(full: &str) -> bool {
+    full == "google.protobuf.Timestamp"
+        || full == "google.protobuf.Duration"
+        || full == "google.protobuf.Any"
+        || is_wrapper_full_name(full)
+}
+
+fn apply_default(
+    parent: &mut DynamicMessage,
+    fd: &FieldDescriptor,
+    def: &str,
+    pos: Position,
+) -> Result<(), PxfError> {
+    if let Kind::Enum(enum_desc) = fd.kind() {
+        if let Some(ev) = enum_desc.get_value_by_name(def) {
+            parent.set_field(fd, Value::EnumNumber(ev.number()));
+            return Ok(());
+        }
+        let n: i32 = def.parse().map_err(|_| {
+            PxfError::new(
+                pos,
+                format!(
+                    "invalid default enum {:?} for field {:?}",
+                    def,
+                    fd.name()
+                ),
+            )
+        })?;
+        parent.set_field(fd, Value::EnumNumber(n));
+        return Ok(());
+    }
+    if let Kind::Message(_) = fd.kind() {
+        return apply_message_default(parent, fd, def, pos);
+    }
+    let v = parse_scalar_default(fd, def, pos)?;
+    parent.set_field(fd, v);
+    Ok(())
+}
+
+fn parse_scalar_default(
+    fd: &FieldDescriptor,
+    def: &str,
+    pos: Position,
+) -> Result<Value, PxfError> {
+    fn err(pos: Position, kind: &str, def: &str, name: &str) -> PxfError {
+        PxfError::new(
+            pos,
+            format!("invalid default {} {:?} for field {:?}", kind, def, name),
+        )
+    }
+    let name = fd.name();
+    Ok(match fd.kind() {
+        Kind::String => Value::String(def.to_string()),
+        Kind::Bool => Value::Bool(def == "true"),
+        Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => Value::I32(
+            def.parse()
+                .map_err(|_| err(pos, "int32", def, name))?,
+        ),
+        Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => Value::I64(
+            def.parse()
+                .map_err(|_| err(pos, "int64", def, name))?,
+        ),
+        Kind::Uint32 | Kind::Fixed32 => Value::U32(
+            def.parse()
+                .map_err(|_| err(pos, "uint32", def, name))?,
+        ),
+        Kind::Uint64 | Kind::Fixed64 => Value::U64(
+            def.parse()
+                .map_err(|_| err(pos, "uint64", def, name))?,
+        ),
+        Kind::Float => Value::F32(
+            def.parse()
+                .map_err(|_| err(pos, "float", def, name))?,
+        ),
+        Kind::Double => Value::F64(
+            def.parse()
+                .map_err(|_| err(pos, "double", def, name))?,
+        ),
+        Kind::Bytes => Value::Bytes(
+            decode_base64(def)
+                .ok_or_else(|| err(pos, "bytes", def, name))?
+                .into(),
+        ),
+        other => {
+            return Err(PxfError::new(
+                pos,
+                format!(
+                    "unsupported default scalar kind {:?} for field {:?}",
+                    other, name
+                ),
+            ));
+        }
+    })
+}
+
+fn apply_message_default(
+    parent: &mut DynamicMessage,
+    fd: &FieldDescriptor,
+    def: &str,
+    pos: Position,
+) -> Result<(), PxfError> {
+    let inner_desc = match fd.kind() {
+        Kind::Message(m) => m,
+        _ => unreachable!("apply_message_default on non-message"),
+    };
+    let full = inner_desc.full_name().to_string();
+    let mut sub = DynamicMessage::new(inner_desc);
+
+    if full == "google.protobuf.Timestamp" {
+        let (s, n) = parse_rfc3339(def).map_err(|e| {
+            PxfError::new(
+                pos,
+                format!("invalid default timestamp {:?} for field {:?}: {}", def, fd.name(), e),
+            )
+        })?;
+        set_seconds_nanos(&mut sub, s, n);
+        parent.set_field(fd, Value::Message(sub));
+        return Ok(());
+    }
+    if full == "google.protobuf.Duration" {
+        let (s, n) = parse_go_duration(def).map_err(|e| {
+            PxfError::new(
+                pos,
+                format!("invalid default duration {:?} for field {:?}: {}", def, fd.name(), e),
+            )
+        })?;
+        set_seconds_nanos(&mut sub, s, n);
+        parent.set_field(fd, Value::Message(sub));
+        return Ok(());
+    }
+    if is_wrapper_full_name(&full) {
+        let value_fd = sub
+            .descriptor()
+            .get_field_by_name("value")
+            .ok_or_else(|| {
+                PxfError::new(
+                    pos,
+                    format!("internal: wrapper {} missing 'value' field", full),
+                )
+            })?;
+        let v = parse_scalar_default(&value_fd, def, pos)?;
+        sub.set_field(&value_fd, v);
+        parent.set_field(fd, Value::Message(sub));
+        return Ok(());
+    }
+    Err(PxfError::new(
+        pos,
+        format!(
+            "default values not supported for message type {} (field {:?})",
+            full,
+            fd.name()
+        ),
+    ))
 }
 
 fn is_wrapper_full_name(full: &str) -> bool {

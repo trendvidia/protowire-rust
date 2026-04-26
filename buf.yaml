@@ -1,0 +1,23 @@
+version: v2
+modules:
+  # Vendored copies of the protowire annotation extensions. These match
+  # `../protowire/proto/{pxf,sbe}/annotations.proto` and intentionally don't
+  # change — the field numbers (50000-series) are part of the cross-port
+  # contract.
+  - path: proto
+  # Per-crate test fixtures.
+  - path: crates/protowire-pxf/testdata
+lint:
+  use:
+    - STANDARD
+  ignore:
+    # Vendored annotations match the upstream Go layout (no version suffix);
+    # changing the package would break wire compatibility with the canonical
+    # protowire repo.
+    - proto
+    # Test fixtures use kebab-case filenames and per-test packages on
+    # purpose so they round-trip cleanly through pxf parsing.
+    - crates/protowire-pxf/testdata
+breaking:
+  use:
+    - FILE

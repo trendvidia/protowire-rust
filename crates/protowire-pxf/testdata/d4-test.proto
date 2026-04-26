@@ -1,0 +1,33 @@
+// Local fixture for the Rust port's D4 tests:
+// pxf.required / pxf.default annotations and the `_null` FieldMask.
+syntax = "proto3";
+package d4_test.v1;
+
+import "google/protobuf/field_mask.proto";
+import "pxf/annotations.proto";
+
+message WithRequired {
+  string name = 1 [(pxf.required) = true];
+  int32 value = 2;
+}
+
+message WithDefault {
+  string name = 1 [(pxf.default) = "anonymous"];
+  int32 count = 2 [(pxf.default) = "5"];
+  bool active = 3 [(pxf.default) = "true"];
+}
+
+message WithNullMask {
+  string name = 1;
+  int32 value = 2;
+  google.protobuf.FieldMask _null = 100;
+}
+
+message Outer {
+  Inner inner = 1;
+}
+
+message Inner {
+  string label = 1 [(pxf.default) = "fallback"];
+  int32 num = 2;
+}
