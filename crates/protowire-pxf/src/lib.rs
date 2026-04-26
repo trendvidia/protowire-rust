@@ -15,7 +15,7 @@ pub use ast::{
     Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, Document, DurationVal, Entry,
     FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, TimestampVal, Value,
 };
-pub use decode::{unmarshal, UnmarshalOptions};
+pub use decode::{unmarshal, PoolResolver, TypeResolver, UnmarshalOptions};
 pub use errors::PxfError;
 pub use format::{format, format_with_options, FormatOptions};
 pub use lexer::Lexer;

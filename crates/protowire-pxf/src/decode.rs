@@ -1,19 +1,20 @@
 //! Schema-bound PXF decoder.
 //!
 //! Slice D1: scalars, enums, nested messages, repeated lists, oneof.
+//! Slice D2: maps + well-known types (Timestamp/Duration/wrappers).
+//! Slice D3: `google.protobuf.Any` sugar via a pluggable [`TypeResolver`].
 //! Mirrors the AST-based path in `protowire/encoding/pxf/decode_fast.go` and
 //! the TS port's `pxf/decode.ts`, without the fused single-pass perf shortcut.
 //!
-//! Maps, well-known types (Timestamp/Duration/wrappers), `google.protobuf.Any`,
-//! and the `Result`-tracking `unmarshal_full` (required/default/_null) land in
-//! later D-slices.
+//! The `Result`-tracking `unmarshal_full` (required/default/_null) lands in D4.
 //!
 //! The decoder walks the input alongside a `MessageDescriptor` and writes
 //! directly into a `prost_reflect::DynamicMessage`. No intermediate AST.
 
+use prost::Message as _;
 use prost_reflect::{
-    DynamicMessage, FieldDescriptor, Kind, MapKey, MessageDescriptor, OneofDescriptor,
-    ReflectMessage, Value,
+    DescriptorPool, DynamicMessage, FieldDescriptor, Kind, MapKey, MessageDescriptor,
+    OneofDescriptor, ReflectMessage, Value,
 };
 use std::collections::HashMap;
 
@@ -21,20 +22,44 @@ use crate::errors::PxfError;
 use crate::lexer::Lexer;
 use crate::token::{Position, Token, TokenKind};
 
+/// Resolves `google.protobuf.Any` type URLs to message descriptors. Mirrors the
+/// Go interface of the same name. The URL prefix (`type.googleapis.com/…`) is
+/// the implementation's responsibility — strip it as appropriate.
+pub trait TypeResolver {
+    fn find_message_by_url(&self, url: &str) -> Option<MessageDescriptor>;
+}
+
+/// A [`TypeResolver`] backed by a [`DescriptorPool`]. Strips the URL prefix
+/// (everything up to and including the last `/`) before lookup, matching the
+/// `type.googleapis.com/<typeName>` convention used by `anyPack`.
+pub struct PoolResolver<'a>(pub &'a DescriptorPool);
+
+impl<'a> TypeResolver for PoolResolver<'a> {
+    fn find_message_by_url(&self, url: &str) -> Option<MessageDescriptor> {
+        let name = url.rsplit_once('/').map_or(url, |(_, n)| n);
+        self.0.get_message_by_name(name)
+    }
+}
+
 /// Options controlling [`unmarshal`] behavior.
-#[derive(Default, Clone, Copy, Debug)]
-pub struct UnmarshalOptions {
+#[derive(Default, Clone, Copy)]
+pub struct UnmarshalOptions<'a> {
     /// Silently skip fields not declared in the schema instead of erroring.
     pub discard_unknown: bool,
+    /// Resolves type URLs for `google.protobuf.Any` fields. When `Some`, Any
+    /// fields use sugar syntax (`@type = "..."` plus inline fields). When
+    /// `None`, Any fields decode as regular messages with `type_url` and
+    /// `value` fields.
+    pub type_resolver: Option<&'a dyn TypeResolver>,
 }
 
 /// Decode PXF text into a fresh [`DynamicMessage`] for `desc`.
 pub fn unmarshal(
     data: &str,
     desc: &MessageDescriptor,
-    options: UnmarshalOptions,
+    options: UnmarshalOptions<'_>,
 ) -> Result<DynamicMessage, PxfError> {
-    let mut decoder = Decoder::new(data, options.discard_unknown);
+    let mut decoder = Decoder::new(data, options.discard_unknown, options.type_resolver);
     decoder.advance();
 
     if matches!(decoder.current.kind, TokenKind::AtType) {
@@ -57,14 +82,20 @@ struct Decoder<'a> {
     lex: Lexer<'a>,
     current: Token,
     discard_unknown: bool,
+    type_resolver: Option<&'a dyn TypeResolver>,
 }
 
 impl<'a> Decoder<'a> {
-    fn new(input: &'a str, discard_unknown: bool) -> Self {
+    fn new(
+        input: &'a str,
+        discard_unknown: bool,
+        type_resolver: Option<&'a dyn TypeResolver>,
+    ) -> Self {
         Self {
             lex: Lexer::new(input),
             current: Token::new(TokenKind::Eof, "", Position::new(1, 1)),
             discard_unknown,
+            type_resolver,
         }
     }
 
@@ -193,7 +224,14 @@ impl<'a> Decoder<'a> {
                         _ => unreachable!(),
                     };
                     let mut sub = DynamicMessage::new(inner_desc);
-                    self.decode_fields(&mut sub, true)?;
+                    if is_any_full_name(sub.descriptor().full_name())
+                        && self.type_resolver.is_some()
+                        && matches!(self.current.kind, TokenKind::AtType)
+                    {
+                        self.decode_any_inner(&mut sub)?;
+                    } else {
+                        self.decode_fields(&mut sub, true)?;
+                    }
                     msg.set_field(&fd, Value::Message(sub));
                 }
                 TokenKind::Colon => {
@@ -262,7 +300,14 @@ impl<'a> Decoder<'a> {
                 )));
             }
             self.advance();
-            self.decode_fields(&mut sub, true)?;
+            if is_any_full_name(sub.descriptor().full_name())
+                && self.type_resolver.is_some()
+                && matches!(self.current.kind, TokenKind::AtType)
+            {
+                self.decode_any_inner(&mut sub)?;
+            } else {
+                self.decode_fields(&mut sub, true)?;
+            }
             msg.set_field(fd, Value::Message(sub));
             return Ok(());
         }
@@ -414,6 +459,64 @@ impl<'a> Decoder<'a> {
         self.advance();
 
         msg.set_field(fd, Value::Map(map));
+        Ok(())
+    }
+
+    /// Decode `google.protobuf.Any` sugar — caller has already entered the
+    /// `{` body or otherwise positioned the lexer at the `@type` directive.
+    /// Reads `@type = "url"` followed by inline fields of the resolved inner
+    /// message, packs the inner message to bytes, and writes `type_url` /
+    /// `value` onto `target`.
+    fn decode_any_inner(&mut self, target: &mut DynamicMessage) -> Result<(), PxfError> {
+        let resolver = self
+            .type_resolver
+            .ok_or_else(|| self.err("internal: decode_any_inner without resolver"))?;
+        if !matches!(self.current.kind, TokenKind::AtType) {
+            return Err(self.err("Any field requires @type as first entry"));
+        }
+        self.advance();
+        if !matches!(self.current.kind, TokenKind::Equals) {
+            return Err(self.err("expected '=' after @type"));
+        }
+        self.advance();
+        if !matches!(self.current.kind, TokenKind::String) {
+            return Err(self.err("expected string type URL after @type ="));
+        }
+        let type_url = self.current.value.clone();
+        let url_pos = self.current.pos;
+        self.advance();
+
+        let inner_desc = resolver.find_message_by_url(&type_url).ok_or_else(|| {
+            PxfError::new(
+                url_pos,
+                format!("cannot resolve Any type {:?}", type_url),
+            )
+        })?;
+        let mut inner = DynamicMessage::new(inner_desc);
+        self.decode_fields(&mut inner, true)?;
+        let packed = inner.encode_to_vec();
+
+        let target_desc = target.descriptor();
+        let type_url_fd = target_desc.get_field_by_name("type_url").ok_or_else(|| {
+            PxfError::new(
+                url_pos,
+                format!(
+                    "internal: {} missing type_url field",
+                    target_desc.full_name()
+                ),
+            )
+        })?;
+        let value_fd = target_desc.get_field_by_name("value").ok_or_else(|| {
+            PxfError::new(
+                url_pos,
+                format!(
+                    "internal: {} missing value field",
+                    target_desc.full_name()
+                ),
+            )
+        })?;
+        target.set_field(&type_url_fd, Value::String(type_url));
+        target.set_field(&value_fd, Value::Bytes(packed.into()));
         Ok(())
     }
 
@@ -672,6 +775,10 @@ impl<'a> Decoder<'a> {
             self.advance();
         }
     }
+}
+
+fn is_any_full_name(full: &str) -> bool {
+    full == "google.protobuf.Any"
 }
 
 fn is_wrapper_full_name(full: &str) -> bool {

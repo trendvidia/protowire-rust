@@ -16,3 +16,11 @@ protoc \
   "$shared_proto_root/test.proto"
 
 echo "wrote crates/protowire-pxf/testdata/test.binpb"
+
+protoc \
+  --include_imports \
+  --descriptor_set_out="$repo_root/crates/protowire-pxf/testdata/any-test.binpb" \
+  -I "$repo_root/crates/protowire-pxf/testdata" \
+  "$repo_root/crates/protowire-pxf/testdata/any-test.proto"
+
+echo "wrote crates/protowire-pxf/testdata/any-test.binpb"

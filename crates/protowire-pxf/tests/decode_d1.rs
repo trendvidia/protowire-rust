@@ -335,7 +335,7 @@ fn unknown_field_discard_skips_scalar() {
     let m = decode_with(
         "bogus_field = 1\nstring_field = \"ok\"",
         UnmarshalOptions {
-            discard_unknown: true,
+            discard_unknown: true, ..Default::default()
         },
     );
     match field_value(&m, "string_field").into_owned() {
@@ -349,7 +349,7 @@ fn unknown_field_discard_skips_block() {
     let m = decode_with(
         "bogus_block { a = 1 b { c = 2 } }\nstring_field = \"ok\"",
         UnmarshalOptions {
-            discard_unknown: true,
+            discard_unknown: true, ..Default::default()
         },
     );
     match field_value(&m, "string_field").into_owned() {
@@ -363,7 +363,7 @@ fn unknown_field_discard_skips_list() {
     let m = decode_with(
         "bogus_list = [1, 2, 3]\nstring_field = \"ok\"",
         UnmarshalOptions {
-            discard_unknown: true,
+            discard_unknown: true, ..Default::default()
         },
     );
     match field_value(&m, "string_field").into_owned() {

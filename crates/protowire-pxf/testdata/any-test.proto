@@ -1,0 +1,16 @@
+// Local fixture for the Rust port's google.protobuf.Any tests.
+// Mirrors the inline anyProtoSrc used in `protowire/encoding/pxf/features_test.go`.
+syntax = "proto3";
+package any_test.v1;
+
+import "google/protobuf/any.proto";
+
+message Container {
+  string name = 1;
+  google.protobuf.Any payload = 2;
+}
+
+message Detail {
+  int32 code = 1;
+  string reason = 2;
+}
