@@ -42,3 +42,9 @@ buf build --as-file-descriptor-set --exclude-source-info \
   -o crates/protowire-sbe/testdata/sbe-test.binpb
 
 echo "wrote crates/protowire-sbe/testdata/sbe-test.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/bench-test.proto \
+  -o crates/protowire-pxf/testdata/bench-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/bench-test.binpb (buf)"

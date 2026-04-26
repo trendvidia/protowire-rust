@@ -15,3 +15,8 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 bytes = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "decoder"
+harness = false
