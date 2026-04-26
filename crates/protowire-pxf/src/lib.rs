@@ -6,6 +6,7 @@
 pub mod annotations;
 pub mod ast;
 pub mod decode;
+pub mod encode;
 pub mod errors;
 pub mod format;
 pub mod lexer;
@@ -18,6 +19,7 @@ pub use ast::{
     FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, TimestampVal, Value,
 };
 pub use decode::{unmarshal, unmarshal_full, PoolResolver, TypeResolver, UnmarshalOptions};
+pub use encode::{marshal, MarshalOptions};
 pub use result::Presence;
 pub use errors::PxfError;
 pub use format::{format, format_with_options, FormatOptions};
