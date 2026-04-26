@@ -240,7 +240,7 @@ impl<'a> Decoder<'a> {
                     ),
                 ));
             }
-            let key = self.current.value.clone();
+            let key = std::mem::take(&mut self.current.value);
             self.advance();
 
             match self.current.kind {
@@ -322,13 +322,13 @@ impl<'a> Decoder<'a> {
                         && matches!(self.current.kind, TokenKind::AtType)
                     {
                         self.decode_any_inner(&mut sub)?;
-                    } else {
-                        let saved = self.path_prefix.clone();
-                        if self.presence.is_some() {
-                            self.path_prefix = format!("{}{}.", saved, fd.name());
-                        }
+                    } else if self.presence.is_some() {
+                        let saved = std::mem::take(&mut self.path_prefix);
+                        self.path_prefix = format!("{}{}.", saved, fd.name());
                         self.decode_fields(&mut sub, true)?;
                         self.path_prefix = saved;
+                    } else {
+                        self.decode_fields(&mut sub, true)?;
                     }
                     msg.set_field(&fd, Value::Message(sub));
                 }
@@ -403,13 +403,13 @@ impl<'a> Decoder<'a> {
                 && matches!(self.current.kind, TokenKind::AtType)
             {
                 self.decode_any_inner(&mut sub)?;
-            } else {
-                let saved = self.path_prefix.clone();
-                if self.presence.is_some() {
-                    self.path_prefix = format!("{}{}.", saved, fd.name());
-                }
+            } else if self.presence.is_some() {
+                let saved = std::mem::take(&mut self.path_prefix);
+                self.path_prefix = format!("{}{}.", saved, fd.name());
                 self.decode_fields(&mut sub, true)?;
                 self.path_prefix = saved;
+            } else {
+                self.decode_fields(&mut sub, true)?;
             }
             msg.set_field(fd, Value::Message(sub));
             return Ok(());
@@ -512,7 +512,7 @@ impl<'a> Decoder<'a> {
             ) {
                 return Err(self.err_at(pos, format!("expected map key, got {}", tk)));
             }
-            let key_str = self.current.value.clone();
+            let key_str = std::mem::take(&mut self.current.value);
             self.advance();
 
             match self.current.kind {
@@ -528,7 +528,7 @@ impl<'a> Decoder<'a> {
                 }
             }
 
-            let key = decode_map_key(&key_fd, &key_str, pos)?;
+            let key = decode_map_key(&key_fd, key_str, pos)?;
 
             if matches!(self.current.kind, TokenKind::Null) {
                 return Err(self.err(format!(
@@ -585,7 +585,7 @@ impl<'a> Decoder<'a> {
         if !matches!(self.current.kind, TokenKind::String) {
             return Err(self.err("expected string type URL after @type ="));
         }
-        let type_url = self.current.value.clone();
+        let type_url = std::mem::take(&mut self.current.value);
         let url_pos = self.current.pos;
         self.advance();
 
@@ -673,7 +673,7 @@ impl<'a> Decoder<'a> {
                         self.err_at(pos, format!("expected string for field {:?}", fd.name()))
                     );
                 }
-                let v = Value::String(self.current.value.clone());
+                let v = Value::String(std::mem::take(&mut self.current.value));
                 self.advance();
                 Ok(v)
             }
@@ -1118,30 +1118,41 @@ fn set_seconds_nanos(target: &mut DynamicMessage, seconds: i64, nanos: i32) {
     }
 }
 
+/// Coerce an owned key string into a [`MapKey`]. For string-typed maps the
+/// String moves directly into `MapKey::String` (no extra allocation); for
+/// numeric/bool maps the String is parsed and dropped.
 fn decode_map_key(
     key_fd: &FieldDescriptor,
-    key: &str,
+    key: String,
     pos: Position,
 ) -> Result<MapKey, PxfError> {
     match key_fd.kind() {
-        Kind::String => Ok(MapKey::String(key.to_string())),
-        Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => key
-            .parse::<i32>()
-            .map(MapKey::I32)
-            .map_err(|_| PxfError::new(pos, format!("invalid int32 map key: {}", key))),
-        Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => key
-            .parse::<i64>()
-            .map(MapKey::I64)
-            .map_err(|_| PxfError::new(pos, format!("invalid int64 map key: {}", key))),
-        Kind::Uint32 | Kind::Fixed32 => key
-            .parse::<u32>()
-            .map(MapKey::U32)
-            .map_err(|_| PxfError::new(pos, format!("invalid uint32 map key: {}", key))),
-        Kind::Uint64 | Kind::Fixed64 => key
-            .parse::<u64>()
-            .map(MapKey::U64)
-            .map_err(|_| PxfError::new(pos, format!("invalid uint64 map key: {}", key))),
-        Kind::Bool => match key {
+        Kind::String => Ok(MapKey::String(key)),
+        Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => {
+            let n: i32 = key.parse().map_err(|_| {
+                PxfError::new(pos, format!("invalid int32 map key: {}", key))
+            })?;
+            Ok(MapKey::I32(n))
+        }
+        Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => {
+            let n: i64 = key.parse().map_err(|_| {
+                PxfError::new(pos, format!("invalid int64 map key: {}", key))
+            })?;
+            Ok(MapKey::I64(n))
+        }
+        Kind::Uint32 | Kind::Fixed32 => {
+            let n: u32 = key.parse().map_err(|_| {
+                PxfError::new(pos, format!("invalid uint32 map key: {}", key))
+            })?;
+            Ok(MapKey::U32(n))
+        }
+        Kind::Uint64 | Kind::Fixed64 => {
+            let n: u64 = key.parse().map_err(|_| {
+                PxfError::new(pos, format!("invalid uint64 map key: {}", key))
+            })?;
+            Ok(MapKey::U64(n))
+        }
+        Kind::Bool => match key.as_str() {
             "true" => Ok(MapKey::Bool(true)),
             "false" => Ok(MapKey::Bool(false)),
             _ => Err(PxfError::new(pos, format!("invalid bool map key: {}", key))),
