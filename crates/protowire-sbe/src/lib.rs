@@ -9,11 +9,15 @@
 pub mod annotations;
 pub mod codec;
 pub mod errors;
+pub mod marshal;
 pub mod template;
+pub mod unmarshal;
 
 pub use codec::{Codec, GROUP_HEADER_SIZE, HEADER_SIZE};
 pub use errors::SbeError;
+pub use marshal::marshal;
 pub use template::{
     build_template, field_encoding_size, FieldTemplate, GroupTemplate, MessageTemplate,
     SbeEncoding,
 };
+pub use unmarshal::unmarshal;
