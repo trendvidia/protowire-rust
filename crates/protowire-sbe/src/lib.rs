@@ -12,6 +12,7 @@ pub mod errors;
 pub mod marshal;
 pub mod template;
 pub mod unmarshal;
+pub mod view;
 
 pub use codec::{Codec, GROUP_HEADER_SIZE, HEADER_SIZE};
 pub use errors::SbeError;
@@ -21,3 +22,4 @@ pub use template::{
     SbeEncoding,
 };
 pub use unmarshal::unmarshal;
+pub use view::{GroupView, View};
