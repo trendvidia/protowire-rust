@@ -9,6 +9,7 @@ members = [
     "crates/protowire-cli",
     "crates/dump-envelope",
     "crates/bench-pxf",
+    "crates/bench-sbe",
 ]
 
 [workspace.package]

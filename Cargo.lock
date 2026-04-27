@@ -44,6 +44,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bench-sbe"
+version = "0.0.0"
+dependencies = [
+ "prost-reflect",
+ "protowire-sbe",
+]
+
+[[package]]
 name = "bytes"
 version = "1.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
