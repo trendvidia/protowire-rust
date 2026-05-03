@@ -323,16 +323,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "protowire-cli"
-version = "0.0.0"
-dependencies = [
- "bytes",
- "prost",
- "prost-reflect",
- "protowire-pxf",
-]
-
-[[package]]
 name = "protowire-envelope"
 version = "0.0.0"
 dependencies = [

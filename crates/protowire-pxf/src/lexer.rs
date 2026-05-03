@@ -207,29 +207,126 @@ impl<'a> Lexer<'a> {
         while self.pos < self.input.len() {
             let ch = self.advance();
             if ch == b'"' {
-                return Token::new(TokenKind::String, bytes_to_string(buf), pos);
+                // Token values are stored as Rust `String`. Reject input that
+                // would produce a non-UTF-8 sequence — Rust's typed strings
+                // require validity, and proto3 strings are spec'd as UTF-8
+                // anyway. Note this is stricter than the Go reference, which
+                // permissively stores arbitrary bytes.
+                return match String::from_utf8(buf) {
+                    Ok(s) => Token::new(TokenKind::String, s, pos),
+                    Err(_) => Token::new(
+                        TokenKind::Illegal,
+                        "string contains invalid UTF-8",
+                        pos,
+                    ),
+                };
             }
-            if ch == b'\\' {
-                if self.pos >= self.input.len() {
-                    return Token::new(TokenKind::Illegal, "unterminated escape sequence", pos);
-                }
-                let esc = self.advance();
-                match esc {
-                    b'"' => buf.push(b'"'),
-                    b'\\' => buf.push(b'\\'),
-                    b'n' => buf.push(b'\n'),
-                    b't' => buf.push(b'\t'),
-                    b'r' => buf.push(b'\r'),
-                    other => {
-                        buf.push(b'\\');
-                        buf.push(other);
-                    }
-                }
+            if ch != b'\\' {
+                buf.push(ch);
                 continue;
             }
-            buf.push(ch);
+            if self.pos >= self.input.len() {
+                return Token::new(TokenKind::Illegal, "unterminated escape sequence", pos);
+            }
+            let esc = self.advance();
+            match esc {
+                b'"' | b'\\' | b'\'' | b'?' => buf.push(esc),
+                b'a' => buf.push(0x07),
+                b'b' => buf.push(0x08),
+                b'f' => buf.push(0x0C),
+                b'n' => buf.push(b'\n'),
+                b'r' => buf.push(b'\r'),
+                b't' => buf.push(b'\t'),
+                b'v' => buf.push(0x0B),
+                b'x' => match self.read_hex_byte() {
+                    Some(b) => buf.push(b),
+                    None => {
+                        return Token::new(
+                            TokenKind::Illegal,
+                            "invalid \\x escape: expected 2 hex digits",
+                            pos,
+                        );
+                    }
+                },
+                b'0' | b'1' | b'2' | b'3' => match self.read_oct_rest(esc) {
+                    Some(b) => buf.push(b),
+                    None => {
+                        return Token::new(
+                            TokenKind::Illegal,
+                            "invalid octal escape: expected 3 octal digits",
+                            pos,
+                        );
+                    }
+                },
+                b'u' => match self.read_hex_rune(4).and_then(valid_rune) {
+                    Some(r) => encode_rune(r, &mut buf),
+                    None => {
+                        return Token::new(
+                            TokenKind::Illegal,
+                            "invalid \\u escape: expected 4 hex digits forming a valid codepoint",
+                            pos,
+                        );
+                    }
+                },
+                b'U' => match self.read_hex_rune(8).and_then(valid_rune) {
+                    Some(r) => encode_rune(r, &mut buf),
+                    None => {
+                        return Token::new(
+                            TokenKind::Illegal,
+                            "invalid \\U escape: expected 8 hex digits forming a valid codepoint",
+                            pos,
+                        );
+                    }
+                },
+                other => {
+                    return Token::new(
+                        TokenKind::Illegal,
+                        format!("unknown escape sequence \\{}", other as char),
+                        pos,
+                    );
+                }
+            }
         }
         Token::new(TokenKind::Illegal, "unterminated string", pos)
+    }
+
+    /// Reads exactly 2 hex digits and returns the assembled byte.
+    fn read_hex_byte(&mut self) -> Option<u8> {
+        if self.pos + 1 >= self.input.len() {
+            return None;
+        }
+        let hi = hex_val(self.input[self.pos])?;
+        let lo = hex_val(self.input[self.pos + 1])?;
+        self.advance();
+        self.advance();
+        Some(((hi << 4) | lo) as u8)
+    }
+
+    /// Reads exactly N hex digits and returns the assembled codepoint.
+    fn read_hex_rune(&mut self, n: usize) -> Option<u32> {
+        if self.pos + n > self.input.len() {
+            return None;
+        }
+        let mut r: u32 = 0;
+        for _ in 0..n {
+            r = (r << 4) | hex_val(self.input[self.pos])?;
+            self.advance();
+        }
+        Some(r)
+    }
+
+    /// Reads two more octal digits after the leading one already consumed
+    /// (as part of `\nnn` — exactly 3 octal digits total). The caller has
+    /// restricted `first` to 0-3 so the result fits in a byte.
+    fn read_oct_rest(&mut self, first: u8) -> Option<u8> {
+        if self.pos + 1 >= self.input.len() {
+            return None;
+        }
+        let d1 = oct_val(self.input[self.pos])?;
+        let d2 = oct_val(self.input[self.pos + 1])?;
+        self.advance();
+        self.advance();
+        Some((((first - b'0') as u32) << 6 | (d1 << 3) | d2) as u8)
     }
 
     fn lex_triple_string(&mut self, pos: Position) -> Token {
@@ -255,14 +352,31 @@ impl<'a> Lexer<'a> {
 
     fn lex_bytes(&mut self, pos: Position) -> Token {
         self.advance(); // b
-        let tok = self.lex_string(pos);
-        if !matches!(tok.kind, TokenKind::String) {
-            return tok;
+        if self.pos >= self.input.len() || self.input[self.pos] != b'"' {
+            return Token::new(TokenKind::Illegal, "expected '\"' after b", pos);
         }
-        if !is_valid_base64(&tok.value) {
-            return Token::new(TokenKind::Illegal, "invalid base64 in bytes literal", pos);
+        self.advance(); // opening "
+        let start = self.pos;
+        while self.pos < self.input.len() {
+            let ch = self.input[self.pos];
+            if ch == b'"' {
+                let raw = slice_to_string(&self.input[start..self.pos]);
+                self.advance(); // closing "
+                if !is_valid_base64(&raw) {
+                    return Token::new(
+                        TokenKind::Illegal,
+                        "invalid base64 in bytes literal",
+                        pos,
+                    );
+                }
+                return Token::new(TokenKind::Bytes, raw, pos);
+            }
+            if ch == b'\n' {
+                return Token::new(TokenKind::Illegal, "unterminated bytes literal", pos);
+            }
+            self.advance();
         }
-        Token::new(TokenKind::Bytes, tok.value, pos)
+        Token::new(TokenKind::Illegal, "unterminated bytes literal", pos)
     }
 
     fn lex_directive(&mut self, pos: Position) -> Token {
@@ -396,11 +510,6 @@ fn slice_to_string(bytes: &[u8]) -> String {
     String::from_utf8(bytes.to_vec()).expect("lexer slice is valid UTF-8")
 }
 
-fn bytes_to_string(buf: Vec<u8>) -> String {
-    // Escape handling preserves whole UTF-8 sequences (we only inject ASCII).
-    String::from_utf8(buf).expect("lexer buffer is valid UTF-8")
-}
-
 fn byte_as_string(b: u8) -> String {
     let mut s = String::new();
     s.push(b as char);
@@ -425,6 +534,51 @@ fn is_duration_unit(ch: u8) -> bool {
 
 fn is_lower_alpha(ch: u8) -> bool {
     (b'a'..=b'z').contains(&ch)
+}
+
+fn hex_val(ch: u8) -> Option<u32> {
+    match ch {
+        b'0'..=b'9' => Some((ch - b'0') as u32),
+        b'a'..=b'f' => Some((ch - b'a') as u32 + 10),
+        b'A'..=b'F' => Some((ch - b'A') as u32 + 10),
+        _ => None,
+    }
+}
+
+fn oct_val(ch: u8) -> Option<u32> {
+    match ch {
+        b'0'..=b'7' => Some((ch - b'0') as u32),
+        _ => None,
+    }
+}
+
+/// Mirrors Go's `utf8.ValidRune`: rejects values > U+10FFFF and the surrogate
+/// range U+D800..U+DFFF. Returns `Some(r)` if valid for use in `\u` / `\U`.
+fn valid_rune(r: u32) -> Option<u32> {
+    if r <= 0x10_FFFF && !(0xD800..=0xDFFF).contains(&r) {
+        Some(r)
+    } else {
+        None
+    }
+}
+
+/// Writes the UTF-8 encoding of a valid Unicode scalar to `out`.
+fn encode_rune(r: u32, out: &mut Vec<u8>) {
+    if r <= 0x7F {
+        out.push(r as u8);
+    } else if r <= 0x7FF {
+        out.push(0xC0 | (r >> 6) as u8);
+        out.push(0x80 | (r & 0x3F) as u8);
+    } else if r <= 0xFFFF {
+        out.push(0xE0 | (r >> 12) as u8);
+        out.push(0x80 | ((r >> 6) & 0x3F) as u8);
+        out.push(0x80 | (r & 0x3F) as u8);
+    } else {
+        out.push(0xF0 | (r >> 18) as u8);
+        out.push(0x80 | ((r >> 12) & 0x3F) as u8);
+        out.push(0x80 | ((r >> 6) & 0x3F) as u8);
+        out.push(0x80 | (r & 0x3F) as u8);
+    }
 }
 
 /// Strip the closing-line indent from each line in a triple-quoted string body.
@@ -742,9 +896,12 @@ mod tests {
     }
 
     #[test]
-    fn string_unknown_escape_preserves_backslash() {
+    fn string_unknown_escape_is_illegal() {
+        // Unknown escapes used to silently pass through; they now produce
+        // an ILLEGAL token to match the Go reference.
         let t = tokens("\"\\q\"");
-        assert_eq!(t[0].value, "\\q");
+        assert!(matches!(t[0].kind, TokenKind::Illegal));
+        assert!(t[0].value.contains("unknown escape"));
     }
 
     #[test]
@@ -1045,5 +1202,113 @@ mod tests {
                 .count(),
             1
         );
+    }
+
+    // --- Full Go-aligned escape set: \a \b \f \v \' \?, \xHH, \nnn,
+    //     \uHHHH, \UHHHHHHHH. Mirrors protowire-go/encoding/pxf/lexer_test.go.
+
+    /// Lex a single STRING token from `src`; returns Some(value) or None on
+    /// ILLEGAL.
+    fn lex_one(src: &str) -> Option<String> {
+        let t = tokens(src);
+        match t.first() {
+            Some(tok) if matches!(tok.kind, TokenKind::String) => Some(tok.value.clone()),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn escape_extended_simple_set() {
+        assert_eq!(lex_one(r#""\a""#).as_deref(), Some("\u{07}"));
+        assert_eq!(lex_one(r#""\b""#).as_deref(), Some("\u{08}"));
+        assert_eq!(lex_one(r#""\f""#).as_deref(), Some("\u{0C}"));
+        assert_eq!(lex_one(r#""\v""#).as_deref(), Some("\u{0B}"));
+        assert_eq!(lex_one(r#""\'""#).as_deref(), Some("'"));
+        assert_eq!(lex_one(r#""\?""#).as_deref(), Some("?"));
+        assert_eq!(
+            lex_one(r#""\a\b\f\n\r\t\v""#).as_deref(),
+            Some("\u{07}\u{08}\u{0C}\n\r\t\u{0B}"),
+        );
+    }
+
+    #[test]
+    fn escape_hex_byte() {
+        assert_eq!(lex_one(r#""\x41""#).as_deref(), Some("A"));
+        assert_eq!(lex_one(r#""\x00""#).as_deref(), Some("\0"));
+        // Two adjacent \x escapes encode a 2-byte UTF-8 sequence.
+        assert_eq!(lex_one(r#""\xc3\xa9""#).as_deref(), Some("é"));
+        // Three encode a 3-byte UTF-8 sequence.
+        assert_eq!(
+            lex_one(r#""\xe4\xb8\xad""#).as_deref(),
+            Some("中"),
+        );
+    }
+
+    #[test]
+    fn escape_octal_byte() {
+        assert_eq!(lex_one(r#""\101""#).as_deref(), Some("A"));
+        assert_eq!(lex_one(r#""\000""#).as_deref(), Some("\0"));
+        // \377 = 0xFF — a lone byte that's not valid UTF-8 on its own; the
+        // Rust lexer rejects rather than store an invalid String.
+        assert!(lex_one(r#""\377""#).is_none());
+    }
+
+    #[test]
+    fn escape_unicode_4_hex() {
+        assert_eq!(lex_one(r#""é""#).as_deref(), Some("é"));
+        assert_eq!(lex_one(r#""中""#).as_deref(), Some("中"));
+        assert_eq!(
+            lex_one(r#""aéb""#).as_deref(),
+            Some("aéb"),
+        );
+    }
+
+    #[test]
+    fn escape_unicode_8_hex() {
+        assert_eq!(lex_one(r#""\U0001F600""#).as_deref(), Some("😀"));
+        assert_eq!(lex_one(r#""\U0000004A""#).as_deref(), Some("J"));
+    }
+
+    #[test]
+    fn escape_invalid_forms_rejected() {
+        // Unknown escape.
+        assert!(lex_one(r#""\z""#).is_none());
+        // Truncated \u.
+        assert!(lex_one(r#""\u12""#).is_none());
+        // Non-hex in \u.
+        assert!(lex_one(r#""\u12gh""#).is_none());
+        // Surrogate halves rejected.
+        assert!(lex_one(r#""\uD800""#).is_none());
+        assert!(lex_one(r#""\uDFFF""#).is_none());
+        // Out-of-range \U.
+        assert!(lex_one(r#""\U00110000""#).is_none());
+        // Truncated \U (only 7 hex digits).
+        assert!(lex_one(r#""\U0001F60""#).is_none());
+        // Truncated \x.
+        assert!(lex_one(r#""\x""#).is_none());
+        assert!(lex_one(r#""\x4""#).is_none());
+        // Non-hex \x.
+        assert!(lex_one(r#""\xZZ""#).is_none());
+        // Truncated octal.
+        assert!(lex_one(r#""\10""#).is_none());
+        // Non-octal in octal escape.
+        assert!(lex_one(r#""\18a""#).is_none());
+    }
+
+    #[test]
+    fn bytes_literal_does_not_interpret_escapes() {
+        // b"..." now reads the body raw (no escape interpretation). A
+        // literal `\\` is invalid base64, so the lexer must produce an
+        // ILLEGAL token rather than decoding the escape.
+        let t = tokens(r#"b"hello\""#);
+        assert!(matches!(t[0].kind, TokenKind::Illegal));
+    }
+
+    #[test]
+    fn bytes_literal_accepts_valid_base64() {
+        // "Hello" in base64 = "SGVsbG8="
+        let t = tokens(r#"b"SGVsbG8=""#);
+        assert!(matches!(t[0].kind, TokenKind::Bytes));
+        assert_eq!(t[0].value, "SGVsbG8=");
     }
 }

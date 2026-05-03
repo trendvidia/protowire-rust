@@ -35,7 +35,7 @@ All 15 slices have landed (one commit each on `main`, mirroring
 | 8. pxf-D3 Any | 5 | done |
 | 9. pxf-D4 annotations + `_null` FieldMask + `unmarshal_full` | 13 | done |
 | 10. pxf-E encoder | 26 | done |
-| 11. pxf-F CLI | 13 | done |
+| 11. pxf-F CLI | 13 | superseded — shared CLI now lives in protowire/cmd/protowire/ |
 | 12. sbe-A annotations + template + codec | 6 | done |
 | 13. sbe-B marshal + unmarshal | 9 | done |
 | 14. sbe-C View / GroupView | 8 | done |
