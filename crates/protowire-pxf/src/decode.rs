@@ -3,13 +3,12 @@
 //! Slice D1: scalars, enums, nested messages, repeated lists, oneof.
 //! Slice D2: maps + well-known types (Timestamp/Duration/wrappers).
 //! Slice D3: `google.protobuf.Any` sugar via a pluggable [`TypeResolver`].
-//! Mirrors the AST-based path in `protowire/encoding/pxf/decode_fast.go` and
-//! the TS port's `pxf/decode.ts`, without the fused single-pass perf shortcut.
+//! Mirrors Go's fused single-pass path in `protowire-go/encoding/pxf/decode_fast.go`
+//! (`unmarshalDirect`) and the TS port's `pxf/decode.ts`. There is no separate
+//! AST-walking slow path — the lexer drives the descriptor walk in lockstep
+//! and writes straight into a `prost_reflect::DynamicMessage`.
 //!
 //! The `Result`-tracking `unmarshal_full` (required/default/_null) lands in D4.
-//!
-//! The decoder walks the input alongside a `MessageDescriptor` and writes
-//! directly into a `prost_reflect::DynamicMessage`. No intermediate AST.
 
 use prost::Message as _;
 use prost_reflect::{

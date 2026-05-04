@@ -60,10 +60,14 @@ All 15 originally-planned slices have landed; the workspace runs ~300 tests acro
 
 The Rust port is descriptor-driven via [`prost-reflect`](https://crates.io/crates/prost-reflect) — `DynamicMessage` everywhere, no codegen-bound types. A few items fall out of that or are explicit deferred work:
 
-- **No native `BigInt` / `Decimal` / `BigFloat` implementations** for the `pxf.*` schemas. The codec faithfully encodes/decodes the bytes, but the user-facing types are `Vec<u8>` rather than dedicated arbitrary-precision wrappers. Rust has `num-bigint` / `rust_decimal` available — wiring them up is open work.
-- **SBE XML round-trip via in-process `protoc` is not implemented.** The Go reference uses `protocompile` to compile a `.proto` schema to a `FileDescriptorSet` at runtime; Rust doesn't have a comparable in-process compiler in the prost ecosystem. Workaround: pre-compile to `.binpb` and check the descriptor set into the testdata tree.
+- **No native `BigInt` / `Decimal` / `BigFloat` implementations** (planned for 0.73.0). The codec faithfully encodes/decodes the bytes for the `pxf.*` arbitrary-precision schemas, but the user-facing type is `Vec<u8>` — callers convert to `num-bigint::BigInt` / `rust_decimal::Decimal` themselves. The Go reference's `bignum_test.go` is not yet ported (none of the sibling ports have it either).
+- **No runtime `.proto` compilation.** The Go port uses `protocompile` to turn a `.proto` schema into a `FileDescriptorSet` in-process; the prost ecosystem has no comparable embeddable compiler. You must pre-build a `.binpb` `FileDescriptorSet` (with `buf build` or `protoc --include_imports --descriptor_set_out=…`) and load it via `DescriptorPool::decode`. This is also the reason SBE XML round-trip is not implemented here.
+- **`prost-reflect` upstream-API drift.** The `FieldOptions` extension API has shifted shape across recent releases, so the workspace pins `prost-reflect = "0.14"` (and `prost = "0.13"`). Bumping either may require small migrations in `protowire-pxf`'s annotation reader; tracked but not breaking today.
 - **The shared CLI lives in [trendvidia/protowire/cmd/protowire](https://github.com/trendvidia/protowire/tree/main/cmd/protowire), not here.** This repo ships only library crates plus the three cross-port harnesses.
-- **`prost` minor-version drift.** `prost-reflect`'s `FieldOptions` extension API has changed shape across recent releases; bumping the dependency may require small migrations in `protowire-pxf`'s annotation reader.
+
+### Implemented (mentioned because external reviews keep flagging them)
+
+- **PXF decoder is the fused single-pass path** — mirrors Go's `decode_fast.go::unmarshalDirect`. The lexer drives a descriptor walk in lockstep and writes straight into `DynamicMessage`; there is no separate AST-walking slow path to swap in. See `crates/protowire-pxf/src/decode.rs`.
 
 ## Contributing & governance
 
