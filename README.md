@@ -1,4 +1,4 @@
-# protowire4rust
+# protowire-rust
 
 Rust port of [`github.com/trendvidia/protowire`](https://github.com/trendvidia/protowire).
 Standalone (no FFI), descriptor-driven via [`prost-reflect`].
