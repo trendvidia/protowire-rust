@@ -9,6 +9,7 @@ members = [
     "crates/dump-envelope",
     "crates/bench-pxf",
     "crates/bench-sbe",
+    "crates/check-decode",
 ]
 
 [workspace.package]

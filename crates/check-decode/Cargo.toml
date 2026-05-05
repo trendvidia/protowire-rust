@@ -1,0 +1,17 @@
+[package]
+name = "check-decode"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Per-port reference for the protowire HARDENING.md conformance corpus (Rust). Driven by github.com/trendvidia/protowire/scripts/cross_security_check.sh."
+
+[[bin]]
+name = "check-decode"
+path = "src/main.rs"
+
+[dependencies]
+protowire-pxf = { workspace = true }
+protowire-pb = { workspace = true }
+prost-reflect = { workspace = true }
