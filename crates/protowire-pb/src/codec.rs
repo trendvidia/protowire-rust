@@ -17,7 +17,7 @@
 //! - repeated fields: one tag+value per element (non-packed).
 //! - maps: each entry is a length-delimited `MapEntry { key=1; value=2 }`.
 
-use crate::wire::{Error, Reader, Result, WireType, Writer};
+use crate::wire::{Error, Reader, Result, WireType, Writer, MAX_NESTING_DEPTH};
 
 /// A message with self-contained encode/decode. Mirrors the role of
 /// `prost::Message` for our trait-based codec.
@@ -65,21 +65,40 @@ pub fn write_message<M: Message>(w: &mut Writer, field_number: u32, msg: &M) {
 }
 
 /// Read a length-delimited nested message. The reader's tag is already consumed.
+///
+/// Increments `r.depth` for the duration of the inner decode and rejects with
+/// [`Error::DepthExceeded`] before recursing past [`MAX_NESTING_DEPTH`]. Per
+/// HARDENING.md §Recursion, the counter must persist across `merge_field` →
+/// `read_message` re-entry; that's why it lives on the `Reader`, not as a
+/// thread-local or function argument.
+///
+/// The length-prefix bounds check uses `checked_add` so that a maximum-value
+/// varint length (2^64 - 1) cannot wrap `pos + len` past a naive comparison
+/// and trip a slice-indexing panic — HARDENING.md §API contract item 3.
 pub fn read_message<M: Message>(r: &mut Reader<'_>) -> Result<M> {
-    let len = r.varint()? as usize;
-    let end = r.pos + len;
+    let len = r.varint()?;
+    let len = usize::try_from(len).map_err(|_| Error::NestedExceedsBuffer)?;
+    let end = r.pos.checked_add(len).ok_or(Error::NestedExceedsBuffer)?;
     if end > r.data().len() {
         return Err(Error::NestedExceedsBuffer);
     }
-    let mut msg = M::default();
-    while r.pos < end {
-        let (num, wt) = r.tag()?;
-        msg.merge_field(num, wt, r)?;
+    if r.depth >= MAX_NESTING_DEPTH {
+        return Err(Error::DepthExceeded(MAX_NESTING_DEPTH));
     }
-    if r.pos != end {
-        return Err(Error::Overrun { pos: r.pos, end });
-    }
-    Ok(msg)
+    r.depth += 1;
+    let result = (|| -> Result<M> {
+        let mut msg = M::default();
+        while r.pos < end {
+            let (num, wt) = r.tag()?;
+            msg.merge_field(num, wt, r)?;
+        }
+        if r.pos != end {
+            return Err(Error::Overrun { pos: r.pos, end });
+        }
+        Ok(msg)
+    })();
+    r.depth -= 1;
+    result
 }
 
 #[cfg(test)]
@@ -504,6 +523,79 @@ mod tests {
             }
             Ok(())
         }
+    }
+
+    // --- HARDENING.md §Recursion -----------------------------------------
+    //
+    // `read_message` must reject before recursing past MAX_NESTING_DEPTH and
+    // must not crash on adversarial deep-nesting input. The cap matches the
+    // cross-port HARDENING.md default of 100.
+
+    /// Self-recursive PB message — mirrors `adversarial.v1.Tree` in the
+    /// shared corpus. A tower of `Tree`s is the canonical adversarial
+    /// fixture for depth-cap testing.
+    #[derive(Default, Debug)]
+    struct Tree {
+        child: Option<Box<Tree>>,
+    }
+
+    impl Message for Tree {
+        fn encode_to(&self, w: &mut Writer) {
+            if let Some(c) = &self.child {
+                write_message(w, 1, c.as_ref());
+            }
+        }
+        fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
+            match num {
+                1 => self.child = Some(Box::new(read_message(r)?)),
+                _ => r.skip(wt)?,
+            }
+            Ok(())
+        }
+    }
+
+    /// Build wire bytes for a Tree of N nested `child` levels.
+    fn build_tree_bytes(depth: usize) -> Vec<u8> {
+        let mut payload: Vec<u8> = Vec::new(); // empty leaf
+        for _ in 0..depth {
+            let mut framed = Vec::new();
+            framed.push(0x0a); // tag(1, LengthDelimited)
+            let mut len = payload.len() as u64;
+            while len >= 0x80 {
+                framed.push(((len & 0x7f) as u8) | 0x80);
+                len >>= 7;
+            }
+            framed.push(len as u8);
+            framed.extend_from_slice(&payload);
+            payload = framed;
+        }
+        payload
+    }
+
+    #[test]
+    fn deep_submessage_at_limit_is_accepted() {
+        // 100 nested children → root + 100 read_message calls. Cap is the
+        // increment count, so 100 levels of read_message reach depth=100
+        // without exceeding it.
+        let bytes = build_tree_bytes(100);
+        let _: Tree = unmarshal(&bytes).unwrap();
+    }
+
+    #[test]
+    fn deep_submessage_past_limit_returns_depth_exceeded() {
+        // 200 levels must reject cleanly, not crash.
+        let bytes = build_tree_bytes(200);
+        let res: Result<Tree> = unmarshal(&bytes);
+        assert!(matches!(res, Err(Error::DepthExceeded(100))), "got {:?}", res);
+    }
+
+    #[test]
+    fn deep_submessage_at_extreme_depth_rejects_without_stack_overflow() {
+        // 100k-deep is the SIGABRT case from issue #1. The cap must trip
+        // before native stack exhaustion.
+        let bytes = build_tree_bytes(100_000);
+        let res: Result<Tree> = unmarshal(&bytes);
+        assert!(matches!(res, Err(Error::DepthExceeded(100))), "got {:?}", res);
     }
 
     #[test]

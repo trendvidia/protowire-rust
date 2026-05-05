@@ -13,6 +13,12 @@ use crate::errors::PxfError;
 use crate::lexer::Lexer;
 use crate::token::{Position, Token, TokenKind};
 
+/// HARDENING.md `MaxNestingDepth`: caps `{` and `[` nesting at 100. The same
+/// constant lives on [`crate::decode::MAX_NESTING_DEPTH`]; both apply per the
+/// HARDENING.md threat model so adversarial input can't overflow the native
+/// recursion stack regardless of which entry point is used.
+pub const MAX_NESTING_DEPTH: usize = 100;
+
 pub fn parse(input: &str) -> Result<Document, PxfError> {
     Parser::new(input).parse_document()
 }
@@ -21,6 +27,9 @@ struct Parser<'a> {
     lex: Lexer<'a>,
     current: Token,
     pending: Vec<Comment>,
+    /// Live `{` + `[` depth, incremented at each opening token and
+    /// decremented at the matching close. Exceeds → reject before recursing.
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -29,9 +38,25 @@ impl<'a> Parser<'a> {
             lex: Lexer::new(input),
             current: Token::new(TokenKind::Eof, "", Position::new(1, 1)),
             pending: Vec::new(),
+            depth: 0,
         };
         p.advance();
         p
+    }
+
+    fn enter(&mut self, pos: Position) -> Result<(), PxfError> {
+        if self.depth >= MAX_NESTING_DEPTH {
+            return Err(PxfError::new(
+                pos,
+                format!("nesting depth exceeds MaxNestingDepth ({})", MAX_NESTING_DEPTH),
+            ));
+        }
+        self.depth += 1;
+        Ok(())
+    }
+
+    fn leave(&mut self) {
+        self.depth -= 1;
     }
 
     /// Consume the next token, swallowing newlines and accumulating comments
@@ -129,8 +154,9 @@ impl<'a> Parser<'a> {
                 }))
             }
             TokenKind::LBrace => {
+                let open_pos = self.current.pos;
                 self.advance();
-                let entries = self.parse_body()?;
+                let entries = self.parse_body(open_pos)?;
                 Ok(Entry::Block(Block {
                     pos,
                     name: key,
@@ -212,6 +238,7 @@ impl<'a> Parser<'a> {
 
     fn parse_list(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
+        self.enter(pos)?;
         self.advance(); // consume [
 
         let mut elements = Vec::new();
@@ -228,17 +255,19 @@ impl<'a> Parser<'a> {
             ));
         }
         self.advance();
+        self.leave();
         Ok(Value::List(ListVal { pos, elements }))
     }
 
     fn parse_block_val(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
         self.advance(); // consume {
-        let entries = self.parse_body()?;
+        let entries = self.parse_body(pos)?;
         Ok(Value::Block(BlockVal { pos, entries }))
     }
 
-    fn parse_body(&mut self) -> Result<Vec<Entry>, PxfError> {
+    fn parse_body(&mut self, open_pos: Position) -> Result<Vec<Entry>, PxfError> {
+        self.enter(open_pos)?;
         let mut entries = Vec::new();
         while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof) {
             entries.push(self.parse_entry()?);
@@ -250,6 +279,7 @@ impl<'a> Parser<'a> {
             ));
         }
         self.advance();
+        self.leave();
         Ok(entries)
     }
 }
@@ -640,6 +670,75 @@ mod tests {
         let err = parse("\n\nname xyz").unwrap_err();
         let s = format!("{}", err);
         assert!(s.starts_with("3:"), "expected 3:..., got {}", s);
+    }
+
+    // ---------------- HARDENING.md §Recursion ----------------
+
+    #[test]
+    fn deep_nesting_at_limit_is_accepted() {
+        // 100 levels of `{` is exactly at the cap and must parse.
+        let mut src = String::from("root ");
+        for _ in 0..99 {
+            src.push_str("{ child ");
+        }
+        src.push_str("{ leaf = 1 ");
+        for _ in 0..100 {
+            src.push('}');
+        }
+        parse(&src).unwrap();
+    }
+
+    #[test]
+    fn deep_nesting_past_limit_is_rejected() {
+        // 200 levels of `{` must reject with the depth error, not crash.
+        let mut src = String::from("root ");
+        for _ in 0..200 {
+            src.push_str("{ child ");
+        }
+        src.push_str("{ leaf = 1 ");
+        for _ in 0..201 {
+            src.push('}');
+        }
+        let err = parse(&src).unwrap_err();
+        assert!(
+            err.msg.contains("MaxNestingDepth"),
+            "expected depth error, got: {}",
+            err.msg
+        );
+    }
+
+    #[test]
+    fn deep_nesting_extreme_does_not_overflow_stack() {
+        // The crash case from issue #1: 100 000 nested `{`. Must reject
+        // cleanly — recursive descent would otherwise SIGABRT here.
+        let mut src = String::from("root ");
+        for _ in 0..100_000 {
+            src.push_str("{ child ");
+        }
+        src.push_str("{ leaf = 1 ");
+        for _ in 0..100_001 {
+            src.push('}');
+        }
+        let err = parse(&src).unwrap_err();
+        assert!(err.msg.contains("MaxNestingDepth"));
+    }
+
+    #[test]
+    fn deep_list_nesting_past_limit_is_rejected() {
+        // `[` nesting also counts.
+        let mut src = String::from("xs = ");
+        for _ in 0..200 {
+            src.push('[');
+        }
+        for _ in 0..200 {
+            src.push(']');
+        }
+        let err = parse(&src).unwrap_err();
+        assert!(
+            err.msg.contains("MaxNestingDepth"),
+            "expected depth error, got: {}",
+            err.msg
+        );
     }
 
     // ---------------- end-to-end ----------------

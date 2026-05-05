@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use crate::annotations::{find_null_mask_field, get_default, is_required};
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
+use crate::parser::MAX_NESTING_DEPTH;
 use crate::result::Presence;
 use crate::token::{Position, Token, TokenKind};
 
@@ -149,6 +150,12 @@ struct Decoder<'a> {
     type_resolver: Option<&'a dyn TypeResolver>,
     presence: Option<Presence>,
     path_prefix: String,
+    /// Live `{` + `[` depth, mirrors the parser's counter. Capped at
+    /// [`MAX_NESTING_DEPTH`] per HARDENING.md §Recursion. Threaded across
+    /// `decode_fields` / `decode_list_inline` / `decode_map_inline` /
+    /// `decode_any_inner` so adversarial deep input rejects before the
+    /// recursive descent overflows the native stack.
+    depth: usize,
 }
 
 impl<'a> Decoder<'a> {
@@ -169,7 +176,23 @@ impl<'a> Decoder<'a> {
                 None
             },
             path_prefix: String::new(),
+            depth: 0,
         }
+    }
+
+    fn enter(&mut self) -> Result<(), PxfError> {
+        if self.depth >= MAX_NESTING_DEPTH {
+            return Err(self.err(format!(
+                "nesting depth exceeds MaxNestingDepth ({})",
+                MAX_NESTING_DEPTH
+            )));
+        }
+        self.depth += 1;
+        Ok(())
+    }
+
+    fn leave(&mut self) {
+        self.depth -= 1;
     }
 
     fn into_presence(self) -> Presence {
@@ -206,6 +229,25 @@ impl<'a> Decoder<'a> {
     }
 
     fn decode_fields(
+        &mut self,
+        msg: &mut DynamicMessage,
+        in_block: bool,
+    ) -> Result<(), PxfError> {
+        // The `{` itself was consumed by the caller before re-entering
+        // decode_fields with in_block=true; increment depth here so that the
+        // counter reflects open `{` blocks across all nested-message paths
+        // (decode_field_value, list elements, map values, Any payloads).
+        if in_block {
+            self.enter()?;
+        }
+        let result = self.decode_fields_inner(msg, in_block);
+        if in_block {
+            self.leave();
+        }
+        result
+    }
+
+    fn decode_fields_inner(
         &mut self,
         msg: &mut DynamicMessage,
         in_block: bool,
@@ -434,6 +476,7 @@ impl<'a> Decoder<'a> {
                 fd.name()
             )));
         }
+        self.enter()?;
         self.advance();
 
         let mut elems: Vec<Value> = Vec::new();
@@ -471,6 +514,7 @@ impl<'a> Decoder<'a> {
             return Err(self.err(format!("expected ']', got {}", self.current.kind)));
         }
         self.advance();
+        self.leave();
 
         msg.set_field(fd, Value::List(elems));
         Ok(())
@@ -486,6 +530,7 @@ impl<'a> Decoder<'a> {
                 self.err(format!("expected '{{' for map field {:?}", fd.name())),
             );
         }
+        self.enter()?;
         self.advance();
 
         let map_entry_desc = match fd.kind() {
@@ -559,6 +604,7 @@ impl<'a> Decoder<'a> {
             return Err(self.err(format!("expected '}}', got {}", self.current.kind)));
         }
         self.advance();
+        self.leave();
 
         msg.set_field(fd, Value::Map(map));
         Ok(())
