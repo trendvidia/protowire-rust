@@ -1,0 +1,9 @@
+// Local fixture for HARDENING.md §Recursion conformance.
+// Tree is self-recursive — used to drive the decoder's MaxNestingDepth cap.
+syntax = "proto3";
+package hardening_test.v1;
+
+message Tree {
+  Tree child = 1;
+  string label = 2;
+}

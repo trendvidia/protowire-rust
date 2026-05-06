@@ -6,6 +6,12 @@
 
 use thiserror::Error;
 
+/// HARDENING.md `MaxNestingDepth` — applies to PB submessage / group / map-entry
+/// nesting. Rejection happens before recursing into the inner message, so a
+/// 100k-deep adversarial input becomes a clean `Err(DepthExceeded)` instead
+/// of a stack-overflow abort.
+pub const MAX_NESTING_DEPTH: usize = 100;
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("truncated varint")]
@@ -30,6 +36,8 @@ pub enum Error {
     NestedExceedsBuffer,
     #[error("message overran (pos={pos}, end={end})")]
     Overrun { pos: usize, end: usize },
+    #[error("nesting depth exceeds MaxNestingDepth ({0})")]
+    DepthExceeded(usize),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -171,11 +179,16 @@ impl Writer {
 pub struct Reader<'a> {
     pub(crate) data: &'a [u8],
     pub pos: usize,
+    /// Live recursion depth, incremented by `read_message` when entering a
+    /// nested submessage and decremented on exit. The depth survives across
+    /// `merge_field` calls so a `Message` impl that hands the same `Reader`
+    /// to a fresh `read_message` cannot reset it to zero.
+    pub(crate) depth: usize,
 }
 
 impl<'a> Reader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data, pos: 0 }
+        Self { data, pos: 0, depth: 0 }
     }
 
     pub fn data(&self) -> &'a [u8] {
@@ -256,14 +269,32 @@ impl<'a> Reader<'a> {
     }
 
     /// Length-prefixed bytes; returns a borrow into the underlying buffer.
+    ///
+    /// Guards against attacker-supplied length-prefix overflow per
+    /// HARDENING.md §API contract item 3: a 10-byte varint of `2^64-1`
+    /// would wrap `pos + len` to a small value and slip past a naive
+    /// bounds check, then trip a slice-indexing panic. Compute the end
+    /// offset with `checked_add` and reject before slicing.
     pub fn bytes_view(&mut self) -> Result<&'a [u8]> {
-        let len = self.varint()? as usize;
-        if self.pos + len > self.data.len() {
+        let len = self.read_length()?;
+        let end = self.pos + len;
+        let view = &self.data[self.pos..end];
+        self.pos = end;
+        Ok(view)
+    }
+
+    /// Read a varint length and validate it fits in the remaining buffer.
+    /// Returns the length as `usize` ready for slicing. Used by every
+    /// length-delimited consumer (`bytes_view`, `skip`, `read_message`)
+    /// so the overflow guard exists in exactly one place.
+    fn read_length(&mut self) -> Result<usize> {
+        let len = self.varint()?;
+        let len = usize::try_from(len).map_err(|_| Error::TruncatedLengthDelim)?;
+        let end = self.pos.checked_add(len).ok_or(Error::TruncatedLengthDelim)?;
+        if end > self.data.len() {
             return Err(Error::TruncatedLengthDelim);
         }
-        let view = &self.data[self.pos..self.pos + len];
-        self.pos += len;
-        Ok(view)
+        Ok(len)
     }
 
     /// UTF-8 length-prefixed string.
@@ -296,10 +327,7 @@ impl<'a> Reader<'a> {
                 self.pos += 8;
             }
             WireType::LengthDelimited => {
-                let len = self.varint()? as usize;
-                if self.pos + len > self.data.len() {
-                    return Err(Error::TruncatedLengthDelim);
-                }
+                let len = self.read_length()?;
                 self.pos += len;
             }
             WireType::Fixed32 => {
@@ -496,5 +524,28 @@ mod tests {
     fn truncated_varint_is_rejected() {
         let mut r = Reader::new(&[0x80]);
         assert!(matches!(r.varint(), Err(Error::TruncatedVarint)));
+    }
+
+    #[test]
+    fn length_prefix_max_varint_does_not_overflow() {
+        // tag(1, LengthDelimited) + 10-byte u64::MAX varint length.
+        // Naive `pos + len > data.len()` would wrap and slip past the
+        // bounds check, then panic on the slice. HARDENING.md §API
+        // contract requires a clean reject.
+        let mut bytes = vec![0x0a];
+        // u64::MAX as a 10-byte varint
+        bytes.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]);
+        let mut r = Reader::new(&bytes);
+        let (_, _) = r.tag().unwrap();
+        assert!(matches!(r.bytes_view(), Err(Error::TruncatedLengthDelim)));
+    }
+
+    #[test]
+    fn length_prefix_overflow_during_skip_does_not_panic() {
+        let mut bytes = vec![0x0a];
+        bytes.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]);
+        let mut r = Reader::new(&bytes);
+        let (_, wt) = r.tag().unwrap();
+        assert!(matches!(r.skip(wt), Err(Error::TruncatedLengthDelim)));
     }
 }

@@ -9,6 +9,7 @@ members = [
     "crates/dump-envelope",
     "crates/bench-pxf",
     "crates/bench-sbe",
+    "crates/check-decode",
 ]
 
 [workspace.package]
@@ -19,11 +20,11 @@ repository = "https://github.com/trendvidia/protowire-rust"
 authors = ["Trendvidia"]
 
 [workspace.dependencies]
-protowire = { path = "crates/protowire", version = "0.0.0" }
-protowire-pb = { path = "crates/protowire-pb", version = "0.0.0" }
-protowire-envelope = { path = "crates/protowire-envelope", version = "0.0.0" }
-protowire-pxf = { path = "crates/protowire-pxf", version = "0.0.0" }
-protowire-sbe = { path = "crates/protowire-sbe", version = "0.0.0" }
+protowire = { path = "crates/protowire", version = "0.70.0" }
+protowire-pb = { path = "crates/protowire-pb", version = "0.70.0" }
+protowire-envelope = { path = "crates/protowire-envelope", version = "0.70.0" }
+protowire-pxf = { path = "crates/protowire-pxf", version = "0.70.0" }
+protowire-sbe = { path = "crates/protowire-sbe", version = "0.70.0" }
 
 prost = "0.13"
 prost-build = "0.13"
