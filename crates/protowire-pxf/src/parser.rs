@@ -78,7 +78,11 @@ impl<'a> Parser<'a> {
 
         let mut entries = Vec::new();
         while !matches!(self.current.kind, TokenKind::Eof) {
-            entries.push(self.parse_entry()?);
+            // Top-level: only field_entry is allowed. The document represents
+            // a proto message, never a map<K,V>; map_entry (`:` form) is
+            // reserved for the inside of a '{ ... }' block. See
+            // docs/grammar.ebnf -> document.
+            entries.push(self.parse_entry(false)?);
         }
         Ok(Document {
             type_url,
@@ -87,7 +91,9 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_entry(&mut self) -> Result<Entry, PxfError> {
+    /// `allow_map_entry` gates the `:` (map-entry) form: false at document
+    /// top level, true inside any '{ ... }' block.
+    fn parse_entry(&mut self, allow_map_entry: bool) -> Result<Entry, PxfError> {
         let leading_comments = self.flush_comments();
         let pos = self.current.pos;
         let k = self.current.kind;
@@ -102,11 +108,25 @@ impl<'a> Parser<'a> {
                 ),
             ));
         }
+        let key_kind = k;
         let key = std::mem::take(&mut self.current.value);
         self.advance();
 
         match self.current.kind {
             TokenKind::Equals => {
+                // `=` denotes a field assignment on a proto message; the key
+                // must be an identifier. Map-style keys (string / integer) are
+                // only valid with `:`.
+                if !matches!(key_kind, TokenKind::Ident) {
+                    return Err(PxfError::new(
+                        pos,
+                        format!(
+                            "field assignment with '=' requires an identifier key, got {} ({:?}); use ':' for map entries",
+                            key_kind.name(),
+                            key
+                        ),
+                    ));
+                }
                 self.advance();
                 let value = self.parse_value()?;
                 Ok(Entry::Assignment(Assignment {
@@ -118,6 +138,14 @@ impl<'a> Parser<'a> {
                 }))
             }
             TokenKind::Colon => {
+                // Map entry. Only allowed inside a '{ ... }' block, never at
+                // document top level.
+                if !allow_map_entry {
+                    return Err(PxfError::new(
+                        pos,
+                        "map entry (':' form) is only allowed inside a '{ … }' block; use '=' for top-level field assignments".to_string(),
+                    ));
+                }
                 self.advance();
                 let value = self.parse_value()?;
                 Ok(Entry::MapEntry(MapEntry {
@@ -129,6 +157,18 @@ impl<'a> Parser<'a> {
                 }))
             }
             TokenKind::LBrace => {
+                // `{ ... }` denotes a submessage field; same identifier-only
+                // rule as `=` applies.
+                if !matches!(key_kind, TokenKind::Ident) {
+                    return Err(PxfError::new(
+                        pos,
+                        format!(
+                            "submessage block requires an identifier key, got {} ({:?})",
+                            key_kind.name(),
+                            key
+                        ),
+                    ));
+                }
                 self.advance();
                 let entries = self.parse_body()?;
                 Ok(Entry::Block(Block {
@@ -241,7 +281,9 @@ impl<'a> Parser<'a> {
     fn parse_body(&mut self) -> Result<Vec<Entry>, PxfError> {
         let mut entries = Vec::new();
         while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof) {
-            entries.push(self.parse_entry()?);
+            // Inside a '{ ... }' block both forms are accepted; the schema
+            // layer disambiguates submessage vs map<K,V>.
+            entries.push(self.parse_entry(true)?);
         }
         if !matches!(self.current.kind, TokenKind::RBrace) {
             return Err(PxfError::new(
