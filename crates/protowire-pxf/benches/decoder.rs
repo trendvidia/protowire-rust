@@ -8,7 +8,9 @@
 //!
 //! Run with `cargo bench -p protowire-pxf` (release profile is implicit).
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use std::hint::black_box;
+
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use prost_reflect::{DescriptorPool, MessageDescriptor};
 use protowire_pxf::{marshal, unmarshal, MarshalOptions, UnmarshalOptions};
 

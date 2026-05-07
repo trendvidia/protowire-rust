@@ -58,6 +58,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+      # Generate Cargo.lock under stable so the resolver picks
+      # MSRV-compatible versions before pinning to 1.74. The lockfile is
+      # not committed to the repo (criterion 0.8 needs Rust >= 1.88, so a
+      # single committed lockfile can't satisfy both stable and MSRV
+      # builds without --ignore-rust-version games). The MSRV job only
+      # builds non-dev targets, so dev-only deps like criterion never
+      # need to compile under 1.74.
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo generate-lockfile
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.74"
