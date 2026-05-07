@@ -215,6 +215,9 @@ fn composite_descriptor(fd: &FieldDescriptor) -> prost_reflect::MessageDescripto
 fn group_element_descriptor(fd: &FieldDescriptor) -> prost_reflect::MessageDescriptor {
     match fd.kind() {
         Kind::Message(m) => m,
-        _ => panic!("group element descriptor on non-message field {}", fd.name()),
+        _ => panic!(
+            "group element descriptor on non-message field {}",
+            fd.name()
+        ),
     }
 }

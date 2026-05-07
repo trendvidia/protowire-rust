@@ -62,7 +62,11 @@ pub fn proto_to_xml(file: &FileDescriptor) -> Result<String, SbeError> {
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     out.push_str("<sbe:messageSchema xmlns:sbe=\"http://fixprotocol.io/2016/sbe\"\n");
-    let _ = writeln!(out, "                   package=\"{}\"", file.package_name());
+    let _ = writeln!(
+        out,
+        "                   package=\"{}\"",
+        file.package_name()
+    );
     let _ = writeln!(out, "                   id=\"{}\"", schema_id);
     let _ = writeln!(out, "                   version=\"{}\"", version);
     out.push_str("                   byteOrder=\"littleEndian\">\n");
@@ -128,10 +132,24 @@ fn collect_types(
             }
             Kind::Message(sub) => {
                 if f.is_list() {
-                    collect_types(&sub, str_lengths, composites, composites_seen, enums, enums_seen);
+                    collect_types(
+                        &sub,
+                        str_lengths,
+                        composites,
+                        composites_seen,
+                        enums,
+                        enums_seen,
+                    );
                 } else if composites_seen.insert(sub.full_name().to_string()) {
                     composites.push(sub.clone());
-                    collect_types(&sub, str_lengths, composites, composites_seen, enums, enums_seen);
+                    collect_types(
+                        &sub,
+                        str_lengths,
+                        composites,
+                        composites_seen,
+                        enums,
+                        enums_seen,
+                    );
                 }
             }
             _ => {}

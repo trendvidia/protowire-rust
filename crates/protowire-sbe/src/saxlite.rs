@@ -71,9 +71,8 @@ pub fn parse_xml(input: &str, handler: &mut dyn SaxHandler) -> Result<(), SaxErr
             continue;
         }
         if starts_with(bytes, i, b"<?") {
-            let end = find(bytes, i + 2, b"?>").ok_or_else(|| {
-                SaxError::new("unterminated processing instruction", i)
-            })?;
+            let end = find(bytes, i + 2, b"?>")
+                .ok_or_else(|| SaxError::new("unterminated processing instruction", i))?;
             i = end + 2;
             continue;
         }

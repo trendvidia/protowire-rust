@@ -190,7 +190,11 @@ pub struct Reader<'a> {
 
 impl<'a> Reader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
-        Self { data, pos: 0, depth: 0 }
+        Self {
+            data,
+            pos: 0,
+            depth: 0,
+        }
     }
 
     pub fn data(&self) -> &'a [u8] {
@@ -292,7 +296,10 @@ impl<'a> Reader<'a> {
     fn read_length(&mut self) -> Result<usize> {
         let len = self.varint()?;
         let len = usize::try_from(len).map_err(|_| Error::TruncatedLengthDelim)?;
-        let end = self.pos.checked_add(len).ok_or(Error::TruncatedLengthDelim)?;
+        let end = self
+            .pos
+            .checked_add(len)
+            .ok_or(Error::TruncatedLengthDelim)?;
         if end > self.data.len() {
             return Err(Error::TruncatedLengthDelim);
         }
@@ -422,7 +429,7 @@ mod tests {
             let mut w = Writer::new();
             w.zigzag64(v);
             let bytes = w.finish();
-        let mut r = Reader::new(&bytes);
+            let mut r = Reader::new(&bytes);
             assert_eq!(r.zigzag64().unwrap(), v);
         }
     }
@@ -433,7 +440,7 @@ mod tests {
             let mut w = Writer::new();
             w.fixed32(v);
             let bytes = w.finish();
-        let mut r = Reader::new(&bytes);
+            let mut r = Reader::new(&bytes);
             assert_eq!(r.fixed32().unwrap(), v);
         }
     }
@@ -444,7 +451,7 @@ mod tests {
             let mut w = Writer::new();
             w.fixed64(v);
             let bytes = w.finish();
-        let mut r = Reader::new(&bytes);
+            let mut r = Reader::new(&bytes);
             assert_eq!(r.fixed64().unwrap(), v);
         }
     }

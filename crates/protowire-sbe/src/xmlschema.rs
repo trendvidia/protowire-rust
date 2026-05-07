@@ -180,10 +180,12 @@ impl SaxHandler for SchemaBuilder {
             "validValue" => {
                 self.text_buf.clear();
                 if let Some(idx) = self.current_enum {
-                    self.schema.types.enums[idx].valid_values.push(XmlValidValue {
-                        name: attrs.get("name").cloned().unwrap_or_default(),
-                        value: String::new(),
-                    });
+                    self.schema.types.enums[idx]
+                        .valid_values
+                        .push(XmlValidValue {
+                            name: attrs.get("name").cloned().unwrap_or_default(),
+                            value: String::new(),
+                        });
                     self.current_valid_value = true;
                 }
             }
@@ -237,7 +239,10 @@ impl SaxHandler for SchemaBuilder {
         let popped = self.stack.pop().unwrap_or_default();
         if popped != name {
             return Err(SaxError::new(
-                format!("sbe-xml: close mismatch: got </{}>, expected </{}>", name, popped),
+                format!(
+                    "sbe-xml: close mismatch: got </{}>, expected </{}>",
+                    name, popped
+                ),
                 0,
             ));
         }

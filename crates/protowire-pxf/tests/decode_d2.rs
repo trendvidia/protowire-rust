@@ -37,7 +37,10 @@ fn expect_err(input: &str) -> PxfError {
     }
 }
 
-fn map_of(msg: &prost_reflect::DynamicMessage, name: &str) -> std::collections::HashMap<MapKey, Value> {
+fn map_of(
+    msg: &prost_reflect::DynamicMessage,
+    name: &str,
+) -> std::collections::HashMap<MapKey, Value> {
     let fd = msg
         .descriptor()
         .get_field_by_name(name)
@@ -245,7 +248,5 @@ fn wrapper_block_syntax_still_works() {
     let m = decode(r#"nullable_string { value = "explicit" }"#);
     let w = message_field(&m, "nullable_string");
     let v_fd = w.descriptor().get_field_by_name("value").unwrap();
-    assert!(
-        matches!(w.get_field(&v_fd).into_owned(), Value::String(s) if s == "explicit"),
-    );
+    assert!(matches!(w.get_field(&v_fd).into_owned(), Value::String(s) if s == "explicit"),);
 }

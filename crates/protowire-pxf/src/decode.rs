@@ -230,11 +230,7 @@ impl<'a> Decoder<'a> {
         PxfError::new(pos, msg)
     }
 
-    fn decode_fields(
-        &mut self,
-        msg: &mut DynamicMessage,
-        in_block: bool,
-    ) -> Result<(), PxfError> {
+    fn decode_fields(&mut self, msg: &mut DynamicMessage, in_block: bool) -> Result<(), PxfError> {
         // The `{` itself was consumed by the caller before re-entering
         // decode_fields with in_block=true; increment depth here so that the
         // counter reflects open `{` blocks across all nested-message paths
@@ -435,10 +431,7 @@ impl<'a> Decoder<'a> {
                 return Ok(());
             }
             if !matches!(self.current.kind, TokenKind::LBrace) {
-                return Err(self.err(format!(
-                    "expected '{{' for message field {:?}",
-                    fd.name()
-                )));
+                return Err(self.err(format!("expected '{{' for message field {:?}", fd.name())));
             }
             self.advance();
             if is_any_full_name(sub.descriptor().full_name())
@@ -473,10 +466,7 @@ impl<'a> Decoder<'a> {
         fd: &FieldDescriptor,
     ) -> Result<(), PxfError> {
         if !matches!(self.current.kind, TokenKind::LBracket) {
-            return Err(self.err(format!(
-                "expected '[' for repeated field {:?}",
-                fd.name()
-            )));
+            return Err(self.err(format!("expected '[' for repeated field {:?}", fd.name())));
         }
         self.enter()?;
         self.advance();
@@ -528,9 +518,7 @@ impl<'a> Decoder<'a> {
         fd: &FieldDescriptor,
     ) -> Result<(), PxfError> {
         if !matches!(self.current.kind, TokenKind::LBrace) {
-            return Err(
-                self.err(format!("expected '{{' for map field {:?}", fd.name())),
-            );
+            return Err(self.err(format!("expected '{{' for map field {:?}", fd.name())));
         }
         self.enter()?;
         self.advance();
@@ -637,10 +625,7 @@ impl<'a> Decoder<'a> {
         self.advance();
 
         let inner_desc = resolver.find_message_by_url(&type_url).ok_or_else(|| {
-            PxfError::new(
-                url_pos,
-                format!("cannot resolve Any type {:?}", type_url),
-            )
+            PxfError::new(url_pos, format!("cannot resolve Any type {:?}", type_url))
         })?;
         let mut inner = DynamicMessage::new(inner_desc);
         self.decode_fields(&mut inner, true)?;
@@ -659,10 +644,7 @@ impl<'a> Decoder<'a> {
         let value_fd = target_desc.get_field_by_name("value").ok_or_else(|| {
             PxfError::new(
                 url_pos,
-                format!(
-                    "internal: {} missing value field",
-                    target_desc.full_name()
-                ),
+                format!("internal: {} missing value field", target_desc.full_name()),
             )
         })?;
         target.set_field(&type_url_fd, Value::String(type_url));
@@ -677,32 +659,35 @@ impl<'a> Decoder<'a> {
         let desc = target.descriptor();
         let full = desc.full_name().to_string();
 
-        if full == "google.protobuf.Timestamp"
-            && matches!(self.current.kind, TokenKind::Timestamp)
+        if full == "google.protobuf.Timestamp" && matches!(self.current.kind, TokenKind::Timestamp)
         {
             let pos = self.current.pos;
             let (seconds, nanos) = parse_rfc3339(&self.current.value).map_err(|e| {
-                PxfError::new(pos, format!("invalid timestamp {:?}: {}", self.current.value, e))
+                PxfError::new(
+                    pos,
+                    format!("invalid timestamp {:?}: {}", self.current.value, e),
+                )
             })?;
             set_seconds_nanos(target, seconds, nanos);
             self.advance();
             return Ok(true);
         }
-        if full == "google.protobuf.Duration"
-            && matches!(self.current.kind, TokenKind::Duration)
-        {
+        if full == "google.protobuf.Duration" && matches!(self.current.kind, TokenKind::Duration) {
             let pos = self.current.pos;
             let (seconds, nanos) = parse_go_duration(&self.current.value).map_err(|e| {
-                PxfError::new(pos, format!("invalid duration {:?}: {}", self.current.value, e))
+                PxfError::new(
+                    pos,
+                    format!("invalid duration {:?}: {}", self.current.value, e),
+                )
             })?;
             set_seconds_nanos(target, seconds, nanos);
             self.advance();
             return Ok(true);
         }
         if is_wrapper_full_name(&full) && !matches!(self.current.kind, TokenKind::LBrace) {
-            let value_fd = desc
-                .get_field_by_name("value")
-                .ok_or_else(|| self.err(format!("internal: wrapper {} missing 'value' field", full)))?;
+            let value_fd = desc.get_field_by_name("value").ok_or_else(|| {
+                self.err(format!("internal: wrapper {} missing 'value' field", full))
+            })?;
             let v = self.consume_scalar(&value_fd)?;
             target.set_field(&value_fd, v);
             return Ok(true);
@@ -736,40 +721,33 @@ impl<'a> Decoder<'a> {
             }
             Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => {
                 if !matches!(self.current.kind, TokenKind::Int) {
-                    return Err(self.err_at(
-                        pos,
-                        format!("expected integer for field {:?}", fd.name()),
-                    ));
+                    return Err(
+                        self.err_at(pos, format!("expected integer for field {:?}", fd.name()))
+                    );
                 }
-                let n: i32 = self
-                    .current
-                    .value
-                    .parse()
-                    .map_err(|_| self.err_at(pos, format!("invalid int32: {}", self.current.value)))?;
+                let n: i32 = self.current.value.parse().map_err(|_| {
+                    self.err_at(pos, format!("invalid int32: {}", self.current.value))
+                })?;
                 self.advance();
                 Ok(Value::I32(n))
             }
             Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => {
                 if !matches!(self.current.kind, TokenKind::Int) {
-                    return Err(self.err_at(
-                        pos,
-                        format!("expected integer for field {:?}", fd.name()),
-                    ));
+                    return Err(
+                        self.err_at(pos, format!("expected integer for field {:?}", fd.name()))
+                    );
                 }
-                let n: i64 = self
-                    .current
-                    .value
-                    .parse()
-                    .map_err(|_| self.err_at(pos, format!("invalid int64: {}", self.current.value)))?;
+                let n: i64 = self.current.value.parse().map_err(|_| {
+                    self.err_at(pos, format!("invalid int64: {}", self.current.value))
+                })?;
                 self.advance();
                 Ok(Value::I64(n))
             }
             Kind::Uint32 | Kind::Fixed32 => {
                 if !matches!(self.current.kind, TokenKind::Int) {
-                    return Err(self.err_at(
-                        pos,
-                        format!("expected integer for field {:?}", fd.name()),
-                    ));
+                    return Err(
+                        self.err_at(pos, format!("expected integer for field {:?}", fd.name()))
+                    );
                 }
                 let n: u32 = self.current.value.parse().map_err(|_| {
                     self.err_at(pos, format!("invalid uint32: {}", self.current.value))
@@ -779,10 +757,9 @@ impl<'a> Decoder<'a> {
             }
             Kind::Uint64 | Kind::Fixed64 => {
                 if !matches!(self.current.kind, TokenKind::Int) {
-                    return Err(self.err_at(
-                        pos,
-                        format!("expected integer for field {:?}", fd.name()),
-                    ));
+                    return Err(
+                        self.err_at(pos, format!("expected integer for field {:?}", fd.name()))
+                    );
                 }
                 let n: u64 = self.current.value.parse().map_err(|_| {
                     self.err_at(pos, format!("invalid uint64: {}", self.current.value))
@@ -792,10 +769,9 @@ impl<'a> Decoder<'a> {
             }
             Kind::Float => {
                 if !matches!(self.current.kind, TokenKind::Float | TokenKind::Int) {
-                    return Err(self.err_at(
-                        pos,
-                        format!("expected number for field {:?}", fd.name()),
-                    ));
+                    return Err(
+                        self.err_at(pos, format!("expected number for field {:?}", fd.name()))
+                    );
                 }
                 let f: f32 = self.current.value.parse().map_err(|_| {
                     self.err_at(pos, format!("invalid float: {}", self.current.value))
@@ -805,10 +781,9 @@ impl<'a> Decoder<'a> {
             }
             Kind::Double => {
                 if !matches!(self.current.kind, TokenKind::Float | TokenKind::Int) {
-                    return Err(self.err_at(
-                        pos,
-                        format!("expected number for field {:?}", fd.name()),
-                    ));
+                    return Err(
+                        self.err_at(pos, format!("expected number for field {:?}", fd.name()))
+                    );
                 }
                 let f: f64 = self.current.value.parse().map_err(|_| {
                     self.err_at(pos, format!("invalid double: {}", self.current.value))
@@ -823,10 +798,7 @@ impl<'a> Decoder<'a> {
                     );
                 }
                 let decoded = decode_base64(&self.current.value).ok_or_else(|| {
-                    self.err_at(
-                        pos,
-                        format!("invalid base64 for field {:?}", fd.name()),
-                    )
+                    self.err_at(pos, format!("invalid base64 for field {:?}", fd.name()))
                 })?;
                 self.advance();
                 Ok(Value::Bytes(decoded.into()))
@@ -855,35 +827,31 @@ impl<'a> Decoder<'a> {
         };
         match self.current.kind {
             TokenKind::Ident => {
-                let ev = enum_desc.get_value_by_name(&self.current.value).ok_or_else(|| {
-                    self.err_at(
-                        pos,
-                        format!(
-                            "unknown enum value {:?} for {}",
-                            self.current.value,
-                            enum_desc.full_name()
-                        ),
-                    )
-                })?;
+                let ev = enum_desc
+                    .get_value_by_name(&self.current.value)
+                    .ok_or_else(|| {
+                        self.err_at(
+                            pos,
+                            format!(
+                                "unknown enum value {:?} for {}",
+                                self.current.value,
+                                enum_desc.full_name()
+                            ),
+                        )
+                    })?;
                 self.advance();
                 Ok(Value::EnumNumber(ev.number()))
             }
             TokenKind::Int => {
                 let n: i32 = self.current.value.parse().map_err(|_| {
-                    self.err_at(
-                        pos,
-                        format!("invalid enum number: {}", self.current.value),
-                    )
+                    self.err_at(pos, format!("invalid enum number: {}", self.current.value))
                 })?;
                 self.advance();
                 Ok(Value::EnumNumber(n))
             }
             _ => Err(self.err_at(
                 pos,
-                format!(
-                    "expected enum name or number for field {:?}",
-                    fd.name()
-                ),
+                format!("expected enum name or number for field {:?}", fd.name()),
             )),
         }
     }
@@ -1006,11 +974,7 @@ fn apply_default(
         let n: i32 = def.parse().map_err(|_| {
             PxfError::new(
                 pos,
-                format!(
-                    "invalid default enum {:?} for field {:?}",
-                    def,
-                    fd.name()
-                ),
+                format!("invalid default enum {:?} for field {:?}", def, fd.name()),
             )
         })?;
         parent.set_field(fd, Value::EnumNumber(n));
@@ -1024,11 +988,7 @@ fn apply_default(
     Ok(())
 }
 
-fn parse_scalar_default(
-    fd: &FieldDescriptor,
-    def: &str,
-    pos: Position,
-) -> Result<Value, PxfError> {
+fn parse_scalar_default(fd: &FieldDescriptor, def: &str, pos: Position) -> Result<Value, PxfError> {
     fn err(pos: Position, kind: &str, def: &str, name: &str) -> PxfError {
         PxfError::new(
             pos,
@@ -1039,30 +999,20 @@ fn parse_scalar_default(
     Ok(match fd.kind() {
         Kind::String => Value::String(def.to_string()),
         Kind::Bool => Value::Bool(def == "true"),
-        Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => Value::I32(
-            def.parse()
-                .map_err(|_| err(pos, "int32", def, name))?,
-        ),
-        Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => Value::I64(
-            def.parse()
-                .map_err(|_| err(pos, "int64", def, name))?,
-        ),
-        Kind::Uint32 | Kind::Fixed32 => Value::U32(
-            def.parse()
-                .map_err(|_| err(pos, "uint32", def, name))?,
-        ),
-        Kind::Uint64 | Kind::Fixed64 => Value::U64(
-            def.parse()
-                .map_err(|_| err(pos, "uint64", def, name))?,
-        ),
-        Kind::Float => Value::F32(
-            def.parse()
-                .map_err(|_| err(pos, "float", def, name))?,
-        ),
-        Kind::Double => Value::F64(
-            def.parse()
-                .map_err(|_| err(pos, "double", def, name))?,
-        ),
+        Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => {
+            Value::I32(def.parse().map_err(|_| err(pos, "int32", def, name))?)
+        }
+        Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => {
+            Value::I64(def.parse().map_err(|_| err(pos, "int64", def, name))?)
+        }
+        Kind::Uint32 | Kind::Fixed32 => {
+            Value::U32(def.parse().map_err(|_| err(pos, "uint32", def, name))?)
+        }
+        Kind::Uint64 | Kind::Fixed64 => {
+            Value::U64(def.parse().map_err(|_| err(pos, "uint64", def, name))?)
+        }
+        Kind::Float => Value::F32(def.parse().map_err(|_| err(pos, "float", def, name))?),
+        Kind::Double => Value::F64(def.parse().map_err(|_| err(pos, "double", def, name))?),
         Kind::Bytes => Value::Bytes(
             decode_base64(def)
                 .ok_or_else(|| err(pos, "bytes", def, name))?
@@ -1097,7 +1047,12 @@ fn apply_message_default(
         let (s, n) = parse_rfc3339(def).map_err(|e| {
             PxfError::new(
                 pos,
-                format!("invalid default timestamp {:?} for field {:?}: {}", def, fd.name(), e),
+                format!(
+                    "invalid default timestamp {:?} for field {:?}: {}",
+                    def,
+                    fd.name(),
+                    e
+                ),
             )
         })?;
         set_seconds_nanos(&mut sub, s, n);
@@ -1108,7 +1063,12 @@ fn apply_message_default(
         let (s, n) = parse_go_duration(def).map_err(|e| {
             PxfError::new(
                 pos,
-                format!("invalid default duration {:?} for field {:?}: {}", def, fd.name(), e),
+                format!(
+                    "invalid default duration {:?} for field {:?}: {}",
+                    def,
+                    fd.name(),
+                    e
+                ),
             )
         })?;
         set_seconds_nanos(&mut sub, s, n);
@@ -1116,15 +1076,12 @@ fn apply_message_default(
         return Ok(());
     }
     if is_wrapper_full_name(&full) {
-        let value_fd = sub
-            .descriptor()
-            .get_field_by_name("value")
-            .ok_or_else(|| {
-                PxfError::new(
-                    pos,
-                    format!("internal: wrapper {} missing 'value' field", full),
-                )
-            })?;
+        let value_fd = sub.descriptor().get_field_by_name("value").ok_or_else(|| {
+            PxfError::new(
+                pos,
+                format!("internal: wrapper {} missing 'value' field", full),
+            )
+        })?;
         let v = parse_scalar_default(&value_fd, def, pos)?;
         sub.set_field(&value_fd, v);
         parent.set_field(fd, Value::Message(sub));
@@ -1176,27 +1133,27 @@ fn decode_map_key(
     match key_fd.kind() {
         Kind::String => Ok(MapKey::String(key)),
         Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => {
-            let n: i32 = key.parse().map_err(|_| {
-                PxfError::new(pos, format!("invalid int32 map key: {}", key))
-            })?;
+            let n: i32 = key
+                .parse()
+                .map_err(|_| PxfError::new(pos, format!("invalid int32 map key: {}", key)))?;
             Ok(MapKey::I32(n))
         }
         Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => {
-            let n: i64 = key.parse().map_err(|_| {
-                PxfError::new(pos, format!("invalid int64 map key: {}", key))
-            })?;
+            let n: i64 = key
+                .parse()
+                .map_err(|_| PxfError::new(pos, format!("invalid int64 map key: {}", key)))?;
             Ok(MapKey::I64(n))
         }
         Kind::Uint32 | Kind::Fixed32 => {
-            let n: u32 = key.parse().map_err(|_| {
-                PxfError::new(pos, format!("invalid uint32 map key: {}", key))
-            })?;
+            let n: u32 = key
+                .parse()
+                .map_err(|_| PxfError::new(pos, format!("invalid uint32 map key: {}", key)))?;
             Ok(MapKey::U32(n))
         }
         Kind::Uint64 | Kind::Fixed64 => {
-            let n: u64 = key.parse().map_err(|_| {
-                PxfError::new(pos, format!("invalid uint64 map key: {}", key))
-            })?;
+            let n: u64 = key
+                .parse()
+                .map_err(|_| PxfError::new(pos, format!("invalid uint64 map key: {}", key)))?;
             Ok(MapKey::U64(n))
         }
         Kind::Bool => match key.as_str() {

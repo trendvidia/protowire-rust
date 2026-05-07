@@ -68,12 +68,10 @@ impl<'a> View<'a> {
         Ok(match ft.encoding.expect("scalar field has encoding") {
             SbeEncoding::Int8 => (block[off] as i8) as i64,
             SbeEncoding::Int16 => i16::from_le_bytes([block[off], block[off + 1]]) as i64,
-            SbeEncoding::Int32 => i32::from_le_bytes([
-                block[off],
-                block[off + 1],
-                block[off + 2],
-                block[off + 3],
-            ]) as i64,
+            SbeEncoding::Int32 => {
+                i32::from_le_bytes([block[off], block[off + 1], block[off + 2], block[off + 3]])
+                    as i64
+            }
             SbeEncoding::Int64 => {
                 let mut b = [0u8; 8];
                 b.copy_from_slice(&block[off..off + 8]);
@@ -96,12 +94,10 @@ impl<'a> View<'a> {
         Ok(match ft.encoding.expect("scalar field has encoding") {
             SbeEncoding::Uint8 => block[off] as u64,
             SbeEncoding::Uint16 => u16::from_le_bytes([block[off], block[off + 1]]) as u64,
-            SbeEncoding::Uint32 => u32::from_le_bytes([
-                block[off],
-                block[off + 1],
-                block[off + 2],
-                block[off + 3],
-            ]) as u64,
+            SbeEncoding::Uint32 => {
+                u32::from_le_bytes([block[off], block[off + 1], block[off + 2], block[off + 3]])
+                    as u64
+            }
             SbeEncoding::Uint64 => {
                 let mut b = [0u8; 8];
                 b.copy_from_slice(&block[off..off + 8]);
@@ -122,12 +118,10 @@ impl<'a> View<'a> {
         let off = ft.offset;
         let block = self.block();
         Ok(match ft.encoding.expect("scalar field has encoding") {
-            SbeEncoding::Float => f32::from_le_bytes([
-                block[off],
-                block[off + 1],
-                block[off + 2],
-                block[off + 3],
-            ]) as f64,
+            SbeEncoding::Float => {
+                f32::from_le_bytes([block[off], block[off + 1], block[off + 2], block[off + 3]])
+                    as f64
+            }
             SbeEncoding::Double => {
                 let mut b = [0u8; 8];
                 b.copy_from_slice(&block[off..off + 8]);

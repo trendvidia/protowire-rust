@@ -50,7 +50,10 @@ impl<'a> Parser<'a> {
         if self.depth >= MAX_NESTING_DEPTH {
             return Err(PxfError::new(
                 pos,
-                format!("nesting depth exceeds MaxNestingDepth ({})", MAX_NESTING_DEPTH),
+                format!(
+                    "nesting depth exceeds MaxNestingDepth ({})",
+                    MAX_NESTING_DEPTH
+                ),
             ));
         }
         self.depth += 1;
@@ -244,7 +247,10 @@ impl<'a> Parser<'a> {
             TokenKind::Bytes => {
                 let decoded = decode_base64(&self.current.value);
                 self.advance();
-                Ok(Value::Bytes(BytesVal { pos, value: decoded }))
+                Ok(Value::Bytes(BytesVal {
+                    pos,
+                    value: decoded,
+                }))
             }
             TokenKind::Timestamp => {
                 let raw = std::mem::take(&mut self.current.value);
@@ -694,7 +700,11 @@ mod tests {
     #[test]
     fn error_expected_after_key() {
         let err = parse("name xyz").unwrap_err();
-        assert!(err.msg.contains("expected '=', ':', or '{'"), "msg: {}", err.msg);
+        assert!(
+            err.msg.contains("expected '=', ':', or '{'"),
+            "msg: {}",
+            err.msg
+        );
     }
 
     #[test]

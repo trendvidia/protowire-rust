@@ -206,18 +206,18 @@ fn pxf_decode(input: &Path, schema: &str, proto: &Path) -> Result<(), String> {
 fn pb_decode(input: &Path, schema: &str) -> Result<(), String> {
     let bytes = std::fs::read(input).map_err(|e| format!("read input: {e}"))?;
     match schema {
-        "adversarial.v1.Tree" => {
-            pb_unmarshal::<Tree>(&bytes).map(|_| ()).map_err(|e| format!("pb: {e:?}"))
-        }
-        "adversarial.v1.StringHolder" => {
-            pb_unmarshal::<StringHolder>(&bytes).map(|_| ()).map_err(|e| format!("pb: {e:?}"))
-        }
-        "adversarial.v1.BytesHolder" => {
-            pb_unmarshal::<BytesHolder>(&bytes).map(|_| ()).map_err(|e| format!("pb: {e:?}"))
-        }
-        "adversarial.v1.BigIntHolder" => {
-            pb_unmarshal::<BigIntHolder>(&bytes).map(|_| ()).map_err(|e| format!("pb: {e:?}"))
-        }
+        "adversarial.v1.Tree" => pb_unmarshal::<Tree>(&bytes)
+            .map(|_| ())
+            .map_err(|e| format!("pb: {e:?}")),
+        "adversarial.v1.StringHolder" => pb_unmarshal::<StringHolder>(&bytes)
+            .map(|_| ())
+            .map_err(|e| format!("pb: {e:?}")),
+        "adversarial.v1.BytesHolder" => pb_unmarshal::<BytesHolder>(&bytes)
+            .map(|_| ())
+            .map_err(|e| format!("pb: {e:?}")),
+        "adversarial.v1.BigIntHolder" => pb_unmarshal::<BigIntHolder>(&bytes)
+            .map(|_| ())
+            .map_err(|e| format!("pb: {e:?}")),
         other => Err(format!("unknown schema for pb: {other}")),
     }
 }

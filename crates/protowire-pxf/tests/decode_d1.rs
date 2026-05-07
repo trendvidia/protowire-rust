@@ -198,9 +198,7 @@ fn nested_block_syntax() {
     let sub = nested_field(&m);
     let n_fd = nested().get_field_by_name("name").unwrap();
     let v_fd = nested().get_field_by_name("value").unwrap();
-    assert!(
-        matches!(sub.get_field(&n_fd).into_owned(), Value::String(s) if s == "alice"),
-    );
+    assert!(matches!(sub.get_field(&n_fd).into_owned(), Value::String(s) if s == "alice"),);
     assert!(matches!(sub.get_field(&v_fd).into_owned(), Value::I32(42)));
 }
 
@@ -210,9 +208,7 @@ fn nested_assignment_plus_block() {
     let sub = nested_field(&m);
     let n_fd = nested().get_field_by_name("name").unwrap();
     let v_fd = nested().get_field_by_name("value").unwrap();
-    assert!(
-        matches!(sub.get_field(&n_fd).into_owned(), Value::String(s) if s == "bob"),
-    );
+    assert!(matches!(sub.get_field(&n_fd).into_owned(), Value::String(s) if s == "bob"),);
     assert!(matches!(sub.get_field(&v_fd).into_owned(), Value::I32(7)));
 }
 
@@ -274,9 +270,7 @@ fn repeated_nested() {
         Value::Message(m) => m,
         v => panic!("expected message element, got {v:?}"),
     };
-    assert!(
-        matches!(first.get_field(&n_fd).into_owned(), Value::String(s) if s == "x"),
-    );
+    assert!(matches!(first.get_field(&n_fd).into_owned(), Value::String(s) if s == "x"),);
     let second = match &items[1] {
         Value::Message(m) => m,
         v => panic!("expected message element, got {v:?}"),
@@ -337,7 +331,8 @@ fn unknown_field_discard_skips_scalar() {
     let m = decode_with(
         "bogus_field = 1\nstring_field = \"ok\"",
         UnmarshalOptions {
-            discard_unknown: true, ..Default::default()
+            discard_unknown: true,
+            ..Default::default()
         },
     );
     match field_value(&m, "string_field").into_owned() {
@@ -351,7 +346,8 @@ fn unknown_field_discard_skips_block() {
     let m = decode_with(
         "bogus_block { a = 1 b { c = 2 } }\nstring_field = \"ok\"",
         UnmarshalOptions {
-            discard_unknown: true, ..Default::default()
+            discard_unknown: true,
+            ..Default::default()
         },
     );
     match field_value(&m, "string_field").into_owned() {
@@ -365,7 +361,8 @@ fn unknown_field_discard_skips_list() {
     let m = decode_with(
         "bogus_list = [1, 2, 3]\nstring_field = \"ok\"",
         UnmarshalOptions {
-            discard_unknown: true, ..Default::default()
+            discard_unknown: true,
+            ..Default::default()
         },
     );
     match field_value(&m, "string_field").into_owned() {

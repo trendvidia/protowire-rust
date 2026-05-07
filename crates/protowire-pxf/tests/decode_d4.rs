@@ -46,9 +46,7 @@ fn message_field<'a>(msg: &'a DynamicMessage, name: &str) -> &'a DynamicMessage 
 
 #[test]
 fn presence_marks_set_null_and_absent() {
-    let all_types = test_pool()
-        .get_message_by_name("test.v1.AllTypes")
-        .unwrap();
+    let all_types = test_pool().get_message_by_name("test.v1.AllTypes").unwrap();
     let (_, p) = unmarshal_full(
         "string_field = \"hi\"\nnullable_int = null",
         &all_types,
@@ -63,9 +61,7 @@ fn presence_marks_set_null_and_absent() {
 
 #[test]
 fn presence_tracks_dotted_paths_into_nested_messages() {
-    let all_types = test_pool()
-        .get_message_by_name("test.v1.AllTypes")
-        .unwrap();
+    let all_types = test_pool().get_message_by_name("test.v1.AllTypes").unwrap();
     let (_, p) = unmarshal_full(
         r#"nested_field { name = "alice" }"#,
         &all_types,

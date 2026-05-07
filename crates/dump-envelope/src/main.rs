@@ -21,12 +21,7 @@ fn main() {
     env.error
         .as_mut()
         .expect("err builder sets error")
-        .with_field(
-            "amount",
-            "MIN_VALUE",
-            "below minimum",
-            vec!["10.00".into()],
-        )
+        .with_field("amount", "MIN_VALUE", "below minimum", vec!["10.00".into()])
         .with_meta("request_id", "req-123");
 
     let bytes = marshal(&env);

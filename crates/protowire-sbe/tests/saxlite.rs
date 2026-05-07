@@ -61,7 +61,10 @@ fn open(name: &str, pairs: &[(&str, &str)]) -> Event {
 fn parses_open_and_close_tags_with_attributes() {
     assert_eq!(
         collect(r#"<root a="1" b='two'></root>"#),
-        vec![open("root", &[("a", "1"), ("b", "two")]), Event::Close("root".into())]
+        vec![
+            open("root", &[("a", "1"), ("b", "two")]),
+            Event::Close("root".into())
+        ]
     );
 }
 
@@ -126,7 +129,11 @@ fn preserves_whitespace_text_events_between_tags() {
 #[test]
 fn rejects_unterminated_comment() {
     let err = try_collect("<!-- oops").expect_err("unterminated comment");
-    assert!(err.message.contains("unterminated comment"), "{}", err.message);
+    assert!(
+        err.message.contains("unterminated comment"),
+        "{}",
+        err.message
+    );
 }
 
 #[test]
@@ -138,5 +145,9 @@ fn rejects_attribute_without_equals_sign() {
 #[test]
 fn rejects_attribute_without_quoted_value() {
     let err = try_collect("<x foo=1/>").expect_err("quoted value");
-    assert!(err.message.contains("expected quoted value"), "{}", err.message);
+    assert!(
+        err.message.contains("expected quoted value"),
+        "{}",
+        err.message
+    );
 }

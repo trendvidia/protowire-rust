@@ -7,8 +7,7 @@
 use prost::Message as _;
 use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor, Value};
 use protowire_pxf::{
-    marshal, unmarshal, unmarshal_full, MarshalOptions, PoolResolver, Presence,
-    UnmarshalOptions,
+    marshal, unmarshal, unmarshal_full, MarshalOptions, PoolResolver, Presence, UnmarshalOptions,
 };
 
 const TEST_FDS: &[u8] = include_bytes!("../testdata/test.binpb");
@@ -41,7 +40,10 @@ fn encode_default(m: &DynamicMessage, desc: &MessageDescriptor) -> String {
 #[test]
 fn scalars_emit_set_string_skip_zero_proto3() {
     let m = decode_to_all_types(r#"string_field = "hello""#);
-    assert_eq!(encode_default(&m, &all_types()), "string_field = \"hello\"\n");
+    assert_eq!(
+        encode_default(&m, &all_types()),
+        "string_field = \"hello\"\n"
+    );
 }
 
 #[test]
@@ -369,5 +371,9 @@ fn round_trip_decode_encode_decode_preserves_message() {
     let m1 = unmarshal(input, &desc, UnmarshalOptions::default()).expect("decode 1");
     let text = marshal(&m1, &desc, MarshalOptions::default());
     let m2 = unmarshal(&text, &desc, UnmarshalOptions::default()).expect("decode 2");
-    assert_eq!(m1.encode_to_vec(), m2.encode_to_vec(), "wire mismatch\n{text}");
+    assert_eq!(
+        m1.encode_to_vec(),
+        m2.encode_to_vec(),
+        "wire mismatch\n{text}"
+    );
 }

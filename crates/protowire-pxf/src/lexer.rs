@@ -181,7 +181,11 @@ impl<'a> Lexer<'a> {
         while self.pos < self.input.len() && self.input[self.pos] != b'\n' {
             self.advance();
         }
-        Token::new(TokenKind::Comment, slice_to_string(&self.input[start..self.pos]), pos)
+        Token::new(
+            TokenKind::Comment,
+            slice_to_string(&self.input[start..self.pos]),
+            pos,
+        )
     }
 
     fn lex_block_comment(&mut self, pos: Position) -> Token {
@@ -216,11 +220,7 @@ impl<'a> Lexer<'a> {
                 // permissively stores arbitrary bytes.
                 return match String::from_utf8(buf) {
                     Ok(s) => Token::new(TokenKind::String, s, pos),
-                    Err(_) => Token::new(
-                        TokenKind::Illegal,
-                        "string contains invalid UTF-8",
-                        pos,
-                    ),
+                    Err(_) => Token::new(TokenKind::Illegal, "string contains invalid UTF-8", pos),
                 };
             }
             if ch != b'\\' {
@@ -365,11 +365,7 @@ impl<'a> Lexer<'a> {
                 let raw = slice_to_string(&self.input[start..self.pos]);
                 self.advance(); // closing "
                 if !is_valid_base64(&raw) {
-                    return Token::new(
-                        TokenKind::Illegal,
-                        "invalid base64 in bytes literal",
-                        pos,
-                    );
+                    return Token::new(TokenKind::Illegal, "invalid base64 in bytes literal", pos);
                 }
                 return Token::new(TokenKind::Bytes, raw, pos);
             }
@@ -477,18 +473,27 @@ impl<'a> Lexer<'a> {
         }
         let raw = slice_to_string(&self.input[start..self.pos]);
         if !is_valid_rfc3339(&raw) {
-            return Token::new(TokenKind::Illegal, format!("invalid timestamp: {}", raw), pos);
+            return Token::new(
+                TokenKind::Illegal,
+                format!("invalid timestamp: {}", raw),
+                pos,
+            );
         }
         Token::new(TokenKind::Timestamp, raw, pos)
     }
 
     fn lex_duration(&mut self, pos: Position, start: usize) -> Token {
-        while self.pos < self.input.len() && (is_digit(self.peek()) || is_lower_alpha(self.peek())) {
+        while self.pos < self.input.len() && (is_digit(self.peek()) || is_lower_alpha(self.peek()))
+        {
             self.advance();
         }
         let raw = slice_to_string(&self.input[start..self.pos]);
         if !is_valid_go_duration(&raw) {
-            return Token::new(TokenKind::Illegal, format!("invalid duration: {}", raw), pos);
+            return Token::new(
+                TokenKind::Illegal,
+                format!("invalid duration: {}", raw),
+                pos,
+            );
         }
         Token::new(TokenKind::Duration, raw, pos)
     }
@@ -1103,7 +1108,10 @@ mod tests {
 
     #[test]
     fn ident_dotted_package_type() {
-        assert_eq!(tokens("infra.v1.ServerConfig")[0].value, "infra.v1.ServerConfig");
+        assert_eq!(
+            tokens("infra.v1.ServerConfig")[0].value,
+            "infra.v1.ServerConfig"
+        );
     }
 
     #[test]
@@ -1170,7 +1178,9 @@ mod tests {
                    }\n";
         let ts = tokens(src);
         assert!(
-            ts.iter().find(|t| matches!(t.kind, TokenKind::Illegal)).is_none(),
+            ts.iter()
+                .find(|t| matches!(t.kind, TokenKind::Illegal))
+                .is_none(),
             "no ILLEGAL tokens"
         );
         let meaningful: Vec<&Token> = ts
@@ -1236,10 +1246,7 @@ mod tests {
         // Two adjacent \x escapes encode a 2-byte UTF-8 sequence.
         assert_eq!(lex_one(r#""\xc3\xa9""#).as_deref(), Some("é"));
         // Three encode a 3-byte UTF-8 sequence.
-        assert_eq!(
-            lex_one(r#""\xe4\xb8\xad""#).as_deref(),
-            Some("中"),
-        );
+        assert_eq!(lex_one(r#""\xe4\xb8\xad""#).as_deref(), Some("中"),);
     }
 
     #[test]
@@ -1255,10 +1262,7 @@ mod tests {
     fn escape_unicode_4_hex() {
         assert_eq!(lex_one(r#""é""#).as_deref(), Some("é"));
         assert_eq!(lex_one(r#""中""#).as_deref(), Some("中"));
-        assert_eq!(
-            lex_one(r#""aéb""#).as_deref(),
-            Some("aéb"),
-        );
+        assert_eq!(lex_one(r#""aéb""#).as_deref(), Some("aéb"),);
     }
 
     #[test]

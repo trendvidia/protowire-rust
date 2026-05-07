@@ -229,9 +229,7 @@ fn build_group_template(fd: &FieldDescriptor) -> Result<GroupTemplate, SbeError>
     Ok(gt)
 }
 
-fn build_composite_fields(
-    md: &MessageDescriptor,
-) -> Result<(usize, Vec<FieldTemplate>), SbeError> {
+fn build_composite_fields(md: &MessageDescriptor) -> Result<(usize, Vec<FieldTemplate>), SbeError> {
     let mut out = Vec::new();
     let mut offset: usize = 0;
     for fd in sorted_fields(md) {

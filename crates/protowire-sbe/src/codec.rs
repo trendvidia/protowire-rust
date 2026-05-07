@@ -10,9 +10,7 @@ use std::collections::HashMap;
 
 use prost_reflect::{FileDescriptor, MessageDescriptor};
 
-use crate::annotations::{
-    has_template_id, file_uint32, EXT_SCHEMA_ID, EXT_VERSION,
-};
+use crate::annotations::{file_uint32, has_template_id, EXT_SCHEMA_ID, EXT_VERSION};
 use crate::errors::SbeError;
 use crate::template::{build_template, MessageTemplate};
 
@@ -57,7 +55,8 @@ impl Codec {
         if has_template_id(desc) {
             let tmpl = build_template(desc, schema_id, version)?;
             let id = tmpl.template_id;
-            self.by_name.insert(desc.full_name().to_string(), tmpl.clone());
+            self.by_name
+                .insert(desc.full_name().to_string(), tmpl.clone());
             self.by_id.insert(id, tmpl);
         }
         for nested in desc.child_messages() {

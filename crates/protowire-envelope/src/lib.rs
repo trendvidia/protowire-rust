@@ -49,11 +49,7 @@ pub struct AppError {
 }
 
 impl AppError {
-    pub fn new(
-        code: impl Into<String>,
-        message: impl Into<String>,
-        args: Vec<String>,
-    ) -> Self {
+    pub fn new(code: impl Into<String>, message: impl Into<String>, args: Vec<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into(),
@@ -75,11 +71,7 @@ impl AppError {
         self
     }
 
-    pub fn with_meta(
-        &mut self,
-        key: impl Into<String>,
-        value: impl Into<String>,
-    ) -> &mut Self {
+    pub fn with_meta(&mut self, key: impl Into<String>, value: impl Into<String>) -> &mut Self {
         self.metadata.insert(key.into(), value.into());
         self
     }
@@ -235,7 +227,10 @@ mod tests {
         let mut ae = new_app_error("X", "", vec![]);
         ae.with_meta("region", "us-east").with_meta("tier", "free");
         assert_eq!(ae.metadata.len(), 2);
-        assert_eq!(ae.metadata.get("region").map(String::as_str), Some("us-east"));
+        assert_eq!(
+            ae.metadata.get("region").map(String::as_str),
+            Some("us-east")
+        );
         assert_eq!(ae.metadata.get("tier").map(String::as_str), Some("free"));
     }
 
@@ -247,7 +242,9 @@ mod tests {
 
     #[test]
     fn field_errors_none_when_app_error_has_no_details() {
-        assert!(Envelope::err(400, "BAD", "", vec![]).field_errors().is_none());
+        assert!(Envelope::err(400, "BAD", "", vec![])
+            .field_errors()
+            .is_none());
     }
 
     #[test]

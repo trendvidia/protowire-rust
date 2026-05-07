@@ -44,8 +44,8 @@ fn deep_nesting_at_limit_decodes() {
 #[test]
 fn deep_nesting_past_limit_is_rejected() {
     let src = build_nested_pxf(200);
-    let err: PxfError = unmarshal(&src, &tree(), UnmarshalOptions::default())
-        .expect_err("must reject");
+    let err: PxfError =
+        unmarshal(&src, &tree(), UnmarshalOptions::default()).expect_err("must reject");
     assert!(
         err.msg.contains("MaxNestingDepth"),
         "expected depth error, got: {}",
@@ -58,8 +58,8 @@ fn deep_nesting_extreme_does_not_overflow_stack() {
     // 100k-deep is the SIGABRT case from M8 issue #1. The cap must trip
     // before native recursion exhausts the thread stack.
     let src = build_nested_pxf(100_000);
-    let err: PxfError = unmarshal(&src, &tree(), UnmarshalOptions::default())
-        .expect_err("must reject");
+    let err: PxfError =
+        unmarshal(&src, &tree(), UnmarshalOptions::default()).expect_err("must reject");
     assert!(
         err.msg.contains("MaxNestingDepth"),
         "expected depth error, got: {}",

@@ -161,7 +161,12 @@ mod tests {
 
     #[test]
     fn field_error_round_trips_all_fields() {
-        let fe = FieldError::new("email", "FORMAT", "bad email", vec![s("user@bad"), s("tld")]);
+        let fe = FieldError::new(
+            "email",
+            "FORMAT",
+            "bad email",
+            vec![s("user@bad"), s("tld")],
+        );
         let bytes = marshal(&fe);
         let got: FieldError = unmarshal(&bytes).unwrap();
         assert_eq!(got, fe);
@@ -194,8 +199,14 @@ mod tests {
         assert_eq!(got.details[0].field, "email");
         assert_eq!(got.details[0].args, vec![s("u@bad")]);
         assert_eq!(got.details[1].field, "age");
-        assert_eq!(got.metadata.get("region").map(String::as_str), Some("us-east"));
-        assert_eq!(got.metadata.get("retry_after").map(String::as_str), Some("30"));
+        assert_eq!(
+            got.metadata.get("region").map(String::as_str),
+            Some("us-east")
+        );
+        assert_eq!(
+            got.metadata.get("retry_after").map(String::as_str),
+            Some("30")
+        );
     }
 
     // --- Envelope ---
@@ -236,7 +247,10 @@ mod tests {
         assert_eq!(err.args, vec![s("$3.50"), s("$10.00")]);
         assert_eq!(err.details.len(), 1);
         assert_eq!(err.details[0].code, "MIN_VALUE");
-        assert_eq!(err.metadata.get("request_id").map(String::as_str), Some("req-123"));
+        assert_eq!(
+            err.metadata.get("request_id").map(String::as_str),
+            Some("req-123")
+        );
     }
 
     #[test]

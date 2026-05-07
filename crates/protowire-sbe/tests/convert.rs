@@ -6,8 +6,7 @@
 use prost_reflect::DescriptorPool;
 use protowire_sbe::{
     camel_to_screaming_snake, camel_to_snake, parse_xml_schema, proto_to_xml,
-    screaming_snake_to_pascal, singular_pascal, snake_to_camel, strip_enum_prefix,
-    xml_to_proto,
+    screaming_snake_to_pascal, singular_pascal, snake_to_camel, strip_enum_prefix, xml_to_proto,
 };
 
 const SBE_FDS: &[u8] = include_bytes!("../testdata/sbe-test.binpb");
@@ -184,8 +183,14 @@ fn proto_to_xml_emits_schema_header_and_message_sections() {
 #[test]
 fn proto_to_xml_strips_proto_enum_prefix_from_valid_values() {
     let xml = proto_to_xml(&sbe_test_file()).expect("convert");
-    assert!(xml.contains(r#"<validValue name="Buy">0</validValue>"#), "{xml}");
-    assert!(xml.contains(r#"<validValue name="Sell">1</validValue>"#), "{xml}");
+    assert!(
+        xml.contains(r#"<validValue name="Buy">0</validValue>"#),
+        "{xml}"
+    );
+    assert!(
+        xml.contains(r#"<validValue name="Sell">1</validValue>"#),
+        "{xml}"
+    );
 }
 
 #[test]
@@ -209,7 +214,10 @@ fn proto_to_xml_output_round_trips_through_parse_xml_schema() {
 fn proto_to_xml_round_trips_through_xml_to_proto() {
     let xml = proto_to_xml(&sbe_test_file()).expect("convert");
     let proto_src = xml_to_proto(&xml).expect("xml_to_proto");
-    assert!(proto_src.contains("option (sbe.schema_id) = 1;"), "{proto_src}");
+    assert!(
+        proto_src.contains("option (sbe.schema_id) = 1;"),
+        "{proto_src}"
+    );
     assert!(
         proto_src.contains("option (sbe.template_id) = 1;"),
         "{proto_src}"

@@ -22,9 +22,9 @@ pub use ast::{
 };
 pub use decode::{unmarshal, unmarshal_full, PoolResolver, TypeResolver, UnmarshalOptions};
 pub use encode::{marshal, MarshalOptions};
-pub use result::Presence;
 pub use errors::PxfError;
 pub use format::{format, format_with_options, FormatOptions};
 pub use lexer::Lexer;
 pub use parser::parse;
+pub use result::Presence;
 pub use token::{Position, Token, TokenKind};

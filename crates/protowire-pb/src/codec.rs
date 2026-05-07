@@ -212,8 +212,14 @@ mod tests {
             active: true,
             data: vec![0xde, 0xad],
             items: vec![
-                Inner { name: "a".into(), value: 1 },
-                Inner { name: "b".into(), value: -7 },
+                Inner {
+                    name: "a".into(),
+                    value: 1,
+                },
+                Inner {
+                    name: "b".into(),
+                    value: -7,
+                },
             ],
             signed: -12345,
             small_f: 2.5,
@@ -328,10 +334,19 @@ mod tests {
     #[test]
     fn singular_nested_populated_round_trips() {
         let bytes = marshal(&Wrap {
-            inner: Some(Inner { name: "x".into(), value: 9 }),
+            inner: Some(Inner {
+                name: "x".into(),
+                value: 9,
+            }),
         });
         let got: Wrap = unmarshal(&bytes).unwrap();
-        assert_eq!(got.inner, Some(Inner { name: "x".into(), value: 9 }));
+        assert_eq!(
+            got.inner,
+            Some(Inner {
+                name: "x".into(),
+                value: 9
+            })
+        );
     }
 
     #[test]
@@ -461,7 +476,9 @@ mod tests {
         let mut codes = BTreeMap::new();
         codes.insert(404, "Not Found".into());
         codes.insert(500, "Internal".into());
-        let bytes = marshal(&WithIntMap { codes: codes.clone() });
+        let bytes = marshal(&WithIntMap {
+            codes: codes.clone(),
+        });
         let got: WithIntMap = unmarshal(&bytes).unwrap();
         assert_eq!(got.codes, codes);
     }
@@ -588,7 +605,11 @@ mod tests {
         // 200 levels must reject cleanly, not crash.
         let bytes = build_tree_bytes(200);
         let res: Result<Tree> = unmarshal(&bytes);
-        assert!(matches!(res, Err(Error::DepthExceeded(100))), "got {:?}", res);
+        assert!(
+            matches!(res, Err(Error::DepthExceeded(100))),
+            "got {:?}",
+            res
+        );
     }
 
     #[test]
@@ -597,7 +618,11 @@ mod tests {
         // before native stack exhaustion.
         let bytes = build_tree_bytes(100_000);
         let res: Result<Tree> = unmarshal(&bytes);
-        assert!(matches!(res, Err(Error::DepthExceeded(100))), "got {:?}", res);
+        assert!(
+            matches!(res, Err(Error::DepthExceeded(100))),
+            "got {:?}",
+            res
+        );
     }
 
     #[test]

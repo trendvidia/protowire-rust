@@ -146,11 +146,7 @@ impl<'a> Encoder<'a> {
                 }
             }
             let path = format!("{}{}", self.path_prefix, fd.name());
-            if self
-                .null_set
-                .as_ref()
-                .is_some_and(|s| s.contains(&path))
-            {
+            if self.null_set.as_ref().is_some_and(|s| s.contains(&path)) {
                 self.write_field_prefix(level, fd.name());
                 self.buf.push_str("null\n");
                 continue;
@@ -186,12 +182,7 @@ impl<'a> Encoder<'a> {
         }
     }
 
-    fn encode_message_field(
-        &mut self,
-        fd: &FieldDescriptor,
-        sub: &DynamicMessage,
-        level: usize,
-    ) {
+    fn encode_message_field(&mut self, fd: &FieldDescriptor, sub: &DynamicMessage, level: usize) {
         let mdesc = match fd.kind() {
             Kind::Message(m) => m,
             _ => return,
@@ -219,7 +210,10 @@ impl<'a> Encoder<'a> {
             self.buf.push('\n');
             return;
         }
-        if full == "google.protobuf.Any" && self.resolver.is_some() && self.try_encode_any(fd, sub, level) {
+        if full == "google.protobuf.Any"
+            && self.resolver.is_some()
+            && self.try_encode_any(fd, sub, level)
+        {
             return;
         }
 
@@ -234,12 +228,7 @@ impl<'a> Encoder<'a> {
         self.buf.push_str("}\n");
     }
 
-    fn encode_list_field(
-        &mut self,
-        parent: &DynamicMessage,
-        fd: &FieldDescriptor,
-        level: usize,
-    ) {
+    fn encode_list_field(&mut self, parent: &DynamicMessage, fd: &FieldDescriptor, level: usize) {
         let list = match parent.get_field(fd).into_owned() {
             Value::List(items) => items,
             _ => return,
@@ -290,12 +279,7 @@ impl<'a> Encoder<'a> {
         self.buf.push_str("]\n");
     }
 
-    fn encode_map_field(
-        &mut self,
-        parent: &DynamicMessage,
-        fd: &FieldDescriptor,
-        level: usize,
-    ) {
+    fn encode_map_field(&mut self, parent: &DynamicMessage, fd: &FieldDescriptor, level: usize) {
         let map = match parent.get_field(fd).into_owned() {
             Value::Map(m) => m,
             _ => return,
@@ -313,8 +297,10 @@ impl<'a> Encoder<'a> {
         self.write_field_prefix(level, fd.name());
         self.buf.push_str("{\n");
 
-        let mut entries: Vec<(String, Value)> =
-            map.into_iter().map(|(k, v)| (format_map_key(&k), v)).collect();
+        let mut entries: Vec<(String, Value)> = map
+            .into_iter()
+            .map(|(k, v)| (format_map_key(&k), v))
+            .collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (key_str, val) in entries {
@@ -502,8 +488,7 @@ fn format_float_f64(f: f64) -> String {
     format!("{}", f)
 }
 
-const B64_ALPHABET: &[u8] =
-    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+const B64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 fn encode_base64(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
@@ -629,7 +614,11 @@ fn format_rfc3339_nano(ts: &DynamicMessage) -> String {
 /// month, day) in the proleptic Gregorian calendar (Howard Hinnant).
 fn civil_from_days(z: i64) -> (i32, u32, u32) {
     let z = z + 719_468;
-    let era = if z >= 0 { z / 146_097 } else { (z - 146_096) / 146_097 };
+    let era = if z >= 0 {
+        z / 146_097
+    } else {
+        (z - 146_096) / 146_097
+    };
     let doe = (z - era * 146_097) as u32;
     let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
     let y = yoe as i32 + (era * 400) as i32;

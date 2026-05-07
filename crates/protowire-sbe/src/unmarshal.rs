@@ -4,17 +4,15 @@
 //! using a pre-built [`MessageTemplate`]. Mirrors
 //! `protowire/encoding/sbe/unmarshal.go` and the TS port's `sbe/unmarshal.ts`.
 
-use prost_reflect::{DynamicMessage, FieldDescriptor, Kind, MessageDescriptor, ReflectMessage, Value};
+use prost_reflect::{
+    DynamicMessage, FieldDescriptor, Kind, MessageDescriptor, ReflectMessage, Value,
+};
 
 use crate::codec::{Codec, GROUP_HEADER_SIZE, HEADER_SIZE};
 use crate::errors::SbeError;
 use crate::template::{FieldTemplate, GroupTemplate, MessageTemplate, SbeEncoding};
 
-pub fn unmarshal(
-    codec: &Codec,
-    msg: &mut DynamicMessage,
-    data: &[u8],
-) -> Result<(), SbeError> {
+pub fn unmarshal(codec: &Codec, msg: &mut DynamicMessage, data: &[u8]) -> Result<(), SbeError> {
     let tmpl = codec.template(msg.descriptor().full_name())?;
     unmarshal_message(msg, tmpl, data)
 }
@@ -133,10 +131,9 @@ fn read_field(
                 while n > 0 && slice[n - 1] == 0 {
                     n -= 1;
                 }
-                Value::String(
-                    String::from_utf8(slice[..n].to_vec())
-                        .map_err(|e| SbeError::new(format!("sbe: invalid utf-8 in {}: {}", fd.name(), e)))?,
-                )
+                Value::String(String::from_utf8(slice[..n].to_vec()).map_err(|e| {
+                    SbeError::new(format!("sbe: invalid utf-8 in {}: {}", fd.name(), e))
+                })?)
             }
         }
     };
@@ -222,6 +219,9 @@ fn composite_descriptor(fd: &FieldDescriptor) -> MessageDescriptor {
 fn group_element_descriptor(fd: &FieldDescriptor) -> MessageDescriptor {
     match fd.kind() {
         Kind::Message(m) => m,
-        _ => panic!("group element descriptor on non-message field {}", fd.name()),
+        _ => panic!(
+            "group element descriptor on non-message field {}",
+            fd.name()
+        ),
     }
 }

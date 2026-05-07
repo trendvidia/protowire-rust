@@ -40,8 +40,7 @@ fn main() {
         }
         i += 1;
     }
-    let dir = testdata
-        .unwrap_or_else(|| std::env::current_dir().expect("getcwd").join("testdata"));
+    let dir = testdata.unwrap_or_else(|| std::env::current_dir().expect("getcwd").join("testdata"));
 
     let fds_bytes = std::fs::read(dir.join("sbe-bench.binpb")).expect("read sbe-bench.binpb");
     let pool = DescriptorPool::decode(fds_bytes.as_slice()).expect("decode FDS");
@@ -109,7 +108,9 @@ fn build_order(desc: &MessageDescriptor, fill_desc: &MessageDescriptor) -> Dynam
     let mut fills: Vec<Value> = Vec::with_capacity(2);
     for &(price, qty, id) in &[(19155i64, 25u32, 5001u64), (19160, 50, 5002)] {
         let mut f = DynamicMessage::new(fill_desc.clone());
-        let fp = fill_desc.get_field_by_name("fill_price").expect("fill_price");
+        let fp = fill_desc
+            .get_field_by_name("fill_price")
+            .expect("fill_price");
         let fq = fill_desc.get_field_by_name("fill_qty").expect("fill_qty");
         let fid = fill_desc.get_field_by_name("fill_id").expect("fill_id");
         f.set_field(&fp, Value::I64(price));

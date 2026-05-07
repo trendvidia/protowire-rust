@@ -73,7 +73,12 @@ fn generate_proto(schema: &XmlSchema) -> String {
         out.push_str(&write_proto_composite(c));
     }
     for m in &schema.messages {
-        out.push_str(&write_proto_message(m, &type_map, &composite_map, &enum_map));
+        out.push_str(&write_proto_message(
+            m,
+            &type_map,
+            &composite_map,
+            &enum_map,
+        ));
     }
     out
 }
@@ -98,15 +103,10 @@ fn write_proto_composite(c: &XmlComposite) -> String {
     let mut out = format!("message {} {{\n", c.name);
     let mut field_num = 1u32;
     for t in &c.types {
-        let (proto_type, opts) =
-            resolve_type_to_proto(&t.primitive_type, t.length.unwrap_or(0));
+        let (proto_type, opts) = resolve_type_to_proto(&t.primitive_type, t.length.unwrap_or(0));
         let name = camel_to_snake(&t.name);
         if !opts.is_empty() {
-            let _ = writeln!(
-                out,
-                "  {} {} = {} [{}];",
-                proto_type, name, field_num, opts
-            );
+            let _ = writeln!(out, "  {} {} = {} [{}];", proto_type, name, field_num, opts);
         } else {
             let _ = writeln!(out, "  {} {} = {};", proto_type, name, field_num);
         }
@@ -130,10 +130,22 @@ fn write_proto_message(
     let mut out = format!("message {} {{\n", m.name);
     let _ = writeln!(out, "  option (sbe.template_id) = {};", m.id);
     for f in &m.fields {
-        out.push_str(&write_proto_field(f, type_map, composite_map, enum_map, "  "));
+        out.push_str(&write_proto_field(
+            f,
+            type_map,
+            composite_map,
+            enum_map,
+            "  ",
+        ));
     }
     for g in &m.groups {
-        out.push_str(&write_proto_group(g, type_map, composite_map, enum_map, "  "));
+        out.push_str(&write_proto_group(
+            g,
+            type_map,
+            composite_map,
+            enum_map,
+            "  ",
+        ));
     }
     out.push_str("}\n\n");
     out
@@ -155,13 +167,9 @@ fn write_proto_field(
         return format!("{}{} {} = {};\n", indent, f.r#type, name, f.id);
     }
     if let Some(t) = type_map.get(&f.r#type) {
-        let (proto_type, opts) =
-            resolve_type_to_proto(&t.primitive_type, t.length.unwrap_or(0));
+        let (proto_type, opts) = resolve_type_to_proto(&t.primitive_type, t.length.unwrap_or(0));
         return if !opts.is_empty() {
-            format!(
-                "{}{} {} = {} [{}];\n",
-                indent, proto_type, name, f.id, opts
-            )
+            format!("{}{} {} = {} [{}];\n", indent, proto_type, name, f.id, opts)
         } else {
             format!("{}{} {} = {};\n", indent, proto_type, name, f.id)
         };

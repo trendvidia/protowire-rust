@@ -48,27 +48,20 @@ fn main() {
         i += 1;
     }
 
-    let dir = testdata.unwrap_or_else(|| {
-        std::env::current_dir()
-            .expect("getcwd")
-            .join("testdata")
-    });
+    let dir = testdata.unwrap_or_else(|| std::env::current_dir().expect("getcwd").join("testdata"));
 
-    let fds_bytes = std::fs::read(dir.join("bench-test.binpb"))
-        .expect("read bench-test.binpb");
-    let pxf_text = std::fs::read_to_string(dir.join("bench-test.pxf"))
-        .expect("read bench-test.pxf");
+    let fds_bytes = std::fs::read(dir.join("bench-test.binpb")).expect("read bench-test.binpb");
+    let pxf_text =
+        std::fs::read_to_string(dir.join("bench-test.pxf")).expect("read bench-test.pxf");
 
     let desc = load_config_descriptor(&fds_bytes);
     let target = Duration::from_secs_f64(seconds);
 
     // Warm-up.
-    let _ = unmarshal(&pxf_text, &desc, UnmarshalOptions::default())
-        .expect("warm-up unmarshal");
+    let _ = unmarshal(&pxf_text, &desc, UnmarshalOptions::default()).expect("warm-up unmarshal");
 
     let (iters, elapsed) = time_loop(target, || {
-        let _ = unmarshal(&pxf_text, &desc, UnmarshalOptions::default())
-            .expect("unmarshal");
+        let _ = unmarshal(&pxf_text, &desc, UnmarshalOptions::default()).expect("unmarshal");
     });
     let bytes = pxf_text.len();
     emit_unmarshal(iters, elapsed, bytes);
