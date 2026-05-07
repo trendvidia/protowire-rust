@@ -16,5 +16,4 @@ description = "FIX SBE binary codec — Rust port of github.com/trendvidia/proto
 prost = { workspace = true }
 prost-reflect = { workspace = true }
 prost-types = { workspace = true }
-quick-xml = { workspace = true }
 thiserror = { workspace = true }

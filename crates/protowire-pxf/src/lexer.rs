@@ -523,7 +523,7 @@ fn is_digit(ch: u8) -> bool {
 }
 
 fn is_ident_start(ch: u8) -> bool {
-    (b'a'..=b'z').contains(&ch) || (b'A'..=b'Z').contains(&ch) || ch == b'_'
+    ch.is_ascii_alphabetic() || ch == b'_'
 }
 
 fn is_ident_part(ch: u8) -> bool {
@@ -535,7 +535,7 @@ fn is_duration_unit(ch: u8) -> bool {
 }
 
 fn is_lower_alpha(ch: u8) -> bool {
-    (b'a'..=b'z').contains(&ch)
+    ch.is_ascii_lowercase()
 }
 
 fn hex_val(ch: u8) -> Option<u32> {
@@ -623,11 +623,7 @@ fn is_valid_base64(s: &str) -> bool {
         pad += 1;
     }
     for &b in &bytes[..content_end] {
-        let ok = (b'A'..=b'Z').contains(&b)
-            || (b'a'..=b'z').contains(&b)
-            || (b'0'..=b'9').contains(&b)
-            || b == b'+'
-            || b == b'/';
+        let ok = b.is_ascii_alphanumeric() || b == b'+' || b == b'/';
         if !ok {
             return false;
         }

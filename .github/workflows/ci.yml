@@ -54,7 +54,7 @@ jobs:
   # context doesn't see workflow-level env in all runner versions.
   # ---------------------------------------------------------------------
   msrv:
-    name: MSRV (1.74)
+    name: MSRV (1.82)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -69,7 +69,7 @@ jobs:
       - run: cargo generate-lockfile
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.74"
+          toolchain: "1.82"
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --locked
 
@@ -133,21 +133,27 @@ jobs:
     name: HARDENING.md corpus
     runs-on: ubuntu-latest
     steps:
+      # The spec script (cross_security_check.sh) computes
+      # SIBLING_DIR=parent_of_spec_checkout and then looks for
+      # SIBLING_DIR/protowire-rust/crates/check-decode. So we have to
+      # check both repos out as siblings, with this repo at the path
+      # name `protowire-rust` and the spec repo as `protowire`.
       - uses: actions/checkout@v6
+        with:
+          path: protowire-rust
 
       - name: Checkout protowire (spec repo for adversarial corpus)
         uses: actions/checkout@v6
         with:
           repository: trendvidia/protowire
-          path: protowire-spec
+          path: protowire
 
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-
-      - name: cargo build check-decode
-        run: cargo build -p check-decode --release
+        with:
+          workspaces: protowire-rust
 
       - name: Run corpus
-        run: bash protowire-spec/scripts/cross_security_check.sh
-        env:
-          CHECK_DECODE_BIN: ${{ github.workspace }}/target/release/check-decode
+        # The script does its own `cargo build --release -p check-decode`
+        # under $RUST_DIR, so no separate build step here.
+        run: bash protowire/scripts/cross_security_check.sh

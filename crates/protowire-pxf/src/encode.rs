@@ -392,9 +392,9 @@ impl<'a> Encoder<'a> {
             (Kind::Enum(_), Value::EnumNumber(_)) => {
                 // Enum scalars route through write_enum_value; reaching here
                 // means the caller got the dispatch wrong.
-                self.buf.push_str("0");
+                self.buf.push('0');
             }
-            _ => self.buf.push_str("?"),
+            _ => self.buf.push('?'),
         }
     }
 
@@ -506,7 +506,7 @@ const B64_ALPHABET: &[u8] =
     b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 fn encode_base64(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity((bytes.len() + 2) / 3 * 4);
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     let mut i = 0;
     while i + 3 <= bytes.len() {
         let triple =
