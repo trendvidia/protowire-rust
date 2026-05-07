@@ -326,9 +326,9 @@ dependencies = [
 
 [[package]]
 name = "prost-reflect"
-version = "0.14.7"
+version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7b5edd582b62f5cde844716e66d92565d7faf7ab1445c8cebce6e00fba83ddb2"
+checksum = "b89455ef41ed200cafc47c76c552ee7792370ac420497e551f16123a9135f76e"
 dependencies = [
  "once_cell",
  "prost 0.13.5",
@@ -378,7 +378,7 @@ dependencies = [
  "criterion",
  "prost 0.14.3",
  "prost-reflect",
- "prost-types",
+ "prost-types 0.13.5",
  "thiserror",
 ]
 
@@ -388,16 +388,16 @@ version = "0.70.0"
 dependencies = [
  "prost 0.14.3",
  "prost-reflect",
- "prost-types",
+ "prost-types 0.13.5",
  "quick-xml",
  "thiserror",
 ]
 
 [[package]]
 name = "quick-xml"
-version = "0.36.2"
+version = "0.39.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f7649a7b4df05aed9ea7ec6f628c67c9953a43869b8bc50929569b2999d443fe"
+checksum = "721da970c312655cde9b4ffe0547f20a8494866a4af5ff51f18b7c633d0c870b"
 dependencies = [
  "memchr",
 ]

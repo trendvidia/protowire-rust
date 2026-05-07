@@ -196,6 +196,7 @@ impl<'a> Parser<'a> {
                         ),
                     ));
                 }
+                let open_pos = self.current.pos;
                 self.advance();
                 let entries = self.parse_body(open_pos)?;
                 Ok(Entry::Block(Block {

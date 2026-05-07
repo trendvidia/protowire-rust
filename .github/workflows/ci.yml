@@ -18,17 +18,14 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
-  # Match Cargo.toml's rust-version pin. Bump in lockstep.
-  MSRV: "1.74"
 
 jobs:
   # ---------------------------------------------------------------------
-  # Build + test matrix: stable on every OS, plus beta on Linux as an
-  # early-warning for upcoming breaking changes, plus MSRV pin to
-  # protect the documented minimum.
+  # Build + test on stable across {Linux, macOS, Windows}, plus beta on
+  # Linux as an early-warning for upcoming breaking changes.
   # ---------------------------------------------------------------------
-  test:
-    name: ${{ matrix.os }} / ${{ matrix.toolchain }}
+  build:
+    name: build / ${{ matrix.os }} / ${{ matrix.toolchain }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -44,35 +41,27 @@ jobs:
             toolchain: stable
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install Rust ${{ matrix.toolchain }}
-        uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.toolchain }}
-
       - uses: Swatinem/rust-cache@v2
-
-      - name: cargo build
-        run: cargo build --workspace --all-targets
-
-      - name: cargo test
-        run: cargo test --workspace
+      - run: cargo build --workspace --all-targets
+      - run: cargo test --workspace
 
   # ---------------------------------------------------------------------
-  # MSRV gate — separate from the matrix so a failure here is a clear
-  # "you raised the floor" signal, not a beta/nightly blip.
+  # MSRV gate — pinned to Cargo.toml's [workspace.package].rust-version.
+  # Hard-coded in name (not from env) because GitHub's job-name eval
+  # context doesn't see workflow-level env in all runner versions.
   # ---------------------------------------------------------------------
   msrv:
-    name: MSRV (${{ env.MSRV }})
+    name: MSRV (1.74)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@master
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.MSRV }}
+          toolchain: "1.74"
       - uses: Swatinem/rust-cache@v2
-      # Use the published-version Cargo.lock if present so resolver
-      # picks the same dep tree the released crate would.
       - run: cargo build --workspace --locked
 
   # ---------------------------------------------------------------------
