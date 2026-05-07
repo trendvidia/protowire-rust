@@ -31,7 +31,7 @@ protowire-envelope = { path = "crates/protowire-envelope", version = "0.70.0" }
 protowire-pxf = { path = "crates/protowire-pxf", version = "0.70.0" }
 protowire-sbe = { path = "crates/protowire-sbe", version = "0.70.0" }
 
-prost = "0.13"
+prost = "0.14"
 prost-build = "0.13"
 prost-reflect = "0.16"
 prost-types = "0.13"

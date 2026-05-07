@@ -330,8 +330,9 @@ version = "0.16.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b89455ef41ed200cafc47c76c552ee7792370ac420497e551f16123a9135f76e"
 dependencies = [
- "prost 0.14.3",
- "prost-types 0.14.3",
+ "once_cell",
+ "prost 0.13.5",
+ "prost-types",
 ]
 
 [[package]]
@@ -341,15 +342,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52c2c1bf36ddb1a1c396b3601a3cec27c2462e45f07c386894ec3ccf5332bd16"
 dependencies = [
  "prost 0.13.5",
-]
-
-[[package]]
-name = "prost-types"
-version = "0.14.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8991c4cbdb8bc5b11f0b074ffe286c30e523de90fee5ba8132f1399f23cb3dd7"
-dependencies = [
- "prost 0.14.3",
 ]
 
 [[package]]
@@ -384,7 +376,7 @@ version = "0.70.0"
 dependencies = [
  "bytes",
  "criterion",
- "prost 0.13.5",
+ "prost 0.14.3",
  "prost-reflect",
  "prost-types 0.13.5",
  "thiserror",
@@ -394,7 +386,7 @@ dependencies = [
 name = "protowire-sbe"
 version = "0.70.0"
 dependencies = [
- "prost 0.13.5",
+ "prost 0.14.3",
  "prost-reflect",
  "prost-types 0.13.5",
  "quick-xml",
