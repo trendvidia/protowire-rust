@@ -35,13 +35,17 @@ jobs:
       - run: cargo build --workspace --all-targets
       - run: cargo test --workspace
 
+  # MSRV gate — pinned to Cargo.toml's [workspace.package].rust-version.
+  # Bump in lockstep with that. (Hard-coded rather than read from env
+  # because GitHub's job-name expansion doesn't see workflow-level env
+  # in all runner versions.)
   msrv:
-    name: MSRV (${{ env.MSRV }})
+    name: MSRV (1.74)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.MSRV }}
+          toolchain: "1.74"
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --locked
