@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+syntax = "proto3";
+package test.v1;
+
+import "sbe/annotations.proto";
+
+option (sbe.schema_id) = 1;
+option (sbe.version) = 0;
+
+enum Side {
+  SIDE_BUY = 0;
+  SIDE_SELL = 1;
+}
+
+message Order {
+  option (sbe.template_id) = 1;
+  uint64 order_id = 1;
+  string symbol = 2 [(sbe.length) = 8];
+  int64 price = 3;
+  uint32 quantity = 4;
+  Side side = 5;
+  bool active = 6;
+  double weight = 7;
+  float score = 8;
+
+  message Fill {
+    int64 fill_price = 1;
+    uint32 fill_qty = 2;
+    uint64 fill_id = 3;
+  }
+  repeated Fill fills = 9;
+}
+
+message Simple {
+  option (sbe.template_id) = 2;
+  uint32 id = 1;
+  int32 value = 2;
+}
+
+message WithComposite {
+  option (sbe.template_id) = 3;
+  uint64 id = 1;
+  Inner inner = 2;
+  int32 code = 3;
+}
+
+message Inner {
+  int64 x = 1;
+  int64 y = 2;
+}
+
+message WithNarrow {
+  option (sbe.template_id) = 4;
+  uint32 status = 1 [(sbe.encoding) = "uint8"];
+  uint32 port = 2 [(sbe.encoding) = "uint16"];
+  int32 delta = 3 [(sbe.encoding) = "int16"];
+}

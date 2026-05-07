@@ -1,0 +1,16 @@
+[package]
+name = "bench-pxf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Cross-port PXF microbench (Rust). Prints JSON to stdout for the cross_pxf_bench.sh runner."
+
+[[bin]]
+name = "bench-pxf"
+path = "src/main.rs"
+
+[dependencies]
+protowire-pxf = { workspace = true }
+prost-reflect = { workspace = true }

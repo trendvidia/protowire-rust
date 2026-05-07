@@ -1,0 +1,17 @@
+[package]
+name = "protowire-envelope"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "API response envelope — Rust port of github.com/trendvidia/protowire/envelope"
+
+[dependencies]
+protowire-pb = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,100 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 TrendVidia, LLC.
+#
+# crates.io publishing pipeline.
+#
+# Triggered manually or on a `v*` tag push. The `crates-io` environment
+# is configured in repo settings to require approval before publishing —
+# a final human gate.
+#
+# Crates are published in dependency order:
+#   protowire-pb       (no protowire-* deps)
+#   protowire-envelope (depends on protowire-pb)
+#   protowire-pxf      (no protowire-* deps)
+#   protowire-sbe      (no protowire-* deps)
+#   protowire          (umbrella — depends on all four)
+# A short post-publish settle delay before each downstream crate gives
+# the crates.io index time to converge.
+#
+# === Bootstrap vs. trusted publishing ===
+#
+# This workflow currently authenticates with a long-lived crates.io
+# API token stored as the `CARGO_REGISTRY_TOKEN` repo secret. crates.io
+# DOES support OIDC trusted publishing (rolled out late 2024), but the
+# settings page that configures it lives at
+# `https://crates.io/crates/<name>/settings/trusted-publishers` and
+# 404s until the crate has at least one published version — there is
+# no PyPI-style "pending publisher" pre-registration.
+#
+# Migration path once v0.70.0 is on crates.io:
+#   1. For each of the 5 published crates, visit
+#      `https://crates.io/crates/<name>/settings/trusted-publishers`
+#      and add a publisher with:
+#        - Repository owner: trendvidia
+#        - Repository name:  protowire-rust
+#        - Workflow filename: publish.yml
+#        - Environment:       crates-io
+#   2. Delete the `CARGO_REGISTRY_TOKEN` repo secret.
+#   3. Replace the auth step below with:
+#        - uses: rust-lang/crates-io-auth-action@v1
+#          id: auth
+#      and reference `${{ steps.auth.outputs.token }}` as
+#      CARGO_REGISTRY_TOKEN in each `cargo publish` step.
+#   4. Add `id-token: write` to this job's permissions block.
+
+name: Publish to crates.io
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    environment:
+      name: crates-io
+      url: https://crates.io/crates/protowire
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo build (sanity check before publish)
+        run: cargo build --workspace --release
+
+      - name: Publish protowire-pb
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p protowire-pb
+
+      - name: Wait for index
+        run: sleep 30
+
+      - name: Publish protowire-envelope
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p protowire-envelope
+
+      - name: Publish protowire-pxf
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p protowire-pxf
+
+      - name: Publish protowire-sbe
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p protowire-sbe
+
+      - name: Wait for index
+        run: sleep 30
+
+      - name: Publish protowire (umbrella)
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p protowire

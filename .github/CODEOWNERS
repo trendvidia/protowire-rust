@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 TrendVidia, LLC.
+#
+# Code ownership for protowire-rust.
+
+*                              @trendvidia/maintainers
+
+# --- Wire-impacting source (cross-port equivalence promise applies) ------
+# unsafe-block scrutiny applies to everything in here.
+/crates/protowire/              @trendvidia/maintainers
+/crates/protowire-pb/           @trendvidia/maintainers
+/crates/protowire-pxf/          @trendvidia/maintainers
+/crates/protowire-sbe/          @trendvidia/maintainers
+/crates/protowire-envelope/     @trendvidia/maintainers
+
+# --- Vendored proto annotations (part of the upstream wire contract) -----
+/proto/                         @trendvidia/maintainers
+
+# --- Tests + harnesses (open to broader reviewer pool) ------------------
+/crates/check-decode/           @trendvidia/contributors @trendvidia/maintainers
+/crates/dump-envelope/          @trendvidia/contributors @trendvidia/maintainers
+/crates/bench-pxf/              @trendvidia/contributors @trendvidia/maintainers
+/crates/bench-sbe/              @trendvidia/contributors @trendvidia/maintainers
+
+# --- Build, packaging, CI -----------------------------------------------
+/.github/                       @trendvidia/maintainers
+/Cargo.toml                     @trendvidia/maintainers
+/Cargo.lock                     @trendvidia/maintainers
+/.cargo/                        @trendvidia/maintainers

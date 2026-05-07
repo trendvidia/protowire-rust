@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+syntax = "proto3";
+
+package sbe;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.FileOptions {
+  // SBE schema identifier. Required on files containing SBE messages.
+  uint32 schema_id = 50100;
+
+  // SBE schema version.
+  uint32 version = 50101;
+}
+
+extend google.protobuf.MessageOptions {
+  // SBE message template identifier. Required on each top-level SBE message.
+  uint32 template_id = 50200;
+}
+
+extend google.protobuf.FieldOptions {
+  // Fixed byte length for string and bytes fields.
+  // Values longer than this are truncated; shorter values are null-padded.
+  uint32 length = 50300;
+
+  // SBE primitive type override. Allows narrowing a proto type to a smaller
+  // SBE encoding, e.g. uint32 -> "uint8". Valid values:
+  // int8, int16, int32, int64, uint8, uint16, uint32, uint64, float, double.
+  string encoding = 50301;
+}

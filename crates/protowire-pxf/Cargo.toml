@@ -1,0 +1,27 @@
+[package]
+name = "protowire-pxf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+description = "PXF (Proto eXpressive Format) text codec — Rust port of github.com/trendvidia/protowire/encoding/pxf"
+
+[dependencies]
+prost = { workspace = true }
+prost-reflect = { workspace = true }
+prost-types = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+bytes = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "decoder"
+harness = false

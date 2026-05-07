@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Benchmark fixture for the PXF decoder/encoder.
+// Mirrors `benchProtoSrc` in
+// `protowire/encoding/pxf/benchmark_test.go` so we can compare numbers
+// across ports against the same payload shape.
+syntax = "proto3";
+package bench.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+message Config {
+  string hostname = 1;
+  int32 port = 2;
+  bool enabled = 3;
+  double weight = 4;
+  Status status = 5;
+  repeated string tags = 6;
+  TLS tls = 7;
+  map<string, string> labels = 8;
+  repeated Endpoint endpoints = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Duration timeout = 11;
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_SERVING = 1;
+}
+
+message TLS {
+  string cert_file = 1;
+  string key_file = 2;
+  bool verify = 3;
+}
+
+message Endpoint {
+  string path = 1;
+  string method = 2;
+  int32 timeout_ms = 3;
+}

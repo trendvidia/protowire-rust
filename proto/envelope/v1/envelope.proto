@@ -1,0 +1,92 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Standard response envelope for API integration.
+//
+// Provides a uniform structure for API responses regardless of wire format
+// (JSON, protobuf, PXF). The envelope separates transport-level errors from
+// application-level errors, and carries machine-readable error codes with
+// positional format arguments for client-side localization.
+//
+// Error localization convention:
+//   - AppError.code maps to string table key "error.<CODE>"
+//   - FieldError.code maps to string table key "field.<CODE>"
+//   - args provide positional values for {0}, {1}, ... placeholders
+//   - message field is a server-side fallback if the client has no string table entry
+
+syntax = "proto3";
+
+package envelope.v1;
+
+option go_package = "github.com/trendvidia/protowire/envelope/v1;envelope";
+
+// Envelope wraps every API response with transport metadata,
+// application-level error handling, and the success payload.
+//
+// Usage pattern:
+//   - Success: status=200, data populated, error empty
+//   - App error: status=200 (or 4xx), error populated, data empty
+//   - Transport error: transport_error set, everything else empty
+message Envelope {
+    // Transport layer.
+    int32 status = 1;                    // HTTP status code or gRPC status code
+    string transport_error = 2;          // network-level error (timeout, connection refused)
+
+    // Application layer — the response payload on success.
+    // Encoded as nested PXF block or JSON object. The border codec
+    // flattens this into state store keys.
+    bytes data = 3;
+
+    // Application layer — set when business logic fails.
+    AppError error = 4;
+}
+
+// AppError represents an application-level error with a machine-readable code,
+// positional format arguments for localized display, and optional field-level details.
+//
+// Localization: clients look up "error.<code>" in their string table and
+// substitute args as {0}, {1}, etc. The message field is a fallback.
+message AppError {
+    // Machine-readable error code: "INSUFFICIENT_FUNDS", "AUTH_REQUIRED", "NOT_FOUND".
+    // Maps to string table key "error.<code>".
+    string code = 1;
+
+    // Server-side human-readable message. Used as fallback when the client's
+    // string table has no entry for this code.
+    string message = 2;
+
+    // Positional format arguments for the localized message template.
+    // Example: code="INSUFFICIENT_FUNDS", args=["$3.50", "$10.00"]
+    //   → string table: "error.INSUFFICIENT_FUNDS" = "Your balance is {0}, minimum is {1}"
+    //   → display: "Your balance is $3.50, minimum is $10.00"
+    repeated string args = 3;
+
+    // Per-field validation errors.
+    repeated FieldError details = 4;
+
+    // Arbitrary metadata for client-side logic (retry_after, request_id, etc.).
+    map<string, string> metadata = 5;
+}
+
+// FieldError represents a validation error on a specific field.
+// Maps to UI form validation: the border codec can wire field errors
+// directly to Entry widget validators.
+//
+// Localization: clients look up "field.<code>" in their string table
+// and substitute args as {0}, {1}, etc.
+message FieldError {
+    // Field path matching the proto field name or PXF key: "amount", "user.email".
+    string field = 1;
+
+    // Machine-readable error code: "REQUIRED", "MIN_VALUE", "INVALID_FORMAT", "UNIQUE".
+    // Maps to string table key "field.<code>".
+    string code = 2;
+
+    // Server-side fallback message.
+    string message = 3;
+
+    // Positional format arguments.
+    // Example: code="MIN_VALUE", args=["10.00"]
+    //   → string table: "field.MIN_VALUE" = "Minimum value is {0}"
+    //   → display: "Minimum value is 10.00"
+    repeated string args = 4;
+}
