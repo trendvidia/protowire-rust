@@ -37,5 +37,5 @@ prost-reflect = "0.14"
 prost-types = "0.13"
 bytes = "1.7"
 thiserror = "1.0"
-quick-xml = "0.36"
+quick-xml = "0.39"
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
