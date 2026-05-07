@@ -26,7 +26,7 @@ fn detail() -> MessageDescriptor {
         .expect("missing any_test.v1.Detail")
 }
 
-fn payload<'a>(msg: &'a DynamicMessage) -> &'a DynamicMessage {
+fn payload(msg: &DynamicMessage) -> &DynamicMessage {
     let fd = msg.descriptor().get_field_by_name("payload").unwrap();
     match msg.get_field(&fd) {
         std::borrow::Cow::Borrowed(Value::Message(m)) => m,

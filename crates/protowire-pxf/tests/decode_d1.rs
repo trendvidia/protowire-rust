@@ -176,7 +176,7 @@ fn enums_rejects_unknown_name() {
 
 // ---------------- nested messages ----------------
 
-fn nested_field<'a>(msg: &'a prost_reflect::DynamicMessage) -> &'a prost_reflect::DynamicMessage {
+fn nested_field(msg: &prost_reflect::DynamicMessage) -> &prost_reflect::DynamicMessage {
     let fd = msg
         .descriptor()
         .get_field_by_name("nested_field")
