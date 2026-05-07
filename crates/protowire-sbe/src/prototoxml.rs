@@ -123,10 +123,8 @@ fn collect_types(
                     str_lengths.insert(len);
                 }
             }
-            Kind::Enum(ed) => {
-                if enums_seen.insert(ed.full_name().to_string()) {
-                    enums.push(ed);
-                }
+            Kind::Enum(ed) if enums_seen.insert(ed.full_name().to_string()) => {
+                enums.push(ed);
             }
             Kind::Message(sub) => {
                 if f.is_list() {

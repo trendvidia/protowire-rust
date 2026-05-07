@@ -281,9 +281,8 @@ pub fn camel_to_snake(s: &str) -> String {
         if ch.is_ascii_uppercase() {
             if i > 0 {
                 let prev = chars[i - 1];
-                if prev.is_ascii_lowercase() {
-                    out.push('_');
-                } else if i + 1 < chars.len() && chars[i + 1].is_ascii_lowercase() {
+                let next_is_lower = i + 1 < chars.len() && chars[i + 1].is_ascii_lowercase();
+                if prev.is_ascii_lowercase() || next_is_lower {
                     out.push('_');
                 }
             }
