@@ -13,6 +13,34 @@ format changes.
 
 ### Added
 
+- **`TableReader` streaming `@table` consumption + `bind_row`
+  per-row binding** (draft §3.4.4). `unmarshal_full` materializes
+  every row of an `@table` directive into `Presence::tables`; that
+  works for small datasets and breaks for the CSV-replacement
+  workload `@table` was designed for. New
+  `protowire_pxf::table_reader` module exposes:
+  - `TableReader<R: Read>::new(R)` — consumes leading directives
+    and the `@table TYPE ( cols )` header from any `io::Read`
+    source. Header capped at 64 KiB (`DEFAULT_HEADER_MAX_BYTES`)
+    to fail-fast on misuse.
+  - `type_name()` / `columns()` / `directives()` / `done()` accessors.
+  - Implements [`Iterator`] (`Item = Result<TableRow, PxfError>`)
+    so `for row in reader` just works; `next_row()` is the
+    non-iterator entry point. Per-row arity and v1 cell-grammar
+    checks happen at consume time. Errors are sticky.
+  - `scan_one(desc, options)` — `next_row` + `bind_row` in one call;
+    returns `Ok(Some(msg))` or `Ok(None)` at EOF. Named
+    `scan_one` because `Iterator::scan` would shadow `scan`.
+  - `tail()` — returns an `impl Read` that yields the buffered + the
+    remaining underlying bytes, so callers can chain a second
+    `TableReader` for multi-`@table` documents.
+  - `bind_row(desc, columns, row, options)` — exported helper for
+    callers iterating `Presence::tables()[i].rows` from the
+    materializing path. Strategy is format-and-reparse — render
+    cells as a synthetic PXF body and run through `unmarshal`,
+    reusing every branch of the existing decoder. Callers in a
+    tight scan loop typically set `options.skip_validate = true`.
+
 - **`Presence::directives()` and `Presence::tables()` accessors.** The
   direct decoder now populates the document-root directive list and
   `@table` directive list on `Presence` during `unmarshal_full`, so
