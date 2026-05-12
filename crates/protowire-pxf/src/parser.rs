@@ -8,8 +8,9 @@
 //! inline comments are not yet captured (the formatter populates them).
 
 use crate::ast::{
-    Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, Document, DurationVal, Entry,
-    FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, TimestampVal, Value,
+    Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, Directive, Document, DurationVal,
+    Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, TableDirective,
+    TableRow, TimestampVal, Value,
 };
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
@@ -90,20 +91,73 @@ impl<'a> Parser<'a> {
     fn parse_document(&mut self) -> Result<Document, PxfError> {
         let leading_comments = self.flush_comments();
         let mut type_url = String::new();
+        let mut directives: Vec<Directive> = Vec::new();
+        let mut tables: Vec<TableDirective> = Vec::new();
+        let mut body_offset: usize = 0;
 
-        if matches!(self.current.kind, TokenKind::AtType) {
-            self.advance(); // consume @type
-            if !matches!(self.current.kind, TokenKind::Ident) {
+        // Top-of-document directive prelude. @type, @<name>, and @table may
+        // interleave in any order; @type populates type_url, @<name>
+        // appends to directives, @table appends to tables. body_offset
+        // tracks the byte immediately after the last directive's last
+        // token; stays 0 when no directives are present.
+        let mut saw_type = false;
+        let mut first_table_pos: Option<Position> = None;
+        loop {
+            match self.current.kind {
+                TokenKind::AtType => {
+                    if first_table_pos.is_some() {
+                        return Err(PxfError::new(
+                            self.current.pos,
+                            "@table directive cannot coexist with @type; the @table header declares the document's type (draft §3.4.4)".to_string(),
+                        ));
+                    }
+                    saw_type = true;
+                    self.advance(); // consume @type
+                    if !matches!(self.current.kind, TokenKind::Ident) {
+                        return Err(PxfError::new(
+                            self.current.pos,
+                            format!(
+                                "expected type name after @type, got {}",
+                                self.current.kind.name()
+                            ),
+                        ));
+                    }
+                    body_offset = self.current.pos.offset + self.current.value.len();
+                    type_url = std::mem::take(&mut self.current.value);
+                    self.advance();
+                }
+                TokenKind::AtDirective => {
+                    let (d, end) = self.parse_directive()?;
+                    directives.push(d);
+                    body_offset = end;
+                }
+                TokenKind::AtTable => {
+                    if saw_type {
+                        return Err(PxfError::new(
+                            self.current.pos,
+                            "@table directive cannot coexist with @type; the @table header declares the document's type (draft §3.4.4)".to_string(),
+                        ));
+                    }
+                    let (t, end) = self.parse_table_directive()?;
+                    if first_table_pos.is_none() {
+                        first_table_pos = Some(t.pos);
+                    }
+                    tables.push(t);
+                    body_offset = end;
+                }
+                _ => break,
+            }
+        }
+
+        // Standalone constraint (draft §3.4.4): a document with any
+        // @table directive MUST NOT also carry top-level field entries.
+        if let Some(p) = first_table_pos {
+            if !matches!(self.current.kind, TokenKind::Eof) {
                 return Err(PxfError::new(
-                    self.current.pos,
-                    format!(
-                        "expected type name after @type, got {}",
-                        self.current.kind.name()
-                    ),
+                    p,
+                    "@table directive cannot coexist with top-level field entries; the document's payload is the @table rows (draft §3.4.4)".to_string(),
                 ));
             }
-            type_url = std::mem::take(&mut self.current.value);
-            self.advance();
         }
 
         let mut entries = Vec::new();
@@ -116,9 +170,253 @@ impl<'a> Parser<'a> {
         }
         Ok(Document {
             type_url,
+            directives,
+            tables,
+            body_offset,
             entries,
             leading_comments,
         })
+    }
+
+    /// Returns the kind of the next significant token (skipping
+    /// newlines and comments) without consuming it. Used by
+    /// parse_directive to disambiguate prefix identifiers from body
+    /// field keys.
+    fn peek_kind(&mut self) -> TokenKind {
+        let snap = self.lex.snapshot();
+        let saved = self.current.clone();
+        let n_comments = self.pending.len();
+        self.advance();
+        let k = self.current.kind;
+        self.lex.restore(snap);
+        self.current = saved;
+        self.pending.truncate(n_comments);
+        k
+    }
+
+    /// Reads `@<name> *(<prefix-id>) [{ ... }]`. AT_DIRECTIVE is current
+    /// on entry. Returns the directive plus the byte offset immediately
+    /// past the directive's last token.
+    fn parse_directive(&mut self) -> Result<(Directive, usize), PxfError> {
+        let leading_comments = self.flush_comments();
+        let at_pos = self.current.pos;
+        let name = std::mem::take(&mut self.current.value);
+        let mut end_offset = at_pos.offset + 1 + name.len(); // `@` + name
+        self.advance();
+
+        let mut prefixes: Vec<String> = Vec::new();
+        // Zero-or-more prefix identifiers; one-token lookahead
+        // disambiguates an IDENT followed by `=` / `:` (body key) from
+        // an IDENT followed by anything else (directive prefix).
+        while matches!(self.current.kind, TokenKind::Ident) {
+            let next = self.peek_kind();
+            if matches!(next, TokenKind::Equals | TokenKind::Colon) {
+                break;
+            }
+            end_offset = self.current.pos.offset + self.current.value.len();
+            prefixes.push(std::mem::take(&mut self.current.value));
+            self.advance();
+        }
+
+        // Back-compat: a single prefix populates the legacy `type`
+        // field, matching v0.72.0's single-Type shape.
+        let r#type = if prefixes.len() == 1 {
+            prefixes[0].clone()
+        } else {
+            String::new()
+        };
+
+        let mut body: Vec<u8> = Vec::new();
+        let mut has_body = false;
+        if matches!(self.current.kind, TokenKind::LBrace) {
+            let open = self.current.pos.offset;
+            // Use parse_block_val to validate inner content (string /
+            // brace / comment well-formedness); then slice the raw
+            // bytes between `{` and `}` from the input for body.
+            self.parse_block_val()?;
+            let input = self.lex.input_view();
+            let close = find_matching_brace(input, open);
+            if close < 0 {
+                // parse_block_val succeeded so a matching brace must
+                // exist — defensive belt-and-braces.
+                return Err(PxfError::new(
+                    at_pos,
+                    format!("directive @{}: unmatched '{{'", name),
+                ));
+            }
+            let close = close as usize;
+            body = input[open + 1..close].to_vec();
+            has_body = true;
+            end_offset = close + 1;
+        }
+
+        Ok((
+            Directive {
+                pos: at_pos,
+                name,
+                prefixes,
+                r#type,
+                body,
+                has_body,
+                leading_comments,
+            },
+            end_offset,
+        ))
+    }
+
+    /// Reads `@table <type> ( col1, col2, ... ) row*`. AT_TABLE is
+    /// current on entry. Returns the table plus the byte offset
+    /// immediately past the directive's last token.
+    fn parse_table_directive(&mut self) -> Result<(TableDirective, usize), PxfError> {
+        let leading_comments = self.flush_comments();
+        let at_pos = self.current.pos;
+        self.advance(); // consume @table
+
+        if !matches!(self.current.kind, TokenKind::Ident) {
+            return Err(PxfError::new(
+                self.current.pos,
+                format!(
+                    "expected row message type after @table, got {}",
+                    self.current.kind.name()
+                ),
+            ));
+        }
+        let r#type = std::mem::take(&mut self.current.value);
+        self.advance();
+
+        if !matches!(self.current.kind, TokenKind::LParen) {
+            return Err(PxfError::new(
+                self.current.pos,
+                format!(
+                    "expected '(' to start @table column list, got {}",
+                    self.current.kind.name()
+                ),
+            ));
+        }
+        self.advance(); // consume (
+
+        if !matches!(self.current.kind, TokenKind::Ident) {
+            return Err(PxfError::new(
+                self.current.pos,
+                format!(
+                    "@table column list must contain at least one field name, got {}",
+                    self.current.kind.name()
+                ),
+            ));
+        }
+        let mut columns: Vec<String> = Vec::new();
+        loop {
+            if !matches!(self.current.kind, TokenKind::Ident) {
+                return Err(PxfError::new(
+                    self.current.pos,
+                    format!(
+                        "expected column field name, got {}",
+                        self.current.kind.name()
+                    ),
+                ));
+            }
+            if self.current.value.contains('.') {
+                return Err(PxfError::new(
+                    self.current.pos,
+                    format!(
+                        "@table column {:?}: dotted column paths are not supported in v1 (draft §3.4.4)",
+                        self.current.value
+                    ),
+                ));
+            }
+            columns.push(std::mem::take(&mut self.current.value));
+            self.advance();
+            if matches!(self.current.kind, TokenKind::Comma) {
+                self.advance();
+                continue;
+            }
+            if matches!(self.current.kind, TokenKind::RParen) {
+                break;
+            }
+            return Err(PxfError::new(
+                self.current.pos,
+                format!(
+                    "expected ',' or ')' in @table column list, got {}",
+                    self.current.kind.name()
+                ),
+            ));
+        }
+        let mut end_offset = self.current.pos.offset + 1; // past `)`
+        self.advance(); // consume )
+
+        // Zero or more rows.
+        let mut rows: Vec<TableRow> = Vec::new();
+        while matches!(self.current.kind, TokenKind::LParen) {
+            let (row, row_end) = self.parse_table_row(columns.len())?;
+            rows.push(row);
+            end_offset = row_end;
+        }
+
+        Ok((
+            TableDirective {
+                pos: at_pos,
+                r#type,
+                columns,
+                rows,
+                leading_comments,
+            },
+            end_offset,
+        ))
+    }
+
+    /// Reads `( cell ( ',' cell )* )` with an arity check against
+    /// `expected`. LPAREN is current on entry.
+    fn parse_table_row(&mut self, expected: usize) -> Result<(TableRow, usize), PxfError> {
+        let pos = self.current.pos;
+        self.advance(); // consume (
+
+        let mut cells: Vec<Option<Value>> = Vec::with_capacity(expected);
+        cells.push(self.parse_row_cell()?);
+        while matches!(self.current.kind, TokenKind::Comma) {
+            self.advance();
+            cells.push(self.parse_row_cell()?);
+        }
+        if !matches!(self.current.kind, TokenKind::RParen) {
+            return Err(PxfError::new(
+                self.current.pos,
+                format!(
+                    "expected ',' or ')' in @table row, got {}",
+                    self.current.kind.name()
+                ),
+            ));
+        }
+        let end_offset = self.current.pos.offset + 1;
+        self.advance(); // consume )
+
+        if cells.len() != expected {
+            return Err(PxfError::new(
+                pos,
+                format!(
+                    "@table row has {} cells, expected {} (column count)",
+                    cells.len(),
+                    expected
+                ),
+            ));
+        }
+        Ok((TableRow { pos, cells }, end_offset))
+    }
+
+    /// Consumes one cell of a @table row. Returns `None` for an empty
+    /// cell (no value between two commas, or at row start/end). Rejects
+    /// list / block values per v1 cell-grammar (draft §3.4.4).
+    fn parse_row_cell(&mut self) -> Result<Option<Value>, PxfError> {
+        match self.current.kind {
+            TokenKind::Comma | TokenKind::RParen => Ok(None),
+            TokenKind::LBracket => Err(PxfError::new(
+                self.current.pos,
+                "@table cells cannot contain list values in v1 (draft §3.4.4)".to_string(),
+            )),
+            TokenKind::LBrace => Err(PxfError::new(
+                self.current.pos,
+                "@table cells cannot contain block values in v1 (draft §3.4.4)".to_string(),
+            )),
+            _ => Ok(Some(self.parse_value()?)),
+        }
     }
 
     /// `allow_map_entry` gates the `:` (map-entry) form: false at document
@@ -332,6 +630,121 @@ impl<'a> Parser<'a> {
         self.leave();
         Ok(entries)
     }
+}
+
+/// Returns the byte index of the `}` that matches the `{` at
+/// `open_offset`. Mirrors the lexer's string / comment handling so
+/// braces inside literals don't confuse the brace count. Returns
+/// `-1` on unterminated input. Used by `parse_directive` to slice
+/// the raw bytes of a directive's inline block.
+pub(crate) fn find_matching_brace(input: &[u8], open_offset: usize) -> i64 {
+    let n = input.len();
+    let skip_string = |mut j: usize| -> i64 {
+        if j + 2 < n && input[j + 1] == b'"' && input[j + 2] == b'"' {
+            let mut k = j + 3;
+            while k + 2 < n {
+                if input[k] == b'"' && input[k + 1] == b'"' && input[k + 2] == b'"' {
+                    return (k + 3) as i64;
+                }
+                k += 1;
+            }
+            return -1;
+        }
+        j += 1;
+        while j < n {
+            if input[j] == b'\\' {
+                if j + 1 >= n {
+                    return -1;
+                }
+                j += 2;
+                continue;
+            }
+            if input[j] == b'"' {
+                return (j + 1) as i64;
+            }
+            if input[j] == b'\n' {
+                return -1;
+            }
+            j += 1;
+        }
+        -1
+    };
+    let skip_bytes = |mut j: usize| -> i64 {
+        j += 2; // past `b"`
+        while j < n {
+            if input[j] == b'\\' {
+                if j + 1 >= n {
+                    return -1;
+                }
+                j += 2;
+                continue;
+            }
+            if input[j] == b'"' {
+                return (j + 1) as i64;
+            }
+            if input[j] == b'\n' {
+                return -1;
+            }
+            j += 1;
+        }
+        -1
+    };
+    let skip_eol = |mut j: usize| -> usize {
+        while j < n && input[j] != b'\n' {
+            j += 1;
+        }
+        j
+    };
+
+    let mut depth: usize = 1;
+    let mut i = open_offset + 1;
+    while i < n {
+        let ch = input[i];
+        if ch == b'{' {
+            depth += 1;
+            i += 1;
+        } else if ch == b'}' {
+            depth -= 1;
+            if depth == 0 {
+                return i as i64;
+            }
+            i += 1;
+        } else if ch == b'"' {
+            let j = skip_string(i);
+            if j < 0 {
+                return -1;
+            }
+            i = j as usize;
+        } else if ch == b'b' && i + 1 < n && input[i + 1] == b'"' {
+            let j = skip_bytes(i);
+            if j < 0 {
+                return -1;
+            }
+            i = j as usize;
+        } else if ch == b'#' {
+            i = skip_eol(i + 1);
+        } else if ch == b'/' && i + 1 < n && input[i + 1] == b'/' {
+            i = skip_eol(i + 2);
+        } else if ch == b'/' && i + 1 < n && input[i + 1] == b'*' {
+            let mut j = i + 2;
+            let mut closed = false;
+            while j + 1 < n {
+                if input[j] == b'*' && input[j + 1] == b'/' {
+                    j += 2;
+                    closed = true;
+                    break;
+                }
+                j += 1;
+            }
+            if !closed {
+                return -1;
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    -1
 }
 
 /// Decode a base64-encoded string (standard or raw — the lexer accepts both).

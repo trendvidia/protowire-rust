@@ -11,6 +11,30 @@ format changes.
 
 ## [Unreleased]
 
+### Added
+
+- **PXF parser-side `@<name>` / `@entry` / `@table` directive grammar**
+  (draft §3.4.2 – §3.4.4). The AST `Document` now carries `directives`
+  (generic `@<name> *(prefix) [{ ... }]` entries) and `tables`
+  (`@table <type> ( cols ) row*` entries) alongside `type_url` and
+  `entries`. `Directive::body` preserves the raw bytes between `{`
+  and `}`; `Directive::type` keeps the legacy single-prefix shape
+  for v0.72.0-era consumers. `Document::body_offset` marks the byte
+  right after the last directive (used by chameleon for hashing the
+  schema-typed payload).
+
+  Both the AST parser and the direct decoder consume the new forms;
+  runtime semantics (`Presence` accessors, `TableReader` streaming,
+  per-row `bind_row`) follow in subsequent PRs of the v0.72-v0.75
+  catch-up. The decoder discards directive contents for now and
+  enforces the standalone constraint (draft §3.4.4): a document
+  containing any `@table` directive MUST NOT also carry `@type` or
+  top-level field entries.
+
+  `Position` gains an `offset` field (byte offset into the lexer's
+  input) so directive body extraction can slice raw bytes; existing
+  callers that read only line / column are unaffected.
+
 ## [0.70.0]
 
 Initial public release. The version number aligns this port with the rest
