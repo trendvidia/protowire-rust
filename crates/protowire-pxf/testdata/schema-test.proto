@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+//
+// Schemas that exercise the v0.72-v0.75 reserved-name validator
+// (draft §3.13). These descriptors are intentionally non-conformant —
+// they declare message fields, oneofs, and enum values whose names
+// case-sensitively match PXF value keywords (`null` / `true` /
+// `false`). The validator should reject them.
+
+syntax = "proto3";
+
+package schema.test.v1;
+
+// Conformant — no violations. Shares the file with non-conformant
+// messages, but validate_descriptor walks the FILE (matching the Go
+// reference), so a call passing this descriptor returns every
+// violation declared in this proto.
+message Conformant {
+  int64 price = 1;
+  int64 qty = 2;
+}
+
+message FieldNull {
+  int64 a = 1;
+  string null = 2;
+}
+
+message OneofTrue {
+  oneof true {
+    string s = 1;
+    int64 n = 2;
+  }
+}
+
+enum SideFalse {
+  SIDE_UNSPECIFIED = 0;
+  false = 1;
+}
+
+message OuterWithNestedEnum {
+  enum Side {
+    SIDE_UNSPECIFIED = 0;
+    null = 1;
+  }
+  Side s = 1;
+}
+
+message OuterWithNestedMsg {
+  message Inner {
+    int64 true = 1;
+  }
+  Inner i = 1;
+}
+
+message CaseInsensitiveOK {
+  int64 NULL = 1;
+  string True = 2;
+}
+
+message MultiViolations {
+  string null = 1;
+  int64 false = 2;
+}
+enum MultiEnum {
+  MULTI_UNSPECIFIED = 0;
+  true = 1;
+}
+
+// proto3 `optional` → synthetic oneof generated for the field. The
+// synthetic oneof MUST be filtered (prost-reflect's
+// `OneofDescriptor::is_synthetic()` matches the Go reference's
+// `IsSynthetic()`), so we expect ONE violation here (the field), not
+// two.
+message SyntheticOneof {
+  optional int64 null = 1;
+}
