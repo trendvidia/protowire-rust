@@ -98,17 +98,7 @@ fn unmarshal_inner(
         track_presence,
     );
     decoder.advance();
-
-    if matches!(decoder.current.kind, TokenKind::AtType) {
-        decoder.advance();
-        if !matches!(decoder.current.kind, TokenKind::Ident) {
-            return Err(decoder.err(format!(
-                "expected type name after @type, got {}",
-                decoder.current.kind
-            )));
-        }
-        decoder.advance();
-    }
+    decoder.consume_directives()?;
 
     let mut msg = DynamicMessage::new(desc.clone());
     decoder.decode_fields(&mut msg, false)?;
@@ -218,6 +208,188 @@ impl<'a> Decoder<'a> {
             self.current = self.lex.next_token();
             if !matches!(self.current.kind, TokenKind::Comment | TokenKind::Newline) {
                 return;
+            }
+        }
+    }
+
+    /// peek_kind: one-token lookahead without consumption. Used by
+    /// the directive-prefix disambiguator in consume_directives.
+    fn peek_kind(&mut self) -> TokenKind {
+        let snap = self.lex.snapshot();
+        let saved = self.current.clone();
+        self.advance();
+        let k = self.current.kind;
+        self.lex.restore(snap);
+        self.current = saved;
+        k
+    }
+
+    /// consume_directives drains any leading `@type` / `@<name>` /
+    /// `@table` directives, leaving `self.current` at the first body
+    /// token. PR 1 of the v0.72-v0.75 catch-up discards directive
+    /// contents in the direct decoder; semantics (Presence accessors,
+    /// TableReader, bind_row) arrive in later PRs.
+    ///
+    /// Enforces the standalone constraint (draft §3.4.4): a document
+    /// containing any `@table` directive MUST NOT also carry `@type`
+    /// or top-level field entries.
+    fn consume_directives(&mut self) -> Result<(), PxfError> {
+        let mut saw_type = false;
+        let mut has_table = false;
+        let mut first_table_pos = Position::new(1, 1);
+        loop {
+            match self.current.kind {
+                TokenKind::AtType => {
+                    if has_table {
+                        return Err(
+                            self.err("@table directive cannot coexist with @type (draft §3.4.4)")
+                        );
+                    }
+                    saw_type = true;
+                    self.advance(); // consume @type
+                    if !matches!(self.current.kind, TokenKind::Ident | TokenKind::String) {
+                        return Err(self.err(format!(
+                            "expected type name after @type, got {}",
+                            self.current.kind
+                        )));
+                    }
+                    self.advance();
+                }
+                TokenKind::AtDirective => {
+                    self.advance(); // consume @<name>
+                                    // Zero-or-more prefix identifiers with lookahead.
+                    while matches!(self.current.kind, TokenKind::Ident) {
+                        let next = self.peek_kind();
+                        if matches!(next, TokenKind::Equals | TokenKind::Colon) {
+                            break;
+                        }
+                        self.advance();
+                    }
+                    // Optional inline block — walk brace depth at the
+                    // token level.
+                    if matches!(self.current.kind, TokenKind::LBrace) {
+                        let mut depth: usize = 1;
+                        self.advance();
+                        while depth > 0 && !matches!(self.current.kind, TokenKind::Eof) {
+                            match self.current.kind {
+                                TokenKind::LBrace => depth += 1,
+                                TokenKind::RBrace => {
+                                    depth -= 1;
+                                    if depth == 0 {
+                                        self.advance();
+                                        break;
+                                    }
+                                }
+                                _ => {}
+                            }
+                            self.advance();
+                        }
+                        if depth != 0 {
+                            return Err(self.err("unmatched '{' in directive block"));
+                        }
+                    }
+                }
+                TokenKind::AtTable => {
+                    if saw_type {
+                        return Err(
+                            self.err("@table directive cannot coexist with @type (draft §3.4.4)")
+                        );
+                    }
+                    if !has_table {
+                        first_table_pos = self.current.pos;
+                        has_table = true;
+                    }
+                    self.advance(); // consume @table
+                    if !matches!(self.current.kind, TokenKind::Ident) {
+                        return Err(self.err("expected row message type after @table"));
+                    }
+                    self.advance();
+                    if !matches!(self.current.kind, TokenKind::LParen) {
+                        return Err(self.err("expected '(' to start @table column list"));
+                    }
+                    self.advance();
+                    if !matches!(self.current.kind, TokenKind::Ident) {
+                        return Err(
+                            self.err("@table column list must contain at least one field name")
+                        );
+                    }
+                    let mut n_cols: usize = 0;
+                    loop {
+                        if !matches!(self.current.kind, TokenKind::Ident) {
+                            return Err(self.err("expected column field name"));
+                        }
+                        n_cols += 1;
+                        if self.current.value.contains('.') {
+                            return Err(self.err(
+                                "@table column has dotted path; not supported in v1 (draft §3.4.4)",
+                            ));
+                        }
+                        self.advance();
+                        if matches!(self.current.kind, TokenKind::Comma) {
+                            self.advance();
+                            continue;
+                        }
+                        if matches!(self.current.kind, TokenKind::RParen) {
+                            break;
+                        }
+                        return Err(self.err("expected ',' or ')' in @table column list"));
+                    }
+                    self.advance(); // consume )
+                                    // Zero or more rows; each cell is a single scalar token (or empty).
+                    while matches!(self.current.kind, TokenKind::LParen) {
+                        let row_pos = self.current.pos;
+                        self.advance(); // (
+                        let mut cells: usize = 0;
+                        // First cell.
+                        if !matches!(self.current.kind, TokenKind::Comma | TokenKind::RParen) {
+                            if matches!(self.current.kind, TokenKind::LBracket | TokenKind::LBrace)
+                            {
+                                return Err(self.err(
+                                    "@table cells cannot contain list/block values in v1 (draft §3.4.4)",
+                                ));
+                            }
+                            self.advance();
+                        }
+                        cells += 1;
+                        while matches!(self.current.kind, TokenKind::Comma) {
+                            self.advance();
+                            if !matches!(self.current.kind, TokenKind::Comma | TokenKind::RParen) {
+                                if matches!(
+                                    self.current.kind,
+                                    TokenKind::LBracket | TokenKind::LBrace
+                                ) {
+                                    return Err(self.err(
+                                        "@table cells cannot contain list/block values in v1 (draft §3.4.4)",
+                                    ));
+                                }
+                                self.advance();
+                            }
+                            cells += 1;
+                        }
+                        if !matches!(self.current.kind, TokenKind::RParen) {
+                            return Err(self.err("expected ',' or ')' in @table row"));
+                        }
+                        if cells != n_cols {
+                            return Err(self.err_at(
+                                row_pos,
+                                format!(
+                                    "@table row has {} cells, expected {} (column count)",
+                                    cells, n_cols
+                                ),
+                            ));
+                        }
+                        self.advance(); // consume )
+                    }
+                }
+                _ => {
+                    if has_table && !matches!(self.current.kind, TokenKind::Eof) {
+                        return Err(self.err_at(
+                            first_table_pos,
+                            "@table directive cannot coexist with top-level field entries (draft §3.4.4)",
+                        ));
+                    }
+                    return Ok(());
+                }
             }
         }
     }

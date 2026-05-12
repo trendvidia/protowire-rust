@@ -17,8 +17,9 @@ pub mod result;
 pub mod token;
 
 pub use ast::{
-    Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, Document, DurationVal, Entry,
-    FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, TimestampVal, Value,
+    Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, Directive, Document, DurationVal,
+    Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, TableDirective,
+    TableRow, TimestampVal, Value,
 };
 pub use decode::{unmarshal, unmarshal_full, PoolResolver, TypeResolver, UnmarshalOptions};
 pub use encode::{marshal, MarshalOptions};

@@ -27,6 +27,15 @@ pub struct Lexer<'a> {
     col: usize,
 }
 
+/// Snapshot of [`Lexer`] state. Used to roll back the lexer for
+/// one-token lookahead.
+#[derive(Debug, Clone, Copy)]
+pub struct LexerState {
+    pub pos: usize,
+    pub line: usize,
+    pub col: usize,
+}
+
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
         Self {
@@ -88,6 +97,14 @@ impl<'a> Lexer<'a> {
             b']' => {
                 self.advance();
                 return Token::new(TokenKind::RBracket, "]", pos);
+            }
+            b'(' => {
+                self.advance();
+                return Token::new(TokenKind::LParen, "(", pos);
+            }
+            b')' => {
+                self.advance();
+                return Token::new(TokenKind::RParen, ")", pos);
             }
             b'=' => {
                 self.advance();
@@ -162,7 +179,30 @@ impl<'a> Lexer<'a> {
     }
 
     fn current_pos(&self) -> Position {
-        Position::new(self.line, self.col)
+        Position::with_offset(self.line, self.col, self.pos)
+    }
+
+    /// Raw input view — used by parse_directive to slice the body
+    /// bytes between `{` and `}` once the matching brace has been
+    /// located.
+    pub fn input_view(&self) -> &'a [u8] {
+        self.input
+    }
+
+    /// Snapshot the lexer's mutable state. Used by the parser to peek
+    /// the next token without consuming it.
+    pub fn snapshot(&self) -> LexerState {
+        LexerState {
+            pos: self.pos,
+            line: self.line,
+            col: self.col,
+        }
+    }
+
+    pub fn restore(&mut self, s: LexerState) {
+        self.pos = s.pos;
+        self.line = s.line;
+        self.col = s.col;
     }
 
     fn skip_spaces(&mut self) {
@@ -384,10 +424,18 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
         let name = slice_to_string(&self.input[start..self.pos]);
+        if name.is_empty() {
+            return Token::new(TokenKind::Illegal, "@", pos);
+        }
         if name == "type" {
             return Token::new(TokenKind::AtType, "@type", pos);
         }
-        Token::new(TokenKind::Illegal, format!("@{}", name), pos)
+        if name == "table" {
+            return Token::new(TokenKind::AtTable, "@table", pos);
+        }
+        // AtDirective's Token.value carries the bare name (no `@`); the
+        // parser uses this directly as Directive.name.
+        Token::new(TokenKind::AtDirective, name, pos)
     }
 
     fn lex_number(&mut self, pos: Position) -> Token {
@@ -1140,8 +1188,24 @@ mod tests {
     }
 
     #[test]
-    fn directive_unknown_is_illegal() {
+    fn directive_generic_is_at_directive() {
+        // v0.72+: `@bogus` lexes as AT_DIRECTIVE with the bare name as
+        // value. The parser decides whether the name is registered.
         let t = tokens("@bogus");
+        assert_eq!(t[0].kind, TokenKind::AtDirective);
+        assert_eq!(t[0].value, "bogus");
+    }
+
+    #[test]
+    fn directive_at_table_recognized() {
+        let t = tokens("@table");
+        assert_eq!(t[0].kind, TokenKind::AtTable);
+        assert_eq!(t[0].value, "@table");
+    }
+
+    #[test]
+    fn directive_bare_at_is_illegal() {
+        let t = tokens("@\n");
         assert_eq!(t[0].kind, TokenKind::Illegal);
     }
 
@@ -1151,9 +1215,9 @@ mod tests {
     fn position_line_and_column_advance() {
         let t = tokens("\"a\"\n  name");
         assert_eq!(t.len(), 3);
-        assert_eq!(t[0].pos, Position::new(1, 1));
-        assert_eq!(t[1].pos, Position::new(1, 4));
-        assert_eq!(t[2].pos, Position::new(2, 3));
+        assert_eq!(t[0].pos, Position::with_offset(1, 1, 0));
+        assert_eq!(t[1].pos, Position::with_offset(1, 4, 3));
+        assert_eq!(t[2].pos, Position::with_offset(2, 3, 6));
     }
 
     // ---------------- end-to-end ----------------

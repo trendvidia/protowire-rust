@@ -27,11 +27,21 @@ pub enum TokenKind {
     RBrace,
     LBracket,
     RBracket,
+    /// `(` — used by @table column list and row tuples.
+    LParen,
+    /// `)`
+    RParen,
     Equals,
     Colon,
     Comma,
 
     AtType,
+    /// `@<ident>` where ident is not `type` or `table`. The token's
+    /// `value` carries the bare name (no leading `@`); the parser
+    /// uses it as the directive's name.
+    AtDirective,
+    /// `@table` — bulk-row directive (draft §3.4.4).
+    AtTable,
 }
 
 impl TokenKind {
@@ -54,10 +64,14 @@ impl TokenKind {
             TokenKind::RBrace => "}",
             TokenKind::LBracket => "[",
             TokenKind::RBracket => "]",
+            TokenKind::LParen => "(",
+            TokenKind::RParen => ")",
             TokenKind::Equals => "=",
             TokenKind::Colon => ":",
             TokenKind::Comma => ",",
             TokenKind::AtType => "@type",
+            TokenKind::AtDirective => "@<directive>",
+            TokenKind::AtTable => "@table",
         }
     }
 }
@@ -68,15 +82,32 @@ impl fmt::Display for TokenKind {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Position {
     pub line: usize,
     pub column: usize,
+    /// Byte offset into the lexer's input. Used by directive body
+    /// extraction to slice the raw bytes between `{` and `}`;
+    /// line/column remain the primary user-facing identifier. Zero is
+    /// the start of input.
+    pub offset: usize,
 }
 
 impl Position {
     pub fn new(line: usize, column: usize) -> Self {
-        Self { line, column }
+        Self {
+            line,
+            column,
+            offset: 0,
+        }
+    }
+
+    pub fn with_offset(line: usize, column: usize, offset: usize) -> Self {
+        Self {
+            line,
+            column,
+            offset,
+        }
     }
 }
 
