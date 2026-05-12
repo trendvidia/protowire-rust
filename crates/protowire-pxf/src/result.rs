@@ -12,13 +12,27 @@
 //!   application and `(pxf.required)` validation
 //!
 //! Renamed from the upstream `Result` to avoid collision with `std::result::Result`.
+//!
+//! Also surfaces the document-root directives the decoder saw (PXF v0.72+):
+//!   - [`Presence::directives`] — generic `@<name> *(prefix) [{ ... }]`
+//!     blocks, in source order, excluding `@type` and `@table` (which
+//!     have their own handling).
+//!   - [`Presence::tables`] — `@table <type> ( cols ) row*` directives,
+//!     in source order. A document with any `@table` has no body
+//!     entries, so the rows are the document's payload — consumers walk
+//!     `TableDirective.rows` and bind each row's cells to a fresh
+//!     instance of `TableDirective.type` via their own schema.
 
 use std::collections::HashSet;
+
+use crate::ast::{Directive, TableDirective};
 
 #[derive(Debug, Default, Clone)]
 pub struct Presence {
     present: HashSet<String>,
     nulls: HashSet<String>,
+    directives: Vec<Directive>,
+    tables: Vec<TableDirective>,
 }
 
 impl Presence {
@@ -55,5 +69,23 @@ impl Presence {
     /// not guaranteed (HashSet). Callers that need stable order should sort.
     pub fn null_paths(&self) -> impl Iterator<Item = &str> {
         self.nulls.iter().map(|s| s.as_str())
+    }
+
+    // Directive accessors (PXF v0.72+).
+
+    pub fn directives(&self) -> &[Directive] {
+        &self.directives
+    }
+
+    pub fn tables(&self) -> &[TableDirective] {
+        &self.tables
+    }
+
+    pub fn add_directive(&mut self, d: Directive) {
+        self.directives.push(d);
+    }
+
+    pub fn add_table(&mut self, t: TableDirective) {
+        self.tables.push(t);
     }
 }
