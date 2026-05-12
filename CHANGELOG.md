@@ -13,6 +13,26 @@ format changes.
 
 ### Added
 
+- **`Presence::directives()` and `Presence::tables()` accessors.** The
+  direct decoder now populates the document-root directive list and
+  `@table` directive list on `Presence` during `unmarshal_full`, so
+  consumers can read them after a decode call.
+  - `Presence::directives()` returns the generic
+    `@<name> *(prefix) [{ ... }]` blocks in source order, with raw
+    body bytes (`Vec<u8>`) preserved verbatim for downstream re-
+    parsing (chameleon's `@header T { ... }` reader, etc.). A single
+    prefix populates the back-compat `type` field; two or more leave
+    it empty and consumers read `prefixes` directly.
+  - `Presence::tables()` returns the `@table` directives with full
+    column metadata and parsed cell values per row, faithful to the
+    three-state cell grammar (absent / present-but-null /
+    present-with-value, draft §3.4.4). Cells are
+    `Vec<Option<Value>>` — `None` for absent, `Some(Value::Null)`
+    for present-but-null.
+  - `unmarshal` (vs `unmarshal_full`) still passes no `Presence` and
+    walks directives without allocating directive AST nodes — the
+    direct path retains its zero-allocation prelude on the hot path.
+
 - **PXF schema reserved-name validator (draft §3.13).** Rejects
   protobuf schemas that declare a message field, oneof, or enum value
   whose name is case-sensitively equal to a PXF value keyword

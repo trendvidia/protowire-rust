@@ -20,6 +20,12 @@ use prost_reflect::{
 use std::collections::HashMap;
 
 use crate::annotations::{find_null_mask_field, get_default, is_required};
+use crate::ast::{
+    BoolVal as AstBoolVal, BytesVal as AstBytesVal, Directive, DurationVal as AstDurationVal,
+    FloatVal as AstFloatVal, IdentVal as AstIdentVal, IntVal as AstIntVal, NullVal as AstNullVal,
+    StringVal as AstStringVal, TableDirective, TableRow, TimestampVal as AstTimestampVal,
+    Value as AstValue,
+};
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
 use crate::parser::MAX_NESTING_DEPTH;
@@ -244,6 +250,41 @@ impl<'a> Decoder<'a> {
     /// Enforces the standalone constraint (draft §3.4.4): a document
     /// containing any `@table` directive MUST NOT also carry `@type`
     /// or top-level field entries.
+    /// Parse one scalar @table cell token at `self.current` into an
+    /// AST `Value`. Mirrors the scalar branches of the AST parser's
+    /// `parse_value`. List / block tokens are rejected by the caller
+    /// before this is invoked.
+    fn parse_scalar_cell_value(&mut self) -> Result<AstValue, PxfError> {
+        let pos = self.current.pos;
+        let value = std::mem::take(&mut self.current.value);
+        let kind = self.current.kind;
+        let out = match kind {
+            TokenKind::String => AstValue::String(AstStringVal { pos, value }),
+            TokenKind::Int => AstValue::Int(AstIntVal { pos, raw: value }),
+            TokenKind::Float => AstValue::Float(AstFloatVal { pos, raw: value }),
+            TokenKind::Bool => AstValue::Bool(AstBoolVal {
+                pos,
+                value: value == "true",
+            }),
+            TokenKind::Bytes => {
+                let bytes = decode_base64(&value).unwrap_or_default();
+                AstValue::Bytes(AstBytesVal { pos, value: bytes })
+            }
+            TokenKind::Timestamp => AstValue::Timestamp(AstTimestampVal { pos, raw: value }),
+            TokenKind::Duration => AstValue::Duration(AstDurationVal { pos, raw: value }),
+            TokenKind::Null => AstValue::Null(AstNullVal { pos }),
+            TokenKind::Ident => AstValue::Ident(AstIdentVal { pos, name: value }),
+            _ => {
+                return Err(PxfError::new(
+                    pos,
+                    format!("unsupported @table cell value: {}", kind),
+                ));
+            }
+        };
+        self.advance();
+        Ok(out)
+    }
+
     fn consume_directives(&mut self) -> Result<(), PxfError> {
         let mut saw_type = false;
         let mut has_table = false;
@@ -267,6 +308,9 @@ impl<'a> Decoder<'a> {
                     self.advance();
                 }
                 TokenKind::AtDirective => {
+                    let at_pos = self.current.pos;
+                    let name = std::mem::take(&mut self.current.value);
+                    let mut prefixes: Vec<String> = Vec::new();
                     self.advance(); // consume @<name>
                                     // Zero-or-more prefix identifiers with lookahead.
                     while matches!(self.current.kind, TokenKind::Ident) {
@@ -274,11 +318,23 @@ impl<'a> Decoder<'a> {
                         if matches!(next, TokenKind::Equals | TokenKind::Colon) {
                             break;
                         }
+                        prefixes.push(std::mem::take(&mut self.current.value));
                         self.advance();
                     }
-                    // Optional inline block — walk brace depth at the
-                    // token level.
+                    // Back-compat: single prefix populates legacy `type`.
+                    let r#type = if prefixes.len() == 1 {
+                        prefixes[0].clone()
+                    } else {
+                        String::new()
+                    };
+                    let mut body: Vec<u8> = Vec::new();
+                    let mut has_body = false;
+                    // Optional inline block — slice raw bytes by walking
+                    // brace depth at the token level. Strings / comments
+                    // are handled by the lexer, so brace tokens here are
+                    // always real braces.
                     if matches!(self.current.kind, TokenKind::LBrace) {
+                        let open = self.current.pos.offset;
                         let mut depth: usize = 1;
                         self.advance();
                         while depth > 0 && !matches!(self.current.kind, TokenKind::Eof) {
@@ -287,6 +343,9 @@ impl<'a> Decoder<'a> {
                                 TokenKind::RBrace => {
                                     depth -= 1;
                                     if depth == 0 {
+                                        let close = self.current.pos.offset;
+                                        body = self.lex.input_view()[open + 1..close].to_vec();
+                                        has_body = true;
                                         self.advance();
                                         break;
                                     }
@@ -299,6 +358,17 @@ impl<'a> Decoder<'a> {
                             return Err(self.err("unmatched '{' in directive block"));
                         }
                     }
+                    if let Some(p) = self.presence.as_mut() {
+                        p.add_directive(Directive {
+                            pos: at_pos,
+                            name,
+                            prefixes,
+                            r#type,
+                            body,
+                            has_body,
+                            leading_comments: Vec::new(),
+                        });
+                    }
                 }
                 TokenKind::AtTable => {
                     if saw_type {
@@ -306,14 +376,16 @@ impl<'a> Decoder<'a> {
                             self.err("@table directive cannot coexist with @type (draft §3.4.4)")
                         );
                     }
+                    let table_pos = self.current.pos;
                     if !has_table {
-                        first_table_pos = self.current.pos;
+                        first_table_pos = table_pos;
                         has_table = true;
                     }
                     self.advance(); // consume @table
                     if !matches!(self.current.kind, TokenKind::Ident) {
                         return Err(self.err("expected row message type after @table"));
                     }
+                    let table_type = std::mem::take(&mut self.current.value);
                     self.advance();
                     if !matches!(self.current.kind, TokenKind::LParen) {
                         return Err(self.err("expected '(' to start @table column list"));
@@ -324,17 +396,17 @@ impl<'a> Decoder<'a> {
                             self.err("@table column list must contain at least one field name")
                         );
                     }
-                    let mut n_cols: usize = 0;
+                    let mut columns: Vec<String> = Vec::new();
                     loop {
                         if !matches!(self.current.kind, TokenKind::Ident) {
                             return Err(self.err("expected column field name"));
                         }
-                        n_cols += 1;
                         if self.current.value.contains('.') {
                             return Err(self.err(
                                 "@table column has dotted path; not supported in v1 (draft §3.4.4)",
                             ));
                         }
+                        columns.push(std::mem::take(&mut self.current.value));
                         self.advance();
                         if matches!(self.current.kind, TokenKind::Comma) {
                             self.advance();
@@ -346,50 +418,69 @@ impl<'a> Decoder<'a> {
                         return Err(self.err("expected ',' or ')' in @table column list"));
                     }
                     self.advance(); // consume )
-                                    // Zero or more rows; each cell is a single scalar token (or empty).
+                    let n_cols = columns.len();
+                    let mut rows: Vec<TableRow> = Vec::new();
+                    // Zero or more rows; each cell is a single scalar
+                    // token (or empty).
                     while matches!(self.current.kind, TokenKind::LParen) {
                         let row_pos = self.current.pos;
                         self.advance(); // (
-                        let mut cells: usize = 0;
+                        let mut cells: Vec<Option<AstValue>> = Vec::with_capacity(n_cols);
                         // First cell.
-                        if !matches!(self.current.kind, TokenKind::Comma | TokenKind::RParen) {
-                            if matches!(self.current.kind, TokenKind::LBracket | TokenKind::LBrace)
-                            {
+                        if matches!(self.current.kind, TokenKind::Comma | TokenKind::RParen) {
+                            cells.push(None);
+                        } else if matches!(
+                            self.current.kind,
+                            TokenKind::LBracket | TokenKind::LBrace
+                        ) {
+                            return Err(self.err(
+                                "@table cells cannot contain list/block values in v1 (draft §3.4.4)",
+                            ));
+                        } else {
+                            cells.push(Some(self.parse_scalar_cell_value()?));
+                        }
+                        while matches!(self.current.kind, TokenKind::Comma) {
+                            self.advance();
+                            if matches!(self.current.kind, TokenKind::Comma | TokenKind::RParen) {
+                                cells.push(None);
+                            } else if matches!(
+                                self.current.kind,
+                                TokenKind::LBracket | TokenKind::LBrace
+                            ) {
                                 return Err(self.err(
                                     "@table cells cannot contain list/block values in v1 (draft §3.4.4)",
                                 ));
+                            } else {
+                                cells.push(Some(self.parse_scalar_cell_value()?));
                             }
-                            self.advance();
-                        }
-                        cells += 1;
-                        while matches!(self.current.kind, TokenKind::Comma) {
-                            self.advance();
-                            if !matches!(self.current.kind, TokenKind::Comma | TokenKind::RParen) {
-                                if matches!(
-                                    self.current.kind,
-                                    TokenKind::LBracket | TokenKind::LBrace
-                                ) {
-                                    return Err(self.err(
-                                        "@table cells cannot contain list/block values in v1 (draft §3.4.4)",
-                                    ));
-                                }
-                                self.advance();
-                            }
-                            cells += 1;
                         }
                         if !matches!(self.current.kind, TokenKind::RParen) {
                             return Err(self.err("expected ',' or ')' in @table row"));
                         }
-                        if cells != n_cols {
+                        if cells.len() != n_cols {
                             return Err(self.err_at(
                                 row_pos,
                                 format!(
                                     "@table row has {} cells, expected {} (column count)",
-                                    cells, n_cols
+                                    cells.len(),
+                                    n_cols
                                 ),
                             ));
                         }
                         self.advance(); // consume )
+                        rows.push(TableRow {
+                            pos: row_pos,
+                            cells,
+                        });
+                    }
+                    if let Some(p) = self.presence.as_mut() {
+                        p.add_table(TableDirective {
+                            pos: table_pos,
+                            r#type: table_type,
+                            columns,
+                            rows,
+                            leading_comments: Vec::new(),
+                        });
                     }
                 }
                 _ => {
