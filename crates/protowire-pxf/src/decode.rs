@@ -55,6 +55,11 @@ pub struct UnmarshalOptions<'a> {
     /// `None`, Any fields decode as regular messages with `type_url` and
     /// `value` fields.
     pub type_resolver: Option<&'a dyn TypeResolver>,
+    /// Skip the per-call schema reserved-name check (draft §3.13).
+    /// Callers that have already validated their descriptors (typically
+    /// via [`crate::validate_descriptor`] in a one-time codegen or
+    /// registry-load pass) can set this to bypass the per-call recheck.
+    pub skip_validate: bool,
 }
 
 /// Decode PXF text into a fresh [`DynamicMessage`] for `desc`.
@@ -91,6 +96,12 @@ fn unmarshal_inner(
     options: UnmarshalOptions<'_>,
     track_presence: bool,
 ) -> Result<(DynamicMessage, Option<Presence>), PxfError> {
+    if !options.skip_validate {
+        let vs = crate::schema::validate_descriptor(desc);
+        if let Some(msg) = crate::schema::as_validation_error_message(&vs) {
+            return Err(PxfError::new(Position::default(), msg));
+        }
+    }
     let mut decoder = Decoder::new(
         data,
         options.discard_unknown,

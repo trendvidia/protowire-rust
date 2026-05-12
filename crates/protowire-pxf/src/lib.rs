@@ -14,6 +14,7 @@ pub mod format;
 pub mod lexer;
 pub mod parser;
 pub mod result;
+pub mod schema;
 pub mod token;
 
 pub use ast::{
@@ -28,4 +29,5 @@ pub use format::{format, format_with_options, FormatOptions};
 pub use lexer::Lexer;
 pub use parser::parse;
 pub use result::Presence;
+pub use schema::{validate_descriptor, validate_file, Violation, ViolationKind};
 pub use token::{Position, Token, TokenKind};

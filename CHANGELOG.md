@@ -13,6 +13,27 @@ format changes.
 
 ### Added
 
+- **PXF schema reserved-name validator (draft §3.13).** Rejects
+  protobuf schemas that declare a message field, oneof, or enum value
+  whose name is case-sensitively equal to a PXF value keyword
+  (`null` / `true` / `false`) — such a name lexes as the keyword and
+  the declared element is unreachable from PXF surface syntax. New
+  `protowire_pxf::schema` module exposes:
+  - `validate_descriptor(&MessageDescriptor)` /
+    `validate_file(&FileDescriptor)` return a sorted
+    `Vec<Violation { file, element, name, kind }>`.
+  - `ViolationKind::{Field, Oneof, EnumValue}` and a `Display` impl
+    that renders one-line human-readable text.
+  - `UnmarshalOptions` gains `skip_validate: bool` for consumers that
+    validate once at registry-load time and don't want the per-call
+    recheck cost.
+  - `unmarshal` and `unmarshal_full` invoke the validator before
+    decode; violations come back as a `PxfError` with a multi-line
+    message (one `Violation::to_string()` line per offender).
+  - Synthetic oneofs from proto3 `optional` fields are filtered
+    automatically — prost-reflect's `OneofDescriptor::is_synthetic()`
+    matches the Go reference's `IsSynthetic()` filter.
+
 - **PXF parser-side `@<name>` / `@entry` / `@table` directive grammar**
   (draft §3.4.2 – §3.4.4). The AST `Document` now carries `directives`
   (generic `@<name> *(prefix) [{ ... }]` entries) and `tables`
