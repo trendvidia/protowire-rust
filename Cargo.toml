@@ -13,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.70.0"
+version = "0.75.0"
 edition = "2021"
 rust-version = "1.82"
 license = "MIT"
@@ -25,11 +25,11 @@ categories = ["encoding", "parser-implementations", "network-programming"]
 readme = "README.md"
 
 [workspace.dependencies]
-protowire = { path = "crates/protowire", version = "0.70.0" }
-protowire-pb = { path = "crates/protowire-pb", version = "0.70.0" }
-protowire-envelope = { path = "crates/protowire-envelope", version = "0.70.0" }
-protowire-pxf = { path = "crates/protowire-pxf", version = "0.70.0" }
-protowire-sbe = { path = "crates/protowire-sbe", version = "0.70.0" }
+protowire = { path = "crates/protowire", version = "0.75.0" }
+protowire-pb = { path = "crates/protowire-pb", version = "0.75.0" }
+protowire-envelope = { path = "crates/protowire-envelope", version = "0.75.0" }
+protowire-pxf = { path = "crates/protowire-pxf", version = "0.75.0" }
+protowire-sbe = { path = "crates/protowire-sbe", version = "0.75.0" }
 
 prost = "0.14"
 prost-build = "0.14"
