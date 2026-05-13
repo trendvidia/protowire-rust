@@ -15,6 +15,7 @@ pub mod lexer;
 pub mod parser;
 pub mod result;
 pub mod schema;
+pub mod table_reader;
 pub mod token;
 
 pub use ast::{
@@ -30,4 +31,5 @@ pub use lexer::Lexer;
 pub use parser::parse;
 pub use result::Presence;
 pub use schema::{validate_descriptor, validate_file, Violation, ViolationKind};
+pub use table_reader::{bind_row, TableReader, DEFAULT_HEADER_MAX_BYTES};
 pub use token::{Position, Token, TokenKind};
