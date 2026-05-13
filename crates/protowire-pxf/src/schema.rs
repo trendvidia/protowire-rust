@@ -97,6 +97,21 @@ fn is_reserved(name: &str) -> bool {
     name == "null" || name == "true" || name == "false"
 }
 
+/// Returns `true` when `name` is one of the directive names the spec
+/// reserves for future allocation (draft §3.4.6): `"table"`,
+/// `"datasource"`, `"view"`, `"procedure"`, `"function"`,
+/// `"permissions"`. v1 decoders MUST reject these as unknown reserved
+/// directives. The names with their own production (`"type"`,
+/// `"dataset"`, `"proto"`) and the spec-registered `"entry"` aren't
+/// covered here — they're already handled either by the lexer or the
+/// named_directive shape.
+pub fn is_future_reserved_directive(name: &str) -> bool {
+    matches!(
+        name,
+        "table" | "datasource" | "view" | "procedure" | "function" | "permissions"
+    )
+}
+
 fn walk_message(path: &str, md: &MessageDescriptor, out: &mut Vec<Violation>) {
     for f in md.fields() {
         if is_reserved(f.name()) {

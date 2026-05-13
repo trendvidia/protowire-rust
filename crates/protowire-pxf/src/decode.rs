@@ -21,10 +21,10 @@ use std::collections::HashMap;
 
 use crate::annotations::{find_null_mask_field, get_default, is_required};
 use crate::ast::{
-    BoolVal as AstBoolVal, BytesVal as AstBytesVal, Directive, DurationVal as AstDurationVal,
-    FloatVal as AstFloatVal, IdentVal as AstIdentVal, IntVal as AstIntVal, NullVal as AstNullVal,
-    StringVal as AstStringVal, TableDirective, TableRow, TimestampVal as AstTimestampVal,
-    Value as AstValue,
+    BoolVal as AstBoolVal, BytesVal as AstBytesVal, DatasetDirective, DatasetRow, Directive,
+    DurationVal as AstDurationVal, FloatVal as AstFloatVal, IdentVal as AstIdentVal,
+    IntVal as AstIntVal, NullVal as AstNullVal, ProtoDirective, ProtoShape,
+    StringVal as AstStringVal, TimestampVal as AstTimestampVal, Value as AstValue,
 };
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
@@ -242,15 +242,15 @@ impl<'a> Decoder<'a> {
     }
 
     /// consume_directives drains any leading `@type` / `@<name>` /
-    /// `@table` directives, leaving `self.current` at the first body
+    /// `@dataset` directives, leaving `self.current` at the first body
     /// token. PR 1 of the v0.72-v0.75 catch-up discards directive
     /// contents in the direct decoder; semantics (Presence accessors,
-    /// TableReader, bind_row) arrive in later PRs.
+    /// DatasetReader, bind_row) arrive in later PRs.
     ///
     /// Enforces the standalone constraint (draft §3.4.4): a document
-    /// containing any `@table` directive MUST NOT also carry `@type`
+    /// containing any `@dataset` directive MUST NOT also carry `@type`
     /// or top-level field entries.
-    /// Parse one scalar @table cell token at `self.current` into an
+    /// Parse one scalar @dataset cell token at `self.current` into an
     /// AST `Value`. Mirrors the scalar branches of the AST parser's
     /// `parse_value`. List / block tokens are rejected by the caller
     /// before this is invoked.
@@ -277,7 +277,7 @@ impl<'a> Decoder<'a> {
             _ => {
                 return Err(PxfError::new(
                     pos,
-                    format!("unsupported @table cell value: {}", kind),
+                    format!("unsupported @dataset cell value: {}", kind),
                 ));
             }
         };
@@ -287,14 +287,14 @@ impl<'a> Decoder<'a> {
 
     fn consume_directives(&mut self) -> Result<(), PxfError> {
         let mut saw_type = false;
-        let mut has_table = false;
-        let mut first_table_pos = Position::new(1, 1);
+        let mut has_dataset = false;
+        let mut first_dataset_pos = Position::new(1, 1);
         loop {
             match self.current.kind {
                 TokenKind::AtType => {
-                    if has_table {
+                    if has_dataset {
                         return Err(
-                            self.err("@table directive cannot coexist with @type (draft §3.4.4)")
+                            self.err("@dataset directive cannot coexist with @type (draft §3.4.4)")
                         );
                     }
                     saw_type = true;
@@ -310,6 +310,15 @@ impl<'a> Decoder<'a> {
                 TokenKind::AtDirective => {
                     let at_pos = self.current.pos;
                     let name = std::mem::take(&mut self.current.value);
+                    if crate::schema::is_future_reserved_directive(&name) {
+                        return Err(PxfError::new(
+                            at_pos,
+                            format!(
+                                "@{} is a spec-reserved directive name with no v1 semantics (draft §3.4.6)",
+                                name
+                            ),
+                        ));
+                    }
                     let mut prefixes: Vec<String> = Vec::new();
                     self.advance(); // consume @<name>
                                     // Zero-or-more prefix identifiers with lookahead.
@@ -370,30 +379,35 @@ impl<'a> Decoder<'a> {
                         });
                     }
                 }
-                TokenKind::AtTable => {
+                TokenKind::AtDataset => {
                     if saw_type {
                         return Err(
-                            self.err("@table directive cannot coexist with @type (draft §3.4.4)")
+                            self.err("@dataset directive cannot coexist with @type (draft §3.4.4)")
                         );
                     }
                     let table_pos = self.current.pos;
-                    if !has_table {
-                        first_table_pos = table_pos;
-                        has_table = true;
+                    if !has_dataset {
+                        first_dataset_pos = table_pos;
+                        has_dataset = true;
                     }
-                    self.advance(); // consume @table
-                    if !matches!(self.current.kind, TokenKind::Ident) {
-                        return Err(self.err("expected row message type after @table"));
-                    }
-                    let table_type = std::mem::take(&mut self.current.value);
-                    self.advance();
+                    self.advance(); // consume @dataset
+                    // Optional row message type; MAY be omitted when an
+                    // anonymous @proto precedes (draft §3.4.4 Anonymous
+                    // binding).
+                    let table_type = if matches!(self.current.kind, TokenKind::Ident) {
+                        let t = std::mem::take(&mut self.current.value);
+                        self.advance();
+                        t
+                    } else {
+                        String::new()
+                    };
                     if !matches!(self.current.kind, TokenKind::LParen) {
-                        return Err(self.err("expected '(' to start @table column list"));
+                        return Err(self.err("expected '(' to start @dataset column list"));
                     }
                     self.advance();
                     if !matches!(self.current.kind, TokenKind::Ident) {
                         return Err(
-                            self.err("@table column list must contain at least one field name")
+                            self.err("@dataset column list must contain at least one field name")
                         );
                     }
                     let mut columns: Vec<String> = Vec::new();
@@ -403,7 +417,7 @@ impl<'a> Decoder<'a> {
                         }
                         if self.current.value.contains('.') {
                             return Err(self.err(
-                                "@table column has dotted path; not supported in v1 (draft §3.4.4)",
+                                "@dataset column has dotted path; not supported in v1 (draft §3.4.4)",
                             ));
                         }
                         columns.push(std::mem::take(&mut self.current.value));
@@ -415,11 +429,11 @@ impl<'a> Decoder<'a> {
                         if matches!(self.current.kind, TokenKind::RParen) {
                             break;
                         }
-                        return Err(self.err("expected ',' or ')' in @table column list"));
+                        return Err(self.err("expected ',' or ')' in @dataset column list"));
                     }
                     self.advance(); // consume )
                     let n_cols = columns.len();
-                    let mut rows: Vec<TableRow> = Vec::new();
+                    let mut rows: Vec<DatasetRow> = Vec::new();
                     // Zero or more rows; each cell is a single scalar
                     // token (or empty).
                     while matches!(self.current.kind, TokenKind::LParen) {
@@ -434,7 +448,7 @@ impl<'a> Decoder<'a> {
                             TokenKind::LBracket | TokenKind::LBrace
                         ) {
                             return Err(self.err(
-                                "@table cells cannot contain list/block values in v1 (draft §3.4.4)",
+                                "@dataset cells cannot contain list/block values in v1 (draft §3.4.4)",
                             ));
                         } else {
                             cells.push(Some(self.parse_scalar_cell_value()?));
@@ -448,33 +462,33 @@ impl<'a> Decoder<'a> {
                                 TokenKind::LBracket | TokenKind::LBrace
                             ) {
                                 return Err(self.err(
-                                    "@table cells cannot contain list/block values in v1 (draft §3.4.4)",
+                                    "@dataset cells cannot contain list/block values in v1 (draft §3.4.4)",
                                 ));
                             } else {
                                 cells.push(Some(self.parse_scalar_cell_value()?));
                             }
                         }
                         if !matches!(self.current.kind, TokenKind::RParen) {
-                            return Err(self.err("expected ',' or ')' in @table row"));
+                            return Err(self.err("expected ',' or ')' in @dataset row"));
                         }
                         if cells.len() != n_cols {
                             return Err(self.err_at(
                                 row_pos,
                                 format!(
-                                    "@table row has {} cells, expected {} (column count)",
+                                    "@dataset row has {} cells, expected {} (column count)",
                                     cells.len(),
                                     n_cols
                                 ),
                             ));
                         }
                         self.advance(); // consume )
-                        rows.push(TableRow {
+                        rows.push(DatasetRow {
                             pos: row_pos,
                             cells,
                         });
                     }
                     if let Some(p) = self.presence.as_mut() {
-                        p.add_table(TableDirective {
+                        p.add_dataset(DatasetDirective {
                             pos: table_pos,
                             r#type: table_type,
                             columns,
@@ -483,11 +497,65 @@ impl<'a> Decoder<'a> {
                         });
                     }
                 }
+                TokenKind::AtProto => {
+                    let at_pos = self.current.pos;
+                    self.advance(); // consume @proto
+                    let (shape, type_name, body) = match self.current.kind {
+                        TokenKind::LBrace => {
+                            let body = self.consume_proto_brace_body(at_pos, "@proto (anonymous form)")?;
+                            (ProtoShape::Anonymous, String::new(), body)
+                        }
+                        TokenKind::Ident => {
+                            let type_name = std::mem::take(&mut self.current.value);
+                            self.advance();
+                            if !matches!(self.current.kind, TokenKind::LBrace) {
+                                return Err(self.err(format!(
+                                    "expected '{{' after @proto {}, got {}",
+                                    type_name,
+                                    self.current.kind
+                                )));
+                            }
+                            let body = self.consume_proto_brace_body(
+                                at_pos,
+                                &format!("@proto {}", type_name),
+                            )?;
+                            (ProtoShape::Named, type_name, body)
+                        }
+                        TokenKind::String => {
+                            let body = std::mem::take(&mut self.current.value).into_bytes();
+                            self.advance();
+                            (ProtoShape::Source, String::new(), body)
+                        }
+                        TokenKind::Bytes => {
+                            let raw = std::mem::take(&mut self.current.value);
+                            let decoded = decode_base64(&raw).ok_or_else(|| {
+                                self.err("@proto descriptor body: invalid base64")
+                            })?;
+                            self.advance();
+                            (ProtoShape::Descriptor, String::new(), decoded)
+                        }
+                        _ => {
+                            return Err(self.err(format!(
+                                "expected '{{', dotted identifier, triple-quoted string, or b\"...\" after @proto, got {}",
+                                self.current.kind
+                            )));
+                        }
+                    };
+                    if let Some(p) = self.presence.as_mut() {
+                        p.add_proto(ProtoDirective {
+                            pos: at_pos,
+                            shape,
+                            type_name,
+                            body,
+                            leading_comments: Vec::new(),
+                        });
+                    }
+                }
                 _ => {
-                    if has_table && !matches!(self.current.kind, TokenKind::Eof) {
+                    if has_dataset && !matches!(self.current.kind, TokenKind::Eof) {
                         return Err(self.err_at(
-                            first_table_pos,
-                            "@table directive cannot coexist with top-level field entries (draft §3.4.4)",
+                            first_dataset_pos,
+                            "@dataset directive cannot coexist with top-level field entries (draft §3.4.4)",
                         ));
                     }
                     return Ok(());
@@ -502,6 +570,38 @@ impl<'a> Decoder<'a> {
 
     fn err_at(&self, pos: Position, msg: impl Into<String>) -> PxfError {
         PxfError::new(pos, msg)
+    }
+
+    /// Consume the raw bytes between `{` and the matching `}` (both
+    /// exclusive) for an `@proto` brace-bounded body. LBrace is
+    /// current on entry. Walks brace depth at the token level —
+    /// strings and comments are handled by the lexer, so brace tokens
+    /// here are always real braces.
+    fn consume_proto_brace_body(
+        &mut self,
+        at_pos: Position,
+        label: &str,
+    ) -> Result<Vec<u8>, PxfError> {
+        let open = self.current.pos.offset;
+        let mut depth: usize = 1;
+        self.advance();
+        while depth > 0 && !matches!(self.current.kind, TokenKind::Eof) {
+            match self.current.kind {
+                TokenKind::LBrace => depth += 1,
+                TokenKind::RBrace => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let close = self.current.pos.offset;
+                        let body = self.lex.input_view()[open + 1..close].to_vec();
+                        self.advance();
+                        return Ok(body);
+                    }
+                }
+                _ => {}
+            }
+            self.advance();
+        }
+        Err(self.err_at(at_pos, format!("{}: unmatched '{{'", label)))
     }
 
     fn decode_fields(&mut self, msg: &mut DynamicMessage, in_block: bool) -> Result<(), PxfError> {
@@ -1600,7 +1700,7 @@ fn parse_go_duration(s: &str) -> Result<(i64, i32), String> {
 /// alphabets — matching the Go reference's `StdEncoding`/`RawStdEncoding`
 /// fallback. The lexer has already validated the alphabet, so we only need to
 /// handle padding here.
-fn decode_base64(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn decode_base64(s: &str) -> Option<Vec<u8>> {
     if s.is_empty() {
         return Some(Vec::new());
     }

@@ -27,7 +27,7 @@ pub enum TokenKind {
     RBrace,
     LBracket,
     RBracket,
-    /// `(` — used by @table column list and row tuples.
+    /// `(` — used by @dataset column list and row tuples.
     LParen,
     /// `)`
     RParen,
@@ -36,12 +36,14 @@ pub enum TokenKind {
     Comma,
 
     AtType,
-    /// `@<ident>` where ident is not `type` or `table`. The token's
-    /// `value` carries the bare name (no leading `@`); the parser
-    /// uses it as the directive's name.
+    /// `@<ident>` for any non-reserved name. The token's `value`
+    /// carries the bare name (no leading `@`); the parser uses it
+    /// as the directive's name.
     AtDirective,
-    /// `@table` — bulk-row directive (draft §3.4.4).
-    AtTable,
+    /// `@dataset` — row-oriented bulk-data directive (draft §3.4.4).
+    AtDataset,
+    /// `@proto` — embedded protobuf schema directive (draft §3.4.5).
+    AtProto,
 }
 
 impl TokenKind {
@@ -71,7 +73,8 @@ impl TokenKind {
             TokenKind::Comma => ",",
             TokenKind::AtType => "@type",
             TokenKind::AtDirective => "@<directive>",
-            TokenKind::AtTable => "@table",
+            TokenKind::AtDataset => "@dataset",
+            TokenKind::AtProto => "@proto",
         }
     }
 }

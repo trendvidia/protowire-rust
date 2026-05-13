@@ -15,13 +15,13 @@ pub mod lexer;
 pub mod parser;
 pub mod result;
 pub mod schema;
-pub mod table_reader;
+pub mod dataset_reader;
 pub mod token;
 
 pub use ast::{
     Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, Directive, Document, DurationVal,
-    Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, TableDirective,
-    TableRow, TimestampVal, Value,
+    Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, DatasetDirective,
+    DatasetRow, TimestampVal, Value,
 };
 pub use decode::{unmarshal, unmarshal_full, PoolResolver, TypeResolver, UnmarshalOptions};
 pub use encode::{marshal, MarshalOptions};
@@ -31,5 +31,5 @@ pub use lexer::Lexer;
 pub use parser::parse;
 pub use result::Presence;
 pub use schema::{validate_descriptor, validate_file, Violation, ViolationKind};
-pub use table_reader::{bind_row, TableReader, DEFAULT_HEADER_MAX_BYTES};
+pub use dataset_reader::{bind_row, DatasetReader, DEFAULT_HEADER_MAX_BYTES};
 pub use token::{Position, Token, TokenKind};

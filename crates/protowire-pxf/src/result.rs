@@ -15,24 +15,25 @@
 //!
 //! Also surfaces the document-root directives the decoder saw (PXF v0.72+):
 //!   - [`Presence::directives`] — generic `@<name> *(prefix) [{ ... }]`
-//!     blocks, in source order, excluding `@type` and `@table` (which
+//!     blocks, in source order, excluding `@type` and `@dataset` (which
 //!     have their own handling).
-//!   - [`Presence::tables`] — `@table <type> ( cols ) row*` directives,
-//!     in source order. A document with any `@table` has no body
+//!   - [`Presence::tables`] — `@dataset <type> ( cols ) row*` directives,
+//!     in source order. A document with any `@dataset` has no body
 //!     entries, so the rows are the document's payload — consumers walk
-//!     `TableDirective.rows` and bind each row's cells to a fresh
-//!     instance of `TableDirective.type` via their own schema.
+//!     `DatasetDirective.rows` and bind each row's cells to a fresh
+//!     instance of `DatasetDirective.type` via their own schema.
 
 use std::collections::HashSet;
 
-use crate::ast::{Directive, TableDirective};
+use crate::ast::{DatasetDirective, Directive, ProtoDirective};
 
 #[derive(Debug, Default, Clone)]
 pub struct Presence {
     present: HashSet<String>,
     nulls: HashSet<String>,
     directives: Vec<Directive>,
-    tables: Vec<TableDirective>,
+    datasets: Vec<DatasetDirective>,
+    protos: Vec<ProtoDirective>,
 }
 
 impl Presence {
@@ -77,15 +78,23 @@ impl Presence {
         &self.directives
     }
 
-    pub fn tables(&self) -> &[TableDirective] {
-        &self.tables
+    pub fn datasets(&self) -> &[DatasetDirective] {
+        &self.datasets
+    }
+
+    pub fn protos(&self) -> &[ProtoDirective] {
+        &self.protos
     }
 
     pub fn add_directive(&mut self, d: Directive) {
         self.directives.push(d);
     }
 
-    pub fn add_table(&mut self, t: TableDirective) {
-        self.tables.push(t);
+    pub fn add_dataset(&mut self, t: DatasetDirective) {
+        self.datasets.push(t);
+    }
+
+    pub fn add_proto(&mut self, p: ProtoDirective) {
+        self.protos.push(p);
     }
 }

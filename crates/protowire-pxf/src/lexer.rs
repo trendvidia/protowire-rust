@@ -46,6 +46,34 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    /// Reposition the lexer to byte offset `target`, recomputing
+    /// line/col by scanning forward from the current position. Used by
+    /// the parser to skip past an `@proto` brace-bounded body whose
+    /// interior is protobuf source rather than PXF.
+    pub fn reposition_to(&mut self, target: usize) {
+        if target < self.pos {
+            self.pos = 0;
+            self.line = 1;
+            self.col = 1;
+        }
+        while self.pos < target && self.pos < self.input.len() {
+            let ch = self.input[self.pos];
+            self.pos += 1;
+            if ch == b'\n' {
+                self.line += 1;
+                self.col = 1;
+            } else {
+                self.col += 1;
+            }
+        }
+    }
+
+    /// Raw input view — used by the parser to slice the body bytes
+    /// between `{` and `}` once the matching brace has been located.
+    pub fn input_bytes(&self) -> &'a [u8] {
+        self.input
+    }
+
     /// Returns the next token. Returns an EOF token at end-of-input forever.
     pub fn next_token(&mut self) -> Token {
         self.skip_spaces();
@@ -430,8 +458,11 @@ impl<'a> Lexer<'a> {
         if name == "type" {
             return Token::new(TokenKind::AtType, "@type", pos);
         }
-        if name == "table" {
-            return Token::new(TokenKind::AtTable, "@table", pos);
+        if name == "dataset" {
+            return Token::new(TokenKind::AtDataset, "@dataset", pos);
+        }
+        if name == "proto" {
+            return Token::new(TokenKind::AtProto, "@proto", pos);
         }
         // AtDirective's Token.value carries the bare name (no `@`); the
         // parser uses this directly as Directive.name.
@@ -1198,9 +1229,9 @@ mod tests {
 
     #[test]
     fn directive_at_table_recognized() {
-        let t = tokens("@table");
-        assert_eq!(t[0].kind, TokenKind::AtTable);
-        assert_eq!(t[0].value, "@table");
+        let t = tokens("@dataset");
+        assert_eq!(t[0].kind, TokenKind::AtDataset);
+        assert_eq!(t[0].value, "@dataset");
     }
 
     #[test]

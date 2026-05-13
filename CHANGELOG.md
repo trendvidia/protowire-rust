@@ -11,6 +11,55 @@ format changes.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-05-13
+
+First major-version cut. Implements the three one-time spec changes
+from the [protowire v1.0 freeze line](https://github.com/trendvidia/protowire/releases/tag/v1.0.0)
+in lockstep with the other v1.0 ports. **Breaking** — there is no
+alias period; v1.0 is itself the major bump.
+
+### v1.0 spec changes
+
+- **`@table` → `@dataset` rename** (draft §3.4.4). Public API
+  rename: `ast::TableDirective` → `ast::DatasetDirective`,
+  `ast::TableRow` → `ast::DatasetRow`, `TableReader` →
+  `DatasetReader`, `Presence::tables()` → `Presence::datasets()`,
+  `Presence::add_table()` → `Presence::add_dataset()`,
+  `TokenKind::AtTable` → `TokenKind::AtDataset`. Source files
+  `src/table_reader.rs` → `src/dataset_reader.rs`;
+  `tests/table_reader.rs` → `tests/dataset_reader.rs`. Hard cutover.
+
+- **`@proto` directive added** (draft §3.4.5). New `ast::ProtoDirective`
+  + `ast::ProtoShape` enum (`Anonymous`, `Named`, `Source`,
+  `Descriptor`). Four body shapes lexically distinguished.
+  Exposed via `Document::protos` and `Presence::protos()`.
+  Descriptor form is the MUST-support shape; this port supports all
+  four.
+
+- **Reserved directive names** expanded from 5 to 13 (draft §3.4.6).
+  `schema::is_future_reserved_directive(name)` exported. Parser +
+  fast decoder reject `@table`, `@datasource`, `@view`,
+  `@procedure`, `@function`, `@permissions` as spec-reserved.
+
+`@dataset`'s row message type is now optional in the AST — binding
+to an anonymous `@proto` per draft §3.4.4 Anonymous binding.
+`Lexer::reposition_to(target)` and `Lexer::input_bytes()` added so
+the parser can skip past an `@proto` brace-body whose interior is
+protobuf source rather than PXF.
+
+### Build
+
+- Workspace version `0.75.0` → `1.0.0` (Cargo.toml + inter-crate
+  path-dep version pins).
+
+### Tests
+
+- New `crates/protowire-pxf/tests/proto_directive.rs` with 13 cases
+  covering all four `@proto` body shapes, anonymous binding,
+  multi-`@proto`, nested-brace bodies, three error paths, parametric
+  reserved-name rejection, and `ProtoShape::name()` lookup.
+- `cargo test --workspace`: all tests pass.
+
 ## [0.75.0] — 2026-05-12
 
 First release after the v0.70.0 baseline that closes the v0.72–v0.75

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 TrendVidia, LLC.
-//! Tests for `TableReader` (streaming @table consumption) and
+//! Tests for `DatasetReader` (streaming @dataset consumption) and
 //! `bind_row` (per-row proto binding). PR 4 of the v0.72-v0.75 Rust
 //! catch-up.
 
@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use prost_reflect::{DescriptorPool, MessageDescriptor, ReflectMessage, Value};
 use protowire_pxf::ast::Value as AstValue;
-use protowire_pxf::{bind_row, PxfError, TableReader, UnmarshalOptions};
+use protowire_pxf::{bind_row, PxfError, DatasetReader, UnmarshalOptions};
 
 const TEST_FDS: &[u8] = include_bytes!("../testdata/test.binpb");
 
@@ -22,15 +22,15 @@ fn all_types() -> MessageDescriptor {
         .expect("missing test.v1.AllTypes")
 }
 
-fn reader(src: &str) -> Result<TableReader<Cursor<Vec<u8>>>, PxfError> {
-    TableReader::new(Cursor::new(src.as_bytes().to_vec()))
+fn reader(src: &str) -> Result<DatasetReader<Cursor<Vec<u8>>>, PxfError> {
+    DatasetReader::new(Cursor::new(src.as_bytes().to_vec()))
 }
 
 // ---- header parsing -----------------------------------------------------
 
 #[test]
 fn header_exposes_type_and_columns() {
-    let tr = reader("@table trades.v1.Trade ( px, qty )\n( 100, 5 )\n( 101, 7 )\n").unwrap();
+    let tr = reader("@dataset trades.v1.Trade ( px, qty )\n( 100, 5 )\n( 101, 7 )\n").unwrap();
     assert_eq!(tr.type_name(), "trades.v1.Trade");
     assert_eq!(tr.columns(), &["px", "qty"]);
     assert!(tr.directives().is_empty());
@@ -39,20 +39,20 @@ fn header_exposes_type_and_columns() {
 #[test]
 fn no_table_returns_error() {
     let err = reader("@type foo.Msg\nname = \"x\"\n").err().expect("err");
-    assert!(err.to_string().contains("no @table"));
+    assert!(err.to_string().contains("no @dataset"));
 }
 
 #[test]
 fn empty_input_returns_error() {
     let err = reader("").err().expect("err");
-    assert!(err.to_string().contains("no @table"));
+    assert!(err.to_string().contains("no @dataset"));
 }
 
 #[test]
 fn leading_directives_preserved() {
     let src = "@header pkg.Hdr { id = \"h\" }\n\
                @frob alpha\n\
-               @table trades.v1.Trade ( px, qty )\n\
+               @dataset trades.v1.Trade ( px, qty )\n\
                ( 1, 2 )\n";
     let tr = reader(src).unwrap();
     assert_eq!(tr.directives().len(), 2);
@@ -66,7 +66,7 @@ fn header_oversize_rejected() {
     while big.len() < 70 * 1024 {
         big.push_str("x ");
     }
-    big.push_str("\n@table x.Row ( a )\n");
+    big.push_str("\n@dataset x.Row ( a )\n");
     let err = reader(&big).err().expect("err");
     assert!(err.to_string().contains("header exceeds"));
 }
@@ -75,7 +75,7 @@ fn header_oversize_rejected() {
 
 #[test]
 fn iterator_yields_rows_in_order() {
-    let mut tr = reader("@table x.Row ( a, b )\n( 1, 2 )\n( 3, 4 )\n( 5, 6 )\n").unwrap();
+    let mut tr = reader("@dataset x.Row ( a, b )\n( 1, 2 )\n( 3, 4 )\n( 5, 6 )\n").unwrap();
     let mut count = 0;
     for row in &mut tr {
         let row = row.unwrap();
@@ -88,14 +88,14 @@ fn iterator_yields_rows_in_order() {
 
 #[test]
 fn zero_rows_reports_done_immediately() {
-    let mut tr = reader("@table x.Row ( a )\n").unwrap();
+    let mut tr = reader("@dataset x.Row ( a )\n").unwrap();
     assert!(tr.next_row().is_none());
     assert!(tr.done());
 }
 
 #[test]
 fn cell_shapes_match_three_state_grammar() {
-    let mut tr = reader("@table x.Row ( a, b, c, d, e )\n( 42, \"hi\", true, null, )\n").unwrap();
+    let mut tr = reader("@dataset x.Row ( a, b, c, d, e )\n( 42, \"hi\", true, null, )\n").unwrap();
     let row = tr.next_row().unwrap().unwrap();
     assert!(matches!(row.cells[0], Some(AstValue::Int(_))));
     assert!(matches!(&row.cells[1], Some(AstValue::String(s)) if s.value == "hi"));
@@ -106,14 +106,14 @@ fn cell_shapes_match_three_state_grammar() {
 
 #[test]
 fn arity_mismatch_surfaces_as_error() {
-    let mut tr = reader("@table x.Row ( a, b )\n( 1, 2, 3 )\n( 4, 5 )\n").unwrap();
+    let mut tr = reader("@dataset x.Row ( a, b )\n( 1, 2, 3 )\n( 4, 5 )\n").unwrap();
     let err = tr.next_row().unwrap().unwrap_err();
     assert!(err.to_string().contains("3 cells, expected 2"));
 }
 
 #[test]
 fn parens_inside_strings_not_row_boundary() {
-    let mut tr = reader("@table x.Row ( a )\n( \"hi ) there\" )\n( \"next\" )\n").unwrap();
+    let mut tr = reader("@dataset x.Row ( a )\n( \"hi ) there\" )\n( \"next\" )\n").unwrap();
     let r1 = tr.next_row().unwrap().unwrap();
     match &r1.cells[0] {
         Some(AstValue::String(s)) => assert_eq!(s.value, "hi ) there"),
@@ -129,7 +129,7 @@ fn parens_inside_strings_not_row_boundary() {
 
 #[test]
 fn comments_between_rows_ignored() {
-    let src = "@table x.Row ( a )\n\
+    let src = "@dataset x.Row ( a )\n\
                # leading\n\
                ( 1 )\n\
                // mid\n\
@@ -160,8 +160,8 @@ fn streaming_pull_across_chunks() {
             Ok(1)
         }
     }
-    let src = "@table x.Row ( a )\n( 1 )\n( 2 )\n( 3 )\n";
-    let tr = TableReader::new(OneByteReader(Cursor::new(src.as_bytes().to_vec()))).unwrap();
+    let src = "@dataset x.Row ( a )\n( 1 )\n( 2 )\n( 3 )\n";
+    let tr = DatasetReader::new(OneByteReader(Cursor::new(src.as_bytes().to_vec()))).unwrap();
     assert_eq!(tr.count(), 3);
 }
 
@@ -169,10 +169,10 @@ fn streaming_pull_across_chunks() {
 
 #[test]
 fn tail_chains_to_second_table() {
-    let src = "@table a.Row ( x )\n\
+    let src = "@dataset a.Row ( x )\n\
                ( 1 )\n\
                ( 2 )\n\
-               @table b.Row ( y )\n\
+               @dataset b.Row ( y )\n\
                ( \"p\" )\n\
                ( \"q\" )\n";
     let mut tr1 = reader(src).unwrap();
@@ -182,7 +182,7 @@ fn tail_chains_to_second_table() {
         r.unwrap();
     }
     let tail = tr1.tail();
-    let tr2 = TableReader::new(tail).unwrap();
+    let tr2 = DatasetReader::new(tail).unwrap();
     assert_eq!(tr2.type_name(), "b.Row");
     assert_eq!(tr2.count(), 2);
 }
@@ -192,7 +192,7 @@ fn tail_chains_to_second_table() {
 #[test]
 fn bind_row_sets_fields_by_column() {
     let mut tr =
-        reader("@table test.v1.AllTypes ( string_field, int32_field )\n( \"alpha\", 42 )\n")
+        reader("@dataset test.v1.AllTypes ( string_field, int32_field )\n( \"alpha\", 42 )\n")
             .unwrap();
     let columns = tr.columns().to_vec();
     let row = tr.next_row().unwrap().unwrap();
@@ -216,7 +216,7 @@ fn bind_row_sets_fields_by_column() {
 #[test]
 fn scan_one_is_equivalent_to_next_plus_bind() {
     let mut tr =
-        reader("@table test.v1.AllTypes ( string_field )\n( \"row1\" )\n( \"row2\" )\n").unwrap();
+        reader("@dataset test.v1.AllTypes ( string_field )\n( \"row1\" )\n( \"row2\" )\n").unwrap();
     let opts = UnmarshalOptions {
         skip_validate: true,
         ..Default::default()
@@ -234,7 +234,7 @@ fn scan_one_is_equivalent_to_next_plus_bind() {
 #[test]
 fn bind_row_absent_cell_leaves_field_default() {
     let mut tr =
-        reader("@table test.v1.AllTypes ( string_field, int32_field )\n( , 7 )\n").unwrap();
+        reader("@dataset test.v1.AllTypes ( string_field, int32_field )\n( , 7 )\n").unwrap();
     let columns = tr.columns().to_vec();
     let row = tr.next_row().unwrap().unwrap();
     let opts = UnmarshalOptions {
@@ -256,7 +256,7 @@ fn bind_row_absent_cell_leaves_field_default() {
 
 #[test]
 fn bind_row_mismatched_columns_errors() {
-    let mut tr = reader("@table test.v1.AllTypes ( string_field )\n( \"x\" )\n").unwrap();
+    let mut tr = reader("@dataset test.v1.AllTypes ( string_field )\n( \"x\" )\n").unwrap();
     let row = tr.next_row().unwrap().unwrap();
     let bad_columns = vec!["string_field".to_string(), "extra".to_string()];
     let opts = UnmarshalOptions {
@@ -269,7 +269,7 @@ fn bind_row_mismatched_columns_errors() {
 
 #[test]
 fn bind_row_unknown_column_errors() {
-    let mut tr = reader("@table test.v1.AllTypes ( not_a_field )\n( \"x\" )\n").unwrap();
+    let mut tr = reader("@dataset test.v1.AllTypes ( not_a_field )\n( \"x\" )\n").unwrap();
     let opts = UnmarshalOptions {
         skip_validate: true,
         ..Default::default()
@@ -283,7 +283,7 @@ fn bind_row_unknown_column_errors() {
 #[test]
 fn bind_row_string_escape_round_trip() {
     let mut tr =
-        reader("@table test.v1.AllTypes ( string_field )\n( \"she said \\\"hi\\\"\" )\n").unwrap();
+        reader("@dataset test.v1.AllTypes ( string_field )\n( \"she said \\\"hi\\\"\" )\n").unwrap();
     let columns = tr.columns().to_vec();
     let row = tr.next_row().unwrap().unwrap();
     let opts = UnmarshalOptions {
@@ -301,7 +301,7 @@ fn bind_row_string_escape_round_trip() {
 
 #[test]
 fn bind_row_bytes_cell_round_trip() {
-    let mut tr = reader("@table test.v1.AllTypes ( bytes_field )\n( b\"YWJj\" )\n").unwrap(); // "abc"
+    let mut tr = reader("@dataset test.v1.AllTypes ( bytes_field )\n( b\"YWJj\" )\n").unwrap(); // "abc"
     let columns = tr.columns().to_vec();
     let row = tr.next_row().unwrap().unwrap();
     let opts = UnmarshalOptions {

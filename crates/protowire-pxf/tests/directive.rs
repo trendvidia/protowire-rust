@@ -3,10 +3,10 @@
 //! Parser-tier tests for the v0.72-v0.75 directive grammar:
 //!   - `@<name> *(<prefix>) [{ ... }]`   (draft §3.4.2)
 //!   - `@entry  *(<prefix>) [{ ... }]`   (draft §3.4.3)
-//!   - `@table  <type> ( cols ) row*`    (draft §3.4.4)
+//!   - `@dataset  <type> ( cols ) row*`    (draft §3.4.4)
 //!
 //! Exercises `parse()` directly and asserts on AST shape. Decode-tier
-//! wiring (Presence accessors, TableReader, bind_row) arrives in later
+//! wiring (Presence accessors, DatasetReader, bind_row) arrives in later
 //! PRs of the v0.72-v0.75 catch-up.
 
 use protowire_pxf::ast::Value;
@@ -126,10 +126,10 @@ fn bare_at_is_illegal() {
 
 #[test]
 fn table_basic_two_columns_two_rows() {
-    let src = "@table trades.v1.Trade ( px, qty )\n( 100, 5 )\n( 101, 7 )\n";
+    let src = "@dataset trades.v1.Trade ( px, qty )\n( 100, 5 )\n( 101, 7 )\n";
     let doc = parse(src).expect("parse");
-    assert_eq!(doc.tables.len(), 1);
-    let t = &doc.tables[0];
+    assert_eq!(doc.datasets.len(), 1);
+    let t = &doc.datasets[0];
     assert_eq!(t.r#type, "trades.v1.Trade");
     assert_eq!(t.columns, vec!["px", "qty"]);
     assert_eq!(t.rows.len(), 2);
@@ -138,8 +138,8 @@ fn table_basic_two_columns_two_rows() {
 
 #[test]
 fn table_empty_cell_means_absent() {
-    let doc = parse("@table x.Row ( a, b, c )\n( 1, , 3 )\n").expect("parse");
-    let row = &doc.tables[0].rows[0];
+    let doc = parse("@dataset x.Row ( a, b, c )\n( 1, , 3 )\n").expect("parse");
+    let row = &doc.datasets[0].rows[0];
     assert!(row.cells[0].is_some());
     assert!(row.cells[1].is_none()); // absent
     assert!(row.cells[2].is_some());
@@ -147,100 +147,103 @@ fn table_empty_cell_means_absent() {
 
 #[test]
 fn table_null_cell_means_present_null() {
-    let doc = parse("@table x.Row ( a, b )\n( 1, null )\n").expect("parse");
-    let row = &doc.tables[0].rows[0];
+    let doc = parse("@dataset x.Row ( a, b )\n( 1, null )\n").expect("parse");
+    let row = &doc.datasets[0].rows[0];
     assert!(matches!(row.cells[1], Some(Value::Null(_))));
 }
 
 #[test]
 fn table_zero_rows_valid() {
-    let doc = parse("@table x.Row ( a, b )\n").expect("parse");
-    assert_eq!(doc.tables.len(), 1);
-    assert!(doc.tables[0].rows.is_empty());
+    let doc = parse("@dataset x.Row ( a, b )\n").expect("parse");
+    assert_eq!(doc.datasets.len(), 1);
+    assert!(doc.datasets[0].rows.is_empty());
 }
 
 #[test]
 fn table_arity_mismatch_rejected() {
-    let err = parse("@table x.Row ( a, b )\n( 1, 2, 3 )\n").unwrap_err();
+    let err = parse("@dataset x.Row ( a, b )\n( 1, 2, 3 )\n").unwrap_err();
     assert!(err.to_string().contains("3 cells, expected 2"));
 }
 
 #[test]
 fn table_dotted_column_rejected() {
-    let err = parse("@table x.Row ( a.b )\n").unwrap_err();
+    let err = parse("@dataset x.Row ( a.b )\n").unwrap_err();
     assert!(err.to_string().contains("dotted column"));
 }
 
 #[test]
 fn table_list_cell_rejected() {
-    let err = parse("@table x.Row ( a )\n( [1, 2] )\n").unwrap_err();
+    let err = parse("@dataset x.Row ( a )\n( [1, 2] )\n").unwrap_err();
     assert!(err.to_string().contains("list values"));
 }
 
 #[test]
 fn table_block_cell_rejected() {
-    let err = parse("@table x.Row ( a )\n( { x = 1 } )\n").unwrap_err();
+    let err = parse("@dataset x.Row ( a )\n( { x = 1 } )\n").unwrap_err();
     assert!(err.to_string().contains("block values"));
 }
 
 #[test]
 fn standalone_rejects_coexisting_at_type_before() {
-    let err = parse("@type other\n@table x.Row ( a )\n( 1 )\n").unwrap_err();
+    let err = parse("@type other\n@dataset x.Row ( a )\n( 1 )\n").unwrap_err();
     assert!(err.to_string().contains("cannot coexist with @type"));
 }
 
 #[test]
 fn standalone_rejects_at_type_after_table() {
-    let err = parse("@table x.Row ( a )\n@type other\n").unwrap_err();
+    let err = parse("@dataset x.Row ( a )\n@type other\n").unwrap_err();
     assert!(err.to_string().contains("cannot coexist with @type"));
 }
 
 #[test]
 fn standalone_rejects_coexisting_body_entries() {
-    let err = parse("@table x.Row ( a )\n( 1 )\nextra = 5\n").unwrap_err();
+    let err = parse("@dataset x.Row ( a )\n( 1 )\nextra = 5\n").unwrap_err();
     assert!(err
         .to_string()
         .contains("cannot coexist with top-level field entries"));
 }
 
 #[test]
-fn missing_type_after_at_table_rejected() {
-    let err = parse("@table ( a )\n").unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("expected row message type after @table"));
+fn missing_type_is_permissive() {
+    // Type is optional in v1 (binds to a preceding anonymous @proto
+    // per draft §3.4.4 Anonymous binding). The parser accepts the
+    // header; binding-time validation handles the no-preceding-
+    // anonymous-@proto case.
+    let doc = parse("@dataset ( a )\n").unwrap();
+    assert_eq!(doc.datasets.len(), 1);
+    assert!(doc.datasets[0].r#type.is_empty());
 }
 
 #[test]
 fn missing_lparen_rejected() {
-    let err = parse("@table x.Row a, b\n").unwrap_err();
+    let err = parse("@dataset x.Row a, b\n").unwrap_err();
     assert!(err.to_string().contains("expected '(' to start"));
 }
 
 #[test]
 fn empty_column_list_rejected() {
-    let err = parse("@table x.Row ( )\n").unwrap_err();
+    let err = parse("@dataset x.Row ( )\n").unwrap_err();
     assert!(err.to_string().contains("at least one field name"));
 }
 
 #[test]
 fn bad_column_token_rejected() {
-    let err = parse("@table x.Row ( a, 123 )\n").unwrap_err();
+    let err = parse("@dataset x.Row ( a, 123 )\n").unwrap_err();
     assert!(err.to_string().contains("expected column field name"));
 }
 
 #[test]
 fn missing_comma_in_column_list_rejected() {
-    let err = parse("@table x.Row ( a b )\n").unwrap_err();
+    let err = parse("@dataset x.Row ( a b )\n").unwrap_err();
     assert!(err
         .to_string()
-        .contains("expected ',' or ')' in @table column list"));
+        .contains("expected ',' or ')' in @dataset column list"));
 }
 
 #[test]
 fn missing_comma_in_row_rejected() {
-    let err = parse("@table x.Row ( a, b )\n( 1 2 )\n").unwrap_err();
+    let err = parse("@dataset x.Row ( a, b )\n( 1 2 )\n").unwrap_err();
     assert!(err
         .to_string()
-        .contains("expected ',' or ')' in @table row"));
+        .contains("expected ',' or ')' in @dataset row"));
 }

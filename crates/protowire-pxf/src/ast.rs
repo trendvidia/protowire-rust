@@ -23,12 +23,15 @@ pub struct Document {
     /// Empty when there is no `@type` directive.
     pub type_url: String,
     /// `@<name> *(prefix) [{ ... }]` blocks in source order; excludes
-    /// `@type` and `@table` (which have their own fields).
+    /// the spec-defined directives (`@type`, `@dataset`, `@proto`,
+    /// `@entry`).
     pub directives: Vec<Directive>,
-    /// `@table TYPE ( cols ) row*` directives in source order. Per
-    /// draft §3.4.4 a document with any `@table` MUST NOT also have
+    /// `@dataset TYPE ( cols ) row*` directives in source order. Per
+    /// draft §3.4.4 a document with any `@dataset` MUST NOT also have
     /// `@type` or top-level field entries — the parser enforces this.
-    pub tables: Vec<TableDirective>,
+    pub datasets: Vec<DatasetDirective>,
+    /// `@proto <body>` directives in source order (draft §3.4.5).
+    pub protos: Vec<ProtoDirective>,
     /// Byte offset where the schema-typed body begins (after all
     /// leading directives). Zero when there are no directives, so
     /// chameleon hashes from byte 0.
@@ -59,7 +62,7 @@ pub struct Document {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Directive {
     pub pos: Position,
-    /// e.g. "header"; never "type" / "table".
+    /// e.g. "header"; never "type" / "dataset".
     pub name: String,
     /// Identifiers between `@<name>` and the optional `{ ... }`, in
     /// source order.
@@ -75,35 +78,94 @@ pub struct Directive {
     pub leading_comments: Vec<Comment>,
 }
 
-/// `@table <type> ( col1, col2, ... ) row*` directive at document
+/// `@dataset <type> ( col1, col2, ... ) row*` directive at document
 /// root (draft §3.4.4). Carries many instances of one message type in
 /// a single document — the protowire-native CSV.
 ///
-/// Cells are scalar-shaped in v1 (no list, no block). See [`TableRow`]
+/// Cells are scalar-shaped in v1 (no list, no block). See [`DatasetRow`]
 /// for the per-cell representation.
 ///
-/// A document with any `TableDirective` MUST NOT have a `@type`
-/// directive or any top-level field entries: the `@table` header IS
+/// A document with any `DatasetDirective` MUST NOT have a `@type`
+/// directive or any top-level field entries: the `@dataset` header IS
 /// the document's type declaration. The parser enforces this.
+///
+/// `type` MAY be empty when an anonymous `@proto` directive (draft
+/// §3.4.5) precedes the dataset in document order; the anonymous
+/// schema is consumed as the row message type.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct TableDirective {
+pub struct DatasetDirective {
     pub pos: Position,
     /// Row message type, e.g. "trades.v1.Trade".
     pub r#type: String,
     /// Top-level field names on `type`; length >= 1.
     pub columns: Vec<String>,
-    pub rows: Vec<TableRow>,
+    pub rows: Vec<DatasetRow>,
     pub leading_comments: Vec<Comment>,
 }
 
-/// One parenthesized cell tuple in a `@table` directive. `cells` has
-/// the same length as the containing `TableDirective.columns`. A
+/// Shape of a [`ProtoDirective`]'s body (draft §3.4.5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ProtoShape {
+    /// `@proto { <message-body> }` — defines an unnamed message used
+    /// by the next typed directive in document order (one-shot
+    /// binding).
+    #[default]
+    Anonymous,
+    /// `@proto <dotted-name> { <message-body> }` — sugar for a single
+    /// named message; `type_name` carries the dotted name.
+    Named,
+    /// `@proto """<proto-source>"""` — a complete `.proto` source
+    /// file carried as a triple-quoted string.
+    Source,
+    /// `@proto b"<base64-FileDescriptorSet>"` — base64-encoded
+    /// `google.protobuf.FileDescriptorSet` bytes.
+    Descriptor,
+}
+
+impl ProtoShape {
+    pub fn name(self) -> &'static str {
+        match self {
+            ProtoShape::Anonymous => "anonymous",
+            ProtoShape::Named => "named",
+            ProtoShape::Source => "source",
+            ProtoShape::Descriptor => "descriptor",
+        }
+    }
+}
+
+/// `@proto <body>` directive at document root (draft §3.4.5). Carries
+/// an embedded protobuf schema, making the PXF document
+/// self-describing.
+///
+/// `body` carries raw bytes per `shape`:
+///
+///   - [`ProtoShape::Anonymous`] / [`ProtoShape::Named`]: bytes
+///     between the opening `{` and matching `}` (both exclusive).
+///     Protobuf message-body source.
+///   - [`ProtoShape::Source`]: contents of the triple-quoted string
+///     (with leading-LF stripping and common-prefix dedent already
+///     applied). A complete `.proto` source file.
+///   - [`ProtoShape::Descriptor`]: base64-decoded bytes of the bytes
+///     literal. A serialised `google.protobuf.FileDescriptorSet`.
+///
+/// `type_name` is non-empty only when `shape == ProtoShape::Named`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProtoDirective {
+    pub pos: Position,
+    pub shape: ProtoShape,
+    pub type_name: String,
+    pub body: Vec<u8>,
+    pub leading_comments: Vec<Comment>,
+}
+
+/// One parenthesized cell tuple in a `@dataset` directive. `cells` has
+/// the same length as the containing `DatasetDirective.columns`. A
 /// `None` cell denotes an absent field (the empty cell between two
 /// commas); a `Some(Value::Null(...))` cell denotes a present-but-
 /// null field; any other `Some(Value::*)` denotes a present field
 /// with that value.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct TableRow {
+pub struct DatasetRow {
     pub pos: Position,
     pub cells: Vec<Option<Value>>,
 }
