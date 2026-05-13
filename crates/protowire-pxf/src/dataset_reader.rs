@@ -22,7 +22,7 @@ use std::io::{self, Read};
 
 use prost_reflect::{DynamicMessage, MessageDescriptor};
 
-use crate::ast::{Directive, DatasetRow, Value};
+use crate::ast::{DatasetRow, Directive, Value};
 use crate::errors::PxfError;
 use crate::parser::parse;
 use crate::token::Position;
@@ -239,7 +239,10 @@ impl<R: Read> DatasetReader<R> {
                     // shape, @type / @dataset conflict, dotted columns,
                     // etc.).
                     let header = std::str::from_utf8(&self.pending[..=end]).map_err(|_| {
-                        PxfError::new(Position::default(), "pxf: @dataset header is not valid UTF-8")
+                        PxfError::new(
+                            Position::default(),
+                            "pxf: @dataset header is not valid UTF-8",
+                        )
                     })?;
                     let doc = parse(header)?;
                     if doc.datasets.is_empty() {

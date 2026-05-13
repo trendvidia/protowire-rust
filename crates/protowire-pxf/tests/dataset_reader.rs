@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use prost_reflect::{DescriptorPool, MessageDescriptor, ReflectMessage, Value};
 use protowire_pxf::ast::Value as AstValue;
-use protowire_pxf::{bind_row, PxfError, DatasetReader, UnmarshalOptions};
+use protowire_pxf::{bind_row, DatasetReader, PxfError, UnmarshalOptions};
 
 const TEST_FDS: &[u8] = include_bytes!("../testdata/test.binpb");
 
@@ -283,7 +283,8 @@ fn bind_row_unknown_column_errors() {
 #[test]
 fn bind_row_string_escape_round_trip() {
     let mut tr =
-        reader("@dataset test.v1.AllTypes ( string_field )\n( \"she said \\\"hi\\\"\" )\n").unwrap();
+        reader("@dataset test.v1.AllTypes ( string_field )\n( \"she said \\\"hi\\\"\" )\n")
+            .unwrap();
     let columns = tr.columns().to_vec();
     let row = tr.next_row().unwrap().unwrap();
     let opts = UnmarshalOptions {

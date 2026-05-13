@@ -391,9 +391,9 @@ impl<'a> Decoder<'a> {
                         has_dataset = true;
                     }
                     self.advance(); // consume @dataset
-                    // Optional row message type; MAY be omitted when an
-                    // anonymous @proto precedes (draft §3.4.4 Anonymous
-                    // binding).
+                                    // Optional row message type; MAY be omitted when an
+                                    // anonymous @proto precedes (draft §3.4.4 Anonymous
+                                    // binding).
                     let table_type = if matches!(self.current.kind, TokenKind::Ident) {
                         let t = std::mem::take(&mut self.current.value);
                         self.advance();
@@ -502,7 +502,8 @@ impl<'a> Decoder<'a> {
                     self.advance(); // consume @proto
                     let (shape, type_name, body) = match self.current.kind {
                         TokenKind::LBrace => {
-                            let body = self.consume_proto_brace_body(at_pos, "@proto (anonymous form)")?;
+                            let body =
+                                self.consume_proto_brace_body(at_pos, "@proto (anonymous form)")?;
                             (ProtoShape::Anonymous, String::new(), body)
                         }
                         TokenKind::Ident => {
@@ -511,8 +512,7 @@ impl<'a> Decoder<'a> {
                             if !matches!(self.current.kind, TokenKind::LBrace) {
                                 return Err(self.err(format!(
                                     "expected '{{' after @proto {}, got {}",
-                                    type_name,
-                                    self.current.kind
+                                    type_name, self.current.kind
                                 )));
                             }
                             let body = self.consume_proto_brace_body(

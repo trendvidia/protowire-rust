@@ -15,10 +15,7 @@ fn body_str(p: &protowire_pxf::ast::ProtoDirective) -> String {
 
 #[test]
 fn anonymous_body() {
-    let doc = parse(
-        "@proto {\n  string symbol = 1;\n  double price = 2;\n}\n",
-    )
-    .unwrap();
+    let doc = parse("@proto {\n  string symbol = 1;\n  double price = 2;\n}\n").unwrap();
     assert_eq!(doc.protos.len(), 1);
     let p = &doc.protos[0];
     assert_eq!(p.shape, ProtoShape::Anonymous);
@@ -39,10 +36,9 @@ fn named_body() {
 
 #[test]
 fn source_body() {
-    let doc = parse(
-        "@proto \"\"\"\nsyntax = \"proto3\";\nmessage Trade { string symbol = 1; }\n\"\"\"",
-    )
-    .unwrap();
+    let doc =
+        parse("@proto \"\"\"\nsyntax = \"proto3\";\nmessage Trade { string symbol = 1; }\n\"\"\"")
+            .unwrap();
     assert_eq!(doc.protos.len(), 1);
     assert_eq!(doc.protos[0].shape, ProtoShape::Source);
     assert!(body_str(&doc.protos[0]).contains("message Trade"));
@@ -87,10 +83,9 @@ fn anonymous_followed_by_untyped_dataset() {
 
 #[test]
 fn nested_braces_in_body() {
-    let doc = parse(
-        "@proto {\n  message Side {\n    string label = 1;\n  }\n  Side side = 1;\n}\n",
-    )
-    .unwrap();
+    let doc =
+        parse("@proto {\n  message Side {\n    string label = 1;\n  }\n  Side side = 1;\n}\n")
+            .unwrap();
     let body = body_str(&doc.protos[0]);
     assert!(body.contains("message Side"));
     assert!(body.contains("Side side = 1;"));
@@ -116,10 +111,7 @@ fn rejects_anonymous_unmatched_brace() {
 
 #[test]
 fn coexists_with_type() {
-    let doc = parse(
-        "@type some.pkg.Foo\n@proto some.pkg.Foo {\n  string name = 1;\n}\n",
-    )
-    .unwrap();
+    let doc = parse("@type some.pkg.Foo\n@proto some.pkg.Foo {\n  string name = 1;\n}\n").unwrap();
     assert_eq!(doc.type_url, "some.pkg.Foo");
     assert_eq!(doc.protos.len(), 1);
     assert_eq!(doc.protos[0].shape, ProtoShape::Named);

@@ -7,6 +7,7 @@
 
 pub mod annotations;
 pub mod ast;
+pub mod dataset_reader;
 pub mod decode;
 pub mod encode;
 pub mod errors;
@@ -15,14 +16,14 @@ pub mod lexer;
 pub mod parser;
 pub mod result;
 pub mod schema;
-pub mod dataset_reader;
 pub mod token;
 
 pub use ast::{
-    Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, Directive, Document, DurationVal,
-    Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, DatasetDirective,
-    DatasetRow, TimestampVal, Value,
+    Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, DatasetDirective, DatasetRow,
+    Directive, Document, DurationVal, Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry,
+    NullVal, StringVal, TimestampVal, Value,
 };
+pub use dataset_reader::{bind_row, DatasetReader, DEFAULT_HEADER_MAX_BYTES};
 pub use decode::{unmarshal, unmarshal_full, PoolResolver, TypeResolver, UnmarshalOptions};
 pub use encode::{marshal, MarshalOptions};
 pub use errors::PxfError;
@@ -31,5 +32,4 @@ pub use lexer::Lexer;
 pub use parser::parse;
 pub use result::Presence;
 pub use schema::{validate_descriptor, validate_file, Violation, ViolationKind};
-pub use dataset_reader::{bind_row, DatasetReader, DEFAULT_HEADER_MAX_BYTES};
 pub use token::{Position, Token, TokenKind};
