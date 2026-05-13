@@ -8,9 +8,9 @@
 //! inline comments are not yet captured (the formatter populates them).
 
 use crate::ast::{
-    Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, Directive, Document, DurationVal,
-    Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry, NullVal, StringVal, TableDirective,
-    TableRow, TimestampVal, Value,
+    Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, DatasetDirective, DatasetRow,
+    Directive, Document, DurationVal, Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry,
+    NullVal, ProtoDirective, ProtoShape, StringVal, TimestampVal, Value,
 };
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
@@ -92,23 +92,24 @@ impl<'a> Parser<'a> {
         let leading_comments = self.flush_comments();
         let mut type_url = String::new();
         let mut directives: Vec<Directive> = Vec::new();
-        let mut tables: Vec<TableDirective> = Vec::new();
+        let mut datasets: Vec<DatasetDirective> = Vec::new();
+        let mut protos: Vec<ProtoDirective> = Vec::new();
         let mut body_offset: usize = 0;
 
-        // Top-of-document directive prelude. @type, @<name>, and @table may
+        // Top-of-document directive prelude. @type, @<name>, and @dataset may
         // interleave in any order; @type populates type_url, @<name>
-        // appends to directives, @table appends to tables. body_offset
+        // appends to directives, @dataset appends to tables. body_offset
         // tracks the byte immediately after the last directive's last
         // token; stays 0 when no directives are present.
         let mut saw_type = false;
-        let mut first_table_pos: Option<Position> = None;
+        let mut first_dataset_pos: Option<Position> = None;
         loop {
             match self.current.kind {
                 TokenKind::AtType => {
-                    if first_table_pos.is_some() {
+                    if first_dataset_pos.is_some() {
                         return Err(PxfError::new(
                             self.current.pos,
-                            "@table directive cannot coexist with @type; the @table header declares the document's type (draft §3.4.4)".to_string(),
+                            "@dataset directive cannot coexist with @type; the @dataset header declares the document's type (draft §3.4.4)".to_string(),
                         ));
                     }
                     saw_type = true;
@@ -131,18 +132,23 @@ impl<'a> Parser<'a> {
                     directives.push(d);
                     body_offset = end;
                 }
-                TokenKind::AtTable => {
+                TokenKind::AtDataset => {
                     if saw_type {
                         return Err(PxfError::new(
                             self.current.pos,
-                            "@table directive cannot coexist with @type; the @table header declares the document's type (draft §3.4.4)".to_string(),
+                            "@dataset directive cannot coexist with @type; the @dataset header declares the document's type (draft §3.4.4)".to_string(),
                         ));
                     }
-                    let (t, end) = self.parse_table_directive()?;
-                    if first_table_pos.is_none() {
-                        first_table_pos = Some(t.pos);
+                    let (t, end) = self.parse_dataset_directive()?;
+                    if first_dataset_pos.is_none() {
+                        first_dataset_pos = Some(t.pos);
                     }
-                    tables.push(t);
+                    datasets.push(t);
+                    body_offset = end;
+                }
+                TokenKind::AtProto => {
+                    let (p, end) = self.parse_proto_directive()?;
+                    protos.push(p);
                     body_offset = end;
                 }
                 _ => break,
@@ -150,12 +156,12 @@ impl<'a> Parser<'a> {
         }
 
         // Standalone constraint (draft §3.4.4): a document with any
-        // @table directive MUST NOT also carry top-level field entries.
-        if let Some(p) = first_table_pos {
+        // @dataset directive MUST NOT also carry top-level field entries.
+        if let Some(p) = first_dataset_pos {
             if !matches!(self.current.kind, TokenKind::Eof) {
                 return Err(PxfError::new(
                     p,
-                    "@table directive cannot coexist with top-level field entries; the document's payload is the @table rows (draft §3.4.4)".to_string(),
+                    "@dataset directive cannot coexist with top-level field entries; the document's payload is the @dataset rows (draft §3.4.4)".to_string(),
                 ));
             }
         }
@@ -171,7 +177,8 @@ impl<'a> Parser<'a> {
         Ok(Document {
             type_url,
             directives,
-            tables,
+            datasets,
+            protos,
             body_offset,
             entries,
             leading_comments,
@@ -201,6 +208,15 @@ impl<'a> Parser<'a> {
         let leading_comments = self.flush_comments();
         let at_pos = self.current.pos;
         let name = std::mem::take(&mut self.current.value);
+        if crate::schema::is_future_reserved_directive(&name) {
+            return Err(PxfError::new(
+                at_pos,
+                format!(
+                    "@{} is a spec-reserved directive name with no v1 semantics (draft §3.4.6)",
+                    name
+                ),
+            ));
+        }
         let mut end_offset = at_pos.offset + 1 + name.len(); // `@` + name
         self.advance();
 
@@ -264,31 +280,30 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    /// Reads `@table <type> ( col1, col2, ... ) row*`. AT_TABLE is
+    /// Reads `@dataset <type> ( col1, col2, ... ) row*`. AT_TABLE is
     /// current on entry. Returns the table plus the byte offset
     /// immediately past the directive's last token.
-    fn parse_table_directive(&mut self) -> Result<(TableDirective, usize), PxfError> {
+    fn parse_dataset_directive(&mut self) -> Result<(DatasetDirective, usize), PxfError> {
         let leading_comments = self.flush_comments();
         let at_pos = self.current.pos;
-        self.advance(); // consume @table
+        self.advance(); // consume @dataset
 
-        if !matches!(self.current.kind, TokenKind::Ident) {
-            return Err(PxfError::new(
-                self.current.pos,
-                format!(
-                    "expected row message type after @table, got {}",
-                    self.current.kind.name()
-                ),
-            ));
-        }
-        let r#type = std::mem::take(&mut self.current.value);
-        self.advance();
+        // Optional row message type. MAY be omitted when an anonymous
+        // @proto directive precedes the dataset (draft §3.4.4
+        // Anonymous binding).
+        let r#type = if matches!(self.current.kind, TokenKind::Ident) {
+            let t = std::mem::take(&mut self.current.value);
+            self.advance();
+            t
+        } else {
+            String::new()
+        };
 
         if !matches!(self.current.kind, TokenKind::LParen) {
             return Err(PxfError::new(
                 self.current.pos,
                 format!(
-                    "expected '(' to start @table column list, got {}",
+                    "expected '(' to start @dataset column list, got {}",
                     self.current.kind.name()
                 ),
             ));
@@ -299,7 +314,7 @@ impl<'a> Parser<'a> {
             return Err(PxfError::new(
                 self.current.pos,
                 format!(
-                    "@table column list must contain at least one field name, got {}",
+                    "@dataset column list must contain at least one field name, got {}",
                     self.current.kind.name()
                 ),
             ));
@@ -319,7 +334,7 @@ impl<'a> Parser<'a> {
                 return Err(PxfError::new(
                     self.current.pos,
                     format!(
-                        "@table column {:?}: dotted column paths are not supported in v1 (draft §3.4.4)",
+                        "@dataset column {:?}: dotted column paths are not supported in v1 (draft §3.4.4)",
                         self.current.value
                     ),
                 ));
@@ -336,7 +351,7 @@ impl<'a> Parser<'a> {
             return Err(PxfError::new(
                 self.current.pos,
                 format!(
-                    "expected ',' or ')' in @table column list, got {}",
+                    "expected ',' or ')' in @dataset column list, got {}",
                     self.current.kind.name()
                 ),
             ));
@@ -345,15 +360,15 @@ impl<'a> Parser<'a> {
         self.advance(); // consume )
 
         // Zero or more rows.
-        let mut rows: Vec<TableRow> = Vec::new();
+        let mut rows: Vec<DatasetRow> = Vec::new();
         while matches!(self.current.kind, TokenKind::LParen) {
-            let (row, row_end) = self.parse_table_row(columns.len())?;
+            let (row, row_end) = self.parse_dataset_row(columns.len())?;
             rows.push(row);
             end_offset = row_end;
         }
 
         Ok((
-            TableDirective {
+            DatasetDirective {
                 pos: at_pos,
                 r#type,
                 columns,
@@ -366,7 +381,7 @@ impl<'a> Parser<'a> {
 
     /// Reads `( cell ( ',' cell )* )` with an arity check against
     /// `expected`. LPAREN is current on entry.
-    fn parse_table_row(&mut self, expected: usize) -> Result<(TableRow, usize), PxfError> {
+    fn parse_dataset_row(&mut self, expected: usize) -> Result<(DatasetRow, usize), PxfError> {
         let pos = self.current.pos;
         self.advance(); // consume (
 
@@ -380,7 +395,7 @@ impl<'a> Parser<'a> {
             return Err(PxfError::new(
                 self.current.pos,
                 format!(
-                    "expected ',' or ')' in @table row, got {}",
+                    "expected ',' or ')' in @dataset row, got {}",
                     self.current.kind.name()
                 ),
             ));
@@ -392,16 +407,138 @@ impl<'a> Parser<'a> {
             return Err(PxfError::new(
                 pos,
                 format!(
-                    "@table row has {} cells, expected {} (column count)",
+                    "@dataset row has {} cells, expected {} (column count)",
                     cells.len(),
                     expected
                 ),
             ));
         }
-        Ok((TableRow { pos, cells }, end_offset))
+        Ok((DatasetRow { pos, cells }, end_offset))
     }
 
-    /// Consumes one cell of a @table row. Returns `None` for an empty
+    /// Reads `@proto <body>` (draft §3.4.5). AT_PROTO is current on
+    /// entry. Four body shapes are lexically distinguished:
+    ///
+    ///   - anonymous:  `@proto { <message-body> }`
+    ///   - named:      `@proto <dotted-name> { <message-body> }`
+    ///   - source:     `@proto """<proto-source>"""`
+    ///   - descriptor: `@proto b"<base64-FileDescriptorSet>"`
+    ///
+    /// For the brace-bounded shapes the body is sliced as raw bytes
+    /// between `{` and the matching `}` (both exclusive); the
+    /// contents are protobuf source and are NOT decoded as PXF.
+    fn parse_proto_directive(&mut self) -> Result<(ProtoDirective, usize), PxfError> {
+        let leading_comments = self.flush_comments();
+        let at_pos = self.current.pos;
+        self.advance(); // consume @proto
+
+        match self.current.kind {
+            TokenKind::LBrace => {
+                let (body, end_offset) = self.capture_brace_body(at_pos, "@proto (anonymous form)")?;
+                Ok((
+                    ProtoDirective {
+                        pos: at_pos,
+                        shape: ProtoShape::Anonymous,
+                        type_name: String::new(),
+                        body,
+                        leading_comments,
+                    },
+                    end_offset,
+                ))
+            }
+            TokenKind::Ident => {
+                let type_name = std::mem::take(&mut self.current.value);
+                self.advance();
+                if !matches!(self.current.kind, TokenKind::LBrace) {
+                    return Err(PxfError::new(
+                        self.current.pos,
+                        format!(
+                            "expected '{{' after @proto {}, got {}",
+                            type_name,
+                            self.current.kind.name()
+                        ),
+                    ));
+                }
+                let (body, end_offset) =
+                    self.capture_brace_body(at_pos, &format!("@proto {}", type_name))?;
+                Ok((
+                    ProtoDirective {
+                        pos: at_pos,
+                        shape: ProtoShape::Named,
+                        type_name,
+                        body,
+                        leading_comments,
+                    },
+                    end_offset,
+                ))
+            }
+            TokenKind::String => {
+                let body = std::mem::take(&mut self.current.value).into_bytes();
+                let end_offset = self.current.pos.offset + body.len();
+                self.advance();
+                Ok((
+                    ProtoDirective {
+                        pos: at_pos,
+                        shape: ProtoShape::Source,
+                        type_name: String::new(),
+                        body,
+                        leading_comments,
+                    },
+                    end_offset,
+                ))
+            }
+            TokenKind::Bytes => {
+                let raw = std::mem::take(&mut self.current.value);
+                let decoded = crate::decode::decode_base64(&raw).ok_or_else(|| {
+                    PxfError::new(
+                        self.current.pos,
+                        "@proto descriptor body: invalid base64".to_string(),
+                    )
+                })?;
+                let end_offset = self.current.pos.offset + raw.len() + 3; // b" … "
+                self.advance();
+                Ok((
+                    ProtoDirective {
+                        pos: at_pos,
+                        shape: ProtoShape::Descriptor,
+                        type_name: String::new(),
+                        body: decoded,
+                        leading_comments,
+                    },
+                    end_offset,
+                ))
+            }
+            _ => Err(PxfError::new(
+                self.current.pos,
+                format!(
+                    "expected '{{', dotted identifier, triple-quoted string, or b\"...\" after @proto, got {}",
+                    self.current.kind.name()
+                ),
+            )),
+        }
+    }
+
+    /// Slice raw bytes between `{` and the matching `}` (both
+    /// exclusive) without decoding the body as PXF entries. LBrace is
+    /// current on entry. Repositions the lexer past the closing brace.
+    fn capture_brace_body(
+        &mut self,
+        at_pos: Position,
+        label: &str,
+    ) -> Result<(Vec<u8>, usize), PxfError> {
+        let open = self.current.pos.offset;
+        let close = find_matching_brace(self.lex.input_view(), open);
+        if close < 0 {
+            return Err(PxfError::new(at_pos, format!("{}: unmatched '{{'", label)));
+        }
+        let close = close as usize;
+        let body = self.lex.input_view()[open + 1..close].to_vec();
+        self.lex.reposition_to(close + 1);
+        self.advance();
+        Ok((body, close + 1))
+    }
+
+    /// Consumes one cell of a @dataset row. Returns `None` for an empty
     /// cell (no value between two commas, or at row start/end). Rejects
     /// list / block values per v1 cell-grammar (draft §3.4.4).
     fn parse_row_cell(&mut self) -> Result<Option<Value>, PxfError> {
@@ -409,11 +546,11 @@ impl<'a> Parser<'a> {
             TokenKind::Comma | TokenKind::RParen => Ok(None),
             TokenKind::LBracket => Err(PxfError::new(
                 self.current.pos,
-                "@table cells cannot contain list values in v1 (draft §3.4.4)".to_string(),
+                "@dataset cells cannot contain list values in v1 (draft §3.4.4)".to_string(),
             )),
             TokenKind::LBrace => Err(PxfError::new(
                 self.current.pos,
-                "@table cells cannot contain block values in v1 (draft §3.4.4)".to_string(),
+                "@dataset cells cannot contain block values in v1 (draft §3.4.4)".to_string(),
             )),
             _ => Ok(Some(self.parse_value()?)),
         }

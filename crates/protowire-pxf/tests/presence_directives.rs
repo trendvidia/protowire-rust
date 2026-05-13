@@ -31,7 +31,7 @@ fn empty_document_has_empty_accessors() {
     )
     .expect("decode");
     assert!(p.directives().is_empty());
-    assert!(p.tables().is_empty());
+    assert!(p.datasets().is_empty());
 }
 
 #[test]
@@ -119,18 +119,18 @@ fn at_type_does_not_leak_into_directives() {
     assert_eq!(p.directives()[0].name, "frob");
 }
 
-// ---- @table ----
+// ---- @dataset ----
 
 #[test]
 fn table_recorded_with_columns_and_rows() {
     let (_msg, p) = unmarshal_full(
-        "@table trades.v1.Trade ( px, qty )\n( 100, 5 )\n( 101, 7 )\n",
+        "@dataset trades.v1.Trade ( px, qty )\n( 100, 5 )\n( 101, 7 )\n",
         &all_types(),
         UnmarshalOptions::default(),
     )
     .expect("decode");
-    assert_eq!(p.tables().len(), 1);
-    let t = &p.tables()[0];
+    assert_eq!(p.datasets().len(), 1);
+    let t = &p.datasets()[0];
     assert_eq!(t.r#type, "trades.v1.Trade");
     assert_eq!(t.columns, vec!["px", "qty"]);
     assert_eq!(t.rows.len(), 2);
@@ -140,12 +140,12 @@ fn table_recorded_with_columns_and_rows() {
 #[test]
 fn table_cells_carry_actual_values() {
     let (_msg, p) = unmarshal_full(
-        "@table x.Row ( a, b, c )\n( 42, \"hello\", true )\n",
+        "@dataset x.Row ( a, b, c )\n( 42, \"hello\", true )\n",
         &all_types(),
         UnmarshalOptions::default(),
     )
     .expect("decode");
-    let row = &p.tables()[0].rows[0];
+    let row = &p.datasets()[0].rows[0];
     match row.cells[0].as_ref().expect("a present") {
         Value::Int(v) => assert_eq!(v.raw, "42"),
         other => panic!("expected Int, got {:?}", other),
@@ -163,12 +163,12 @@ fn table_cells_carry_actual_values() {
 #[test]
 fn three_state_cells() {
     let (_msg, p) = unmarshal_full(
-        "@table x.Row ( a, b, c )\n( 1, , null )\n",
+        "@dataset x.Row ( a, b, c )\n( 1, , null )\n",
         &all_types(),
         UnmarshalOptions::default(),
     )
     .expect("decode");
-    let row = &p.tables()[0].rows[0];
+    let row = &p.datasets()[0].rows[0];
     assert!(row.cells[0].is_some()); // set
     assert!(row.cells[1].is_none()); // absent
     assert!(matches!(row.cells[2], Some(Value::Null(_)))); // present-null
@@ -177,27 +177,27 @@ fn three_state_cells() {
 #[test]
 fn multiple_tables_in_order() {
     let (_msg, p) = unmarshal_full(
-        "@table a.Row ( x )\n( 1 )\n@table b.Row ( y, z )\n( \"p\", \"q\" )\n",
+        "@dataset a.Row ( x )\n( 1 )\n@dataset b.Row ( y, z )\n( \"p\", \"q\" )\n",
         &all_types(),
         UnmarshalOptions::default(),
     )
     .expect("decode");
-    let types: Vec<&str> = p.tables().iter().map(|t| t.r#type.as_str()).collect();
+    let types: Vec<&str> = p.datasets().iter().map(|t| t.r#type.as_str()).collect();
     assert_eq!(types, vec!["a.Row", "b.Row"]);
 }
 
 #[test]
 fn directives_and_tables_coexist() {
     let (_msg, p) = unmarshal_full(
-        "@header pkg.Hdr { id = \"h\" }\n@table x.Row ( a )\n( 1 )\n",
+        "@header pkg.Hdr { id = \"h\" }\n@dataset x.Row ( a )\n( 1 )\n",
         &all_types(),
         UnmarshalOptions::default(),
     )
     .expect("decode");
     assert_eq!(p.directives().len(), 1);
-    assert_eq!(p.tables().len(), 1);
+    assert_eq!(p.datasets().len(), 1);
     assert_eq!(p.directives()[0].name, "header");
-    assert_eq!(p.tables()[0].r#type, "x.Row");
+    assert_eq!(p.datasets()[0].r#type, "x.Row");
 }
 
 #[test]

@@ -1,37 +1,37 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 TrendVidia, LLC.
-//! Streaming consumption for the `@table` directive (draft §3.4.4).
+//! Streaming consumption for the `@dataset` directive (draft §3.4.4).
 //!
-//! [`crate::unmarshal_full`] materializes every row of an `@table`
+//! [`crate::unmarshal_full`] materializes every row of an `@dataset`
 //! directive into [`crate::Presence::tables`]. That works for small
-//! datasets and breaks for the CSV-replacement workload `@table` was
-//! designed for. [`TableReader`] pulls one row at a time from an
+//! datasets and breaks for the CSV-replacement workload `@dataset` was
+//! designed for. [`DatasetReader`] pulls one row at a time from an
 //! [`io::Read`] source; per-row arity and the v1 cell-grammar rule are
 //! enforced at consume time (not deferred to end-of-input), and rows
 //! are yielded in source order — both invariants the spec requires of
 //! streaming consumers.
 //!
-//! Convenience: [`TableReader::scan`] reads the next row and binds its
+//! Convenience: [`DatasetReader::scan`] reads the next row and binds its
 //! cells to a fresh [`prost_reflect::DynamicMessage`]. [`bind_row`] is
 //! exported for callers iterating
 //! [`crate::Presence::tables`]\[i\].rows from the materializing path.
 //!
-//! Mirrors the cpp port at `protowire-cpp/src/pxf/table_reader.cc`.
+//! Mirrors the cpp port at `protowire-cpp/src/pxf/dataset_reader.cc`.
 
 use std::io::{self, Read};
 
 use prost_reflect::{DynamicMessage, MessageDescriptor};
 
-use crate::ast::{Directive, TableRow, Value};
+use crate::ast::{DatasetRow, Directive, Value};
 use crate::errors::PxfError;
 use crate::parser::parse;
 use crate::token::Position;
 use crate::{unmarshal, UnmarshalOptions};
 
-/// Default cap on the @table header (leading directives plus the
-/// `@table TYPE ( cols )` declaration). Real headers are tiny — a few
+/// Default cap on the @dataset header (leading directives plus the
+/// `@dataset TYPE ( cols )` declaration). Real headers are tiny — a few
 /// hundred bytes at most. The cap exists to fail-fast on misuse: a
-/// `TableReader` pointed at a multi-gigabyte non-`@table` input
+/// `DatasetReader` pointed at a multi-gigabyte non-`@dataset` input
 /// shouldn't run through the whole buffer looking for one.
 pub const DEFAULT_HEADER_MAX_BYTES: usize = 64 * 1024;
 
@@ -40,16 +40,16 @@ pub const DEFAULT_HEADER_MAX_BYTES: usize = 64 * 1024;
 /// reference's `kStreamPullSize` and typical row sizes.
 const STREAM_PULL_SIZE: usize = 4096;
 
-/// Streaming row reader for a single `@table` directive.
+/// Streaming row reader for a single `@dataset` directive.
 ///
-/// A `TableReader` is positioned at the first row after construction.
+/// A `DatasetReader` is positioned at the first row after construction.
 /// Iterate via the standard `for ... in` (the reader implements
-/// [`Iterator`]) or call [`TableReader::next_row`] in a loop until it
+/// [`Iterator`]) or call [`DatasetReader::next_row`] in a loop until it
 /// returns [`None`]. Any error makes the reader sticky.
 ///
-/// For documents containing multiple `@table` directives, call
-/// [`TableReader::new`] again on [`TableReader::tail`].
-pub struct TableReader<R: Read> {
+/// For documents containing multiple `@dataset` directives, call
+/// [`DatasetReader::new`] again on [`DatasetReader::tail`].
+pub struct DatasetReader<R: Read> {
     src: R,
     pending: Vec<u8>,
     src_eof: bool,
@@ -60,12 +60,12 @@ pub struct TableReader<R: Read> {
     directives: Vec<Directive>,
 }
 
-impl<R: Read> TableReader<R> {
-    /// Consume the leading directives and the `@table TYPE ( cols )`
+impl<R: Read> DatasetReader<R> {
+    /// Consume the leading directives and the `@dataset TYPE ( cols )`
     /// header from `src`. The reader is positioned at the first row
     /// when this returns `Ok(_)`.
     ///
-    /// Returns an `Err` if the input contains no `@table` directive
+    /// Returns an `Err` if the input contains no `@dataset` directive
     /// before EOF, on a header parse error, or if the header byte
     /// budget (64 KiB by default) is exceeded.
     pub fn new(src: R) -> Result<Self, PxfError> {
@@ -83,19 +83,19 @@ impl<R: Read> TableReader<R> {
         Ok(r)
     }
 
-    /// Row message type declared by the `@table` header (e.g.
+    /// Row message type declared by the `@dataset` header (e.g.
     /// `"trades.v1.Trade"`).
     pub fn type_name(&self) -> &str {
         &self.type_
     }
 
-    /// Column field names declared by the `@table` header, in source order.
+    /// Column field names declared by the `@dataset` header, in source order.
     pub fn columns(&self) -> &[String] {
         &self.columns
     }
 
     /// Side-channel directives (`@<name>` / `@entry` / etc., NOT `@type`
-    /// or `@table`) that appeared before the `@table` header. Stable
+    /// or `@dataset`) that appeared before the `@dataset` header. Stable
     /// for the lifetime of the reader.
     pub fn directives(&self) -> &[Directive] {
         &self.directives
@@ -108,7 +108,7 @@ impl<R: Read> TableReader<R> {
 
     /// Read the next row. Returns `None` once the table's row sequence
     /// is exhausted; after a sticky error, also returns `None`.
-    pub fn next_row(&mut self) -> Option<Result<TableRow, PxfError>> {
+    pub fn next_row(&mut self) -> Option<Result<DatasetRow, PxfError>> {
         if let Some(e) = &self.err {
             return Some(Err(e.clone()));
         }
@@ -123,8 +123,8 @@ impl<R: Read> TableReader<R> {
                 }
                 Ok(FindRow::Found { start, end }) => {
                     // Parse the row by handing a synthetic
-                    // `@table _.Row (c1,c2,...) <rowBytes>` to the AST
-                    // parser, reusing parse_table_row's arity check and
+                    // `@dataset _.Row (c1,c2,...) <rowBytes>` to the AST
+                    // parser, reusing parse_dataset_row's arity check and
                     // v1 cell-grammar enforcement.
                     let row_bytes = &self.pending[start..=end];
                     let synthetic = build_synthetic_row(&self.columns, row_bytes);
@@ -135,18 +135,18 @@ impl<R: Read> TableReader<R> {
                     self.pending.drain(..=end);
                     match parsed {
                         Ok(doc) => {
-                            if doc.tables.is_empty() || doc.tables[0].rows.is_empty() {
+                            if doc.datasets.is_empty() || doc.datasets[0].rows.is_empty() {
                                 let e = PxfError::new(
                                     Position::default(),
-                                    "pxf: TableReader: synthetic row parse produced no row",
+                                    "pxf: DatasetReader: synthetic row parse produced no row",
                                 );
                                 self.err = Some(e.clone());
                                 return Some(Err(e));
                             }
                             // Take the first (and only) row from the
                             // synthetic doc.
-                            let mut tables = doc.tables;
-                            let mut rows = std::mem::take(&mut tables[0].rows);
+                            let mut datasets = doc.datasets;
+                            let mut rows = std::mem::take(&mut datasets[0].rows);
                             return Some(Ok(rows.swap_remove(0)));
                         }
                         Err(e) => {
@@ -177,7 +177,7 @@ impl<R: Read> TableReader<R> {
     /// [`DynamicMessage`] of `desc`. Returns `Ok(Some(msg))` on success,
     /// `Ok(None)` at EOF, or `Err` on parse / I/O / bind error.
     ///
-    /// Named `scan_one` rather than `scan` because `TableReader`
+    /// Named `scan_one` rather than `scan` because `DatasetReader`
     /// implements [`Iterator`], whose `scan` method would otherwise
     /// shadow this one at the call site.
     pub fn scan_one(
@@ -194,8 +194,8 @@ impl<R: Read> TableReader<R> {
 
     /// Returns a [`Read`] that yields the bytes the reader buffered
     /// but didn't consume, followed by the remaining bytes from the
-    /// underlying source. Use to chain a second `TableReader` for
-    /// documents with multiple `@table` directives.
+    /// underlying source. Use to chain a second `DatasetReader` for
+    /// documents with multiple `@dataset` directives.
     ///
     /// MUST only be called after iteration has reported [`Self::done`].
     /// Calling earlier returns bytes the current reader still intends
@@ -223,7 +223,7 @@ impl<R: Read> TableReader<R> {
             Err(e) if e.kind() == io::ErrorKind::Interrupted => self.pull(n),
             Err(e) => Err(PxfError::new(
                 Position::default(),
-                format!("pxf: TableReader: read error: {}", e),
+                format!("pxf: DatasetReader: read error: {}", e),
             )),
         }
     }
@@ -234,23 +234,26 @@ impl<R: Read> TableReader<R> {
                 Err(e) => return Err(e),
                 Ok(Some(end)) => {
                     // Parse the header prefix as a (rowless) PXF
-                    // document; parse_table_directive validates
+                    // document; parse_dataset_directive validates
                     // everything we care about (leading-directive
-                    // shape, @type / @table conflict, dotted columns,
+                    // shape, @type / @dataset conflict, dotted columns,
                     // etc.).
                     let header = std::str::from_utf8(&self.pending[..=end]).map_err(|_| {
-                        PxfError::new(Position::default(), "pxf: @table header is not valid UTF-8")
+                        PxfError::new(
+                            Position::default(),
+                            "pxf: @dataset header is not valid UTF-8",
+                        )
                     })?;
                     let doc = parse(header)?;
-                    if doc.tables.is_empty() {
-                        // Defensive — scan_header_end found @table but
+                    if doc.datasets.is_empty() {
+                        // Defensive — scan_header_end found @dataset but
                         // parse() disagreed.
                         return Err(PxfError::new(
                             Position::default(),
-                            "pxf: no @table directive in stream",
+                            "pxf: no @dataset directive in stream",
                         ));
                     }
-                    let tbl = &doc.tables[0];
+                    let tbl = &doc.datasets[0];
                     self.type_ = tbl.r#type.clone();
                     self.columns = tbl.columns.clone();
                     self.directives = doc.directives;
@@ -261,14 +264,14 @@ impl<R: Read> TableReader<R> {
                     if self.src_eof {
                         return Err(PxfError::new(
                             Position::default(),
-                            "pxf: no @table directive in stream",
+                            "pxf: no @dataset directive in stream",
                         ));
                     }
                     if self.pending.len() >= DEFAULT_HEADER_MAX_BYTES {
                         return Err(PxfError::new(
                             Position::default(),
                             format!(
-                                "pxf: @table header exceeds {} bytes; raise the budget or check that the input begins with `@table TYPE (cols)`",
+                                "pxf: @dataset header exceeds {} bytes; raise the budget or check that the input begins with `@dataset TYPE (cols)`",
                                 DEFAULT_HEADER_MAX_BYTES
                             ),
                         ));
@@ -280,14 +283,14 @@ impl<R: Read> TableReader<R> {
     }
 }
 
-impl<R: Read> Iterator for TableReader<R> {
-    type Item = Result<TableRow, PxfError>;
+impl<R: Read> Iterator for DatasetReader<R> {
+    type Item = Result<DatasetRow, PxfError>;
     fn next(&mut self) -> Option<Self::Item> {
         self.next_row()
     }
 }
 
-/// Bind a `@table` row's cells to fields of a fresh [`DynamicMessage`]
+/// Bind a `@dataset` row's cells to fields of a fresh [`DynamicMessage`]
 /// of `desc` by column name. `columns` and `row.cells` MUST have the
 /// same length.
 ///
@@ -311,7 +314,7 @@ impl<R: Read> Iterator for TableReader<R> {
 pub fn bind_row(
     desc: &MessageDescriptor,
     columns: &[String],
-    row: &TableRow,
+    row: &DatasetRow,
     options: UnmarshalOptions<'_>,
 ) -> Result<DynamicMessage, PxfError> {
     if columns.len() != row.cells.len() {
@@ -364,7 +367,7 @@ fn cell_to_pxf(v: &Value, out: &mut String, pos: Position) -> Result<(), PxfErro
             // in practice.
             return Err(PxfError::new(
                 pos,
-                "pxf: bind_row: unexpected cell variant (v1 @table cells are scalar-shaped)",
+                "pxf: bind_row: unexpected cell variant (v1 @dataset cells are scalar-shaped)",
             ));
         }
     }
@@ -405,7 +408,7 @@ fn encode_base64(bytes: &[u8]) -> String {
 
 fn build_synthetic_row(columns: &[String], row_bytes: &[u8]) -> String {
     let mut s = String::with_capacity(row_bytes.len() + 64);
-    s.push_str("@table _.Row (");
+    s.push_str("@dataset _.Row (");
     for (i, c) in columns.iter().enumerate() {
         if i > 0 {
             s.push(',');
@@ -466,14 +469,14 @@ fn find_next_row(input: &[u8]) -> Result<FindRow, PxfError> {
     }
 }
 
-/// Locates the closing `)` of the first complete `@table TYPE ( cols )`
+/// Locates the closing `)` of the first complete `@dataset TYPE ( cols )`
 /// header in `input`. Returns `Ok(Some(end))`, `Ok(None)` when more
 /// bytes are needed, or `Err` on a malformed literal.
 fn scan_header_end(input: &[u8]) -> Result<Option<usize>, PxfError> {
     let Some(at) = find_at_table(input)? else {
         return Ok(None);
     };
-    let Some(lparen) = find_next_char(input, at + b"@table".len(), b'(')? else {
+    let Some(lparen) = find_next_char(input, at + b"@dataset".len(), b'(')? else {
         return Ok(None);
     };
     find_matching_paren_safe(input, lparen)
@@ -492,10 +495,10 @@ fn find_at_table(input: &[u8]) -> Result<Option<usize>, PxfError> {
             i = j;
             continue;
         }
-        if input[i] == b'@' && i + 6 <= n && &input[i..i + 6] == b"@table" {
-            let after = i + 6;
+        if input[i] == b'@' && i + 8 <= n && &input[i..i + 8] == b"@dataset" {
+            let after = i + 8;
             if after == n {
-                // Could be `@table` followed by more bytes — be conservative.
+                // Could be `@dataset` followed by more bytes — be conservative.
                 return Ok(None);
             }
             if !is_ident_part(input[after]) {
