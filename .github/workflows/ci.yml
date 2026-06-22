@@ -40,7 +40,7 @@ jobs:
           - os: windows-latest
             toolchain: stable
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.toolchain }}
@@ -57,7 +57,7 @@ jobs:
     name: MSRV (1.82)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # Generate Cargo.lock under stable so the resolver picks
       # MSRV-compatible versions before pinning to 1.74. The lockfile is
       # not committed to the repo (criterion 0.8 needs Rust >= 1.88, so a
@@ -80,7 +80,7 @@ jobs:
     name: cargo fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -94,7 +94,7 @@ jobs:
     name: cargo clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -110,7 +110,7 @@ jobs:
     name: cargo miri
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: miri
@@ -138,12 +138,12 @@ jobs:
       # SIBLING_DIR/protowire-rust/crates/check-decode. So we have to
       # check both repos out as siblings, with this repo at the path
       # name `protowire-rust` and the spec repo as `protowire`.
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           path: protowire-rust
 
       - name: Checkout protowire (spec repo for adversarial corpus)
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: trendvidia/protowire
           path: protowire
