@@ -25,7 +25,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
-      - uses: github/codeql-action/init@v4
+      - uses: github/codeql-action/init@v4.37.4
         with:
           languages: rust
           queries: security-and-quality
@@ -33,6 +33,6 @@ jobs:
       - name: cargo build (drives CodeQL extraction)
         run: cargo build --workspace --all-targets
 
-      - uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/analyze@v4.37.4
         with:
           category: "/language:rust"
