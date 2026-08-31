@@ -2,8 +2,10 @@ version: v2
 modules:
   # Vendored copies of the protowire annotation extensions. These match
   # `../protowire/proto/{pxf,sbe}/annotations.proto` and intentionally don't
-  # change — the field numbers (50000-series) are part of the cross-port
-  # contract.
+  # change independently — the field numbers are part of the cross-port
+  # contract and must match canonical exactly. They live in protowire's
+  # registered block 1314-1363 (protocolbuffers/protobuf#28919); the former
+  # 50000-series was an unregistered squat and is retired.
   - path: proto
   # Per-crate test fixtures.
   - path: crates/protowire-pxf/testdata

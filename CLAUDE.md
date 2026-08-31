@@ -53,11 +53,11 @@ one TS view test was inlined into another). `cargo clippy --workspace
   `protowire/scripts/cross_envelope_check.sh`. Canonical envelope: 129
   bytes (258 hex chars) starting `08 92 03 1a 04 de ad be ef 22 76 …`
   (the `22 76` is tag 4 length 118, framing a nested `AppError`).
-- `pxf` annotations: `pxf.required` = 50000, `pxf.default` = 50001;
+- `pxf` annotations: `pxf.required` = 1314, `pxf.default` = 1315;
   `_null` field of type `google.protobuf.FieldMask` carries null-survival
   across binary.
-- `sbe` annotations: `sbe.schema_id` = 50100, `version` = 50101,
-  `template_id` = 50200, `length` = 50300, `encoding` = 50301.
+- `sbe` annotations: `sbe.schema_id` = 1319, `version` = 1320,
+  `template_id` = 1321, `length` = 1322, `encoding` = 1323.
 - `sbe` wire: 8-byte LE message header + 4-byte LE group header.
 
 ## Design calls (settled)

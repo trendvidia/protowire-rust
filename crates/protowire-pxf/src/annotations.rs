@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 TrendVidia, LLC.
-//! Reads `pxf.required` (50000) and `pxf.default` (50001) custom field
+//! Reads `pxf.required` (1314) and `pxf.default` (1315) custom field
 //! options out of a [`FieldDescriptor`]'s options message, plus the
 //! `_null` `google.protobuf.FieldMask` lookup. Mirrors the upstream
 //! `protowire/encoding/pxf/annotations.go` interface.
