@@ -23,8 +23,8 @@ Swift, Dart). The port is standalone (no FFI) and descriptor-driven via
 
 ## Toolchain
 
-Rust 1.74+ (the workspace uses `edition = "2021"` and depends on `prost
-0.13`). Tested in CI on:
+Rust 1.85+ (the workspace uses `edition = "2021"` and depends on `prost
+0.14`). Tested in CI on:
 
 - `stable` × {Linux, macOS, Windows}
 - `beta` × Linux (early-warning for breaking changes)
