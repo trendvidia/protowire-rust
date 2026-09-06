@@ -54,7 +54,7 @@ jobs:
   # context doesn't see workflow-level env in all runner versions.
   # ---------------------------------------------------------------------
   msrv:
-    name: MSRV (1.82)
+    name: MSRV (1.85)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -72,13 +72,16 @@ jobs:
       # latent from 2026-06-03 (the prost bump) until 2026-08-31, because
       # no PR ran this job in between.
       #
+      # The gate then did its job: taking prost 0.14.4 deliberately is what
+      # moved this pin from 1.82 to 1.85.
+      #
       # criterion 0.8 needs Rust >= 1.88 and is in the lock, but this job
       # builds non-dev targets only, and cargo checks rust-version just for
       # the packages it actually compiles -- so a dev-only dependency never
       # constrains the gate.
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.82"
+          toolchain: "1.85"
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --workspace --locked
 
