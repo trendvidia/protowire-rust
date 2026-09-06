@@ -12,7 +12,7 @@ byte-equivalence against the canonical Go reference and seven other
 sibling ports.
 
 CI exercises **stable** × {Linux, macOS, Windows} plus **beta** on
-Linux and an **MSRV (1.74)** pin, with `cargo fmt --check`,
+Linux and an **MSRV (1.85)** pin, with `cargo fmt --check`,
 `cargo clippy -- -D warnings`, and `cargo miri test` on the codec
 crates as separate gating jobs.
 
@@ -61,7 +61,7 @@ cargo build --workspace
 cargo test --workspace
 ```
 
-Required: Rust 1.74+ (the workspace's `rust-version` pin). No external
+Required: Rust 1.85+ (the workspace's `rust-version` pin). No external
 `protoc` dependency at build time — `prost-build` ships a vendored
 `protoc` binary.
 

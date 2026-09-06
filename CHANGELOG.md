@@ -11,6 +11,30 @@ format changes.
 
 ## [Unreleased]
 
+### Changed
+
+- **MSRV raised from 1.82 to 1.85.** `prost` 0.14.4 raised its own MSRV to
+  rustc 1.85, and holding the workspace at 1.82 would have meant freezing
+  a core decoding dependency off its upstream fix stream. Rust 1.85 shipped
+  in February 2025. `[workspace.package].rust-version`, the CI gate, the
+  README and CONTRIBUTING all move together.
+
+  This is a compatibility change on five published 1.0.0 crates —
+  `protowire`, `protowire-pb`, `protowire-envelope`, `protowire-pxf`,
+  `protowire-sbe` — and by the usual Rust convention wants a minor
+  release rather than a patch.
+
+- Dependency bumps taken with it: `prost` 0.14.3 → 0.14.4, `prost-types`
+  0.14.3 → 0.14.4, `prost-reflect` 0.16.4 → 0.16.5, `bytes` 1.11.1 →
+  1.12.1, `thiserror` 2.0.18 → 2.0.20. No wire-format or API change.
+
+### Fixed
+
+- README and CONTRIBUTING both claimed an MSRV of **1.74**, which had not
+  matched `Cargo.toml` since the pin moved to 1.82. Both now state 1.85,
+  and CONTRIBUTING no longer describes the workspace as depending on
+  `prost 0.13`.
+
 ## [1.0.0] — 2026-05-13
 
 First major-version cut. Implements the three one-time spec changes
