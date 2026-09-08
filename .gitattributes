@@ -1,0 +1,7 @@
+# Fixtures are compared byte for byte (fmt fixed points, oracle tables,
+# corpus documents), so they must check out identically on every platform:
+# no CRLF conversion on Windows runners. Descriptor sets are binary.
+*.pxf    text eol=lf
+*.proto  text eol=lf
+*.tsv    text eol=lf
+*.binpb  binary
