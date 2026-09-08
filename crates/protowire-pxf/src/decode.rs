@@ -1331,7 +1331,9 @@ fn post_decode(
                 ));
             }
             if let Some(def) = get_default(fd) {
-                apply_default(parent, fd, &def, pos)?;
+                if !oneof_already_chosen(fd, presence, path_prefix) {
+                    apply_default(parent, fd, &def, pos)?;
+                }
             }
             continue;
         }
@@ -1355,6 +1357,34 @@ fn post_decode(
         }
     }
     Ok(())
+}
+
+/// Reports whether `fd` is a member of a real oneof some *other* member of
+/// which the document supplied, in which case `fd`'s `(pxf.default)` MUST
+/// NOT be applied (draft -01 §annotation-extensions, "Oneof Members").
+/// Setting any member of a oneof clears the rest, so applying the default
+/// over a chosen sibling does not shadow the supplied value — it destroys
+/// it (protowire-rust#24).
+///
+/// Presence is read from the document, not from the decoded message's
+/// current oneof case: a default applied earlier in the same pass would
+/// itself set the case and let the first annotated member suppress every
+/// later one. A member bound to `null` is present (`mark_null` records it
+/// as present too), consistent with null suppressing a default.
+///
+/// A proto3 `optional` field sits in a synthetic single-member oneof that
+/// nothing can clear; it is excluded so its default keeps applying.
+fn oneof_already_chosen(fd: &FieldDescriptor, presence: &Presence, path_prefix: &str) -> bool {
+    let Some(oo) = fd.containing_oneof() else {
+        return false;
+    };
+    if oo.is_synthetic() {
+        return false;
+    }
+    let chosen = oo.fields().any(|m| {
+        m.number() != fd.number() && !presence.is_absent(&format!("{}{}", path_prefix, m.name()))
+    });
+    chosen
 }
 
 fn is_wkt_skip_recursion(full: &str) -> bool {
@@ -1412,6 +1442,29 @@ fn apply_default(
     def: &str,
     pos: Position,
 ) -> Result<(), PxfError> {
+    // A (pxf.default) carries exactly one PXF literal, so it can denote a
+    // singular field only (draft -01 §annotation-extensions, "Default
+    // Placement"). `fd.kind()` reports the *element* kind and says nothing
+    // about cardinality — `repeated string` is `Kind::String` — so without
+    // this guard the scalar branch below handed `set_field` a scalar for a
+    // list field, which prost-reflect accepts and encodes as a one-element
+    // list: pb bytes no other port emits (protowire-rust#23). The spec
+    // forbids inventing that semantics; the placement is an error.
+    if fd.is_map() {
+        return Err(PxfError::new(
+            pos,
+            format!("default values not supported for map field {:?}", fd.name()),
+        ));
+    }
+    if fd.is_list() {
+        return Err(PxfError::new(
+            pos,
+            format!(
+                "default values not supported for repeated field {:?}",
+                fd.name()
+            ),
+        ));
+    }
     if let Kind::Enum(enum_desc) = fd.kind() {
         if let Some(ev) = enum_desc.get_value_by_name(def) {
             parent.set_field(fd, Value::EnumNumber(ev.number()));
