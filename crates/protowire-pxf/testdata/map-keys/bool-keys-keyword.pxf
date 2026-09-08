@@ -1,0 +1,8 @@
+@type mapkeys.v1.Flags
+
+# The keyword spelling: map-key = identifier / string / integer / bool.
+
+by_flag = {
+  true: "keyword"
+  false: "keyword"
+}

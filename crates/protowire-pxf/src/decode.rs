@@ -930,6 +930,7 @@ impl<'a> Decoder<'a> {
                 return Err(self.err_at(pos, format!("expected map key, got {}", tk)));
             }
             let key_str = std::mem::take(&mut self.current.value);
+            let key_kind = tk;
             self.advance();
 
             match self.current.kind {
@@ -945,7 +946,7 @@ impl<'a> Decoder<'a> {
                 }
             }
 
-            let key = decode_map_key(&key_fd, key_str, pos)?;
+            let key = decode_map_key(fd, &key_fd, key_str, key_kind, pos)?;
 
             if matches!(self.current.kind, TokenKind::Null) {
                 return Err(self.err(format!(
@@ -1648,13 +1649,36 @@ fn set_seconds_nanos(target: &mut DynamicMessage, seconds: i64, nanos: i32) {
 /// Coerce an owned key string into a [`MapKey`]. For string-typed maps the
 /// String moves directly into `MapKey::String` (no extra allocation); for
 /// numeric/bool maps the String is parsed and dropped.
+///
+/// `kind` is the token the key arrived as — `map-key = identifier / string
+/// / integer / bool` (draft -01 §abnf-grammar) — because the spelling
+/// decides what a key means on a bool `K`, and a quoted `"1"` is not the
+/// same key as a bare `1`.
 fn decode_map_key(
+    field: &FieldDescriptor,
     key_fd: &FieldDescriptor,
     key: String,
+    kind: TokenKind,
     pos: Position,
 ) -> Result<MapKey, PxfError> {
     match key_fd.kind() {
-        Kind::String => Ok(MapKey::String(key)),
+        Kind::String => {
+            if matches!(kind, TokenKind::Bool) {
+                // A bool key matches a map<bool,V> field and nothing else;
+                // the string "true" is spelled quoted.
+                return Err(PxfError::new(
+                    pos,
+                    format!(
+                        "invalid string map key {} for field {:?}: the keyword {} is a bool key; write {:?} for the string",
+                        key,
+                        field.name(),
+                        key,
+                        key
+                    ),
+                ));
+            }
+            Ok(MapKey::String(key))
+        }
         Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => {
             let n: i32 = key
                 .parse()
@@ -1679,11 +1703,53 @@ fn decode_map_key(
                 .map_err(|_| PxfError::new(pos, format!("invalid uint64 map key: {}", key)))?;
             Ok(MapKey::U64(n))
         }
-        Kind::Bool => match key.as_str() {
-            "true" => Ok(MapKey::Bool(true)),
-            "false" => Ok(MapKey::Bool(false)),
-            _ => Err(PxfError::new(pos, format!("invalid bool map key: {}", key))),
-        },
+        Kind::Bool => {
+            // A bool map key has three spellings in the grammar (draft -01
+            // §entries-and-keys; protowire#284): the keyword true / false,
+            // bare; the bare integers 0 / 1 (an integer key matches "bool
+            // encoded as 0/1"); and the quoted literals "true" / "false" (a
+            // string key "is parsed as a literal of K's type", and a PXF
+            // bool literal is exactly those two words).
+            //
+            // NOT the twelve strconv.ParseBool spellings — t, T, TRUE, True,
+            // f, F, FALSE, False — which no port that follows the grammar
+            // binds. An identifier key on a bool K matches nothing: an
+            // identifier names a field, and a map has none. "1" / "0" in
+            // quotes are rejected too: an integer literal inside a string
+            // is not a bool literal (protowire-rust#31).
+            let spelled = match kind {
+                TokenKind::Bool => Some(key == "true"),
+                TokenKind::String => match key.as_str() {
+                    "true" => Some(true),
+                    "false" => Some(false),
+                    _ => None,
+                },
+                TokenKind::Int => match key.as_str() {
+                    "1" => Some(true),
+                    "0" => Some(false),
+                    _ => None,
+                },
+                _ => None,
+            };
+            match spelled {
+                Some(b) => Ok(MapKey::Bool(b)),
+                None => {
+                    let shown = if matches!(kind, TokenKind::String) {
+                        format!("{:?}", key)
+                    } else {
+                        key
+                    };
+                    Err(PxfError::new(
+                        pos,
+                        format!(
+                            "invalid bool map key {} for field {:?}: a bool key is true, false, 0, 1, \"true\" or \"false\"",
+                            shown,
+                            field.name()
+                        ),
+                    ))
+                }
+            }
+        }
         other => Err(PxfError::new(
             pos,
             format!("unsupported map key kind: {:?}", other),
