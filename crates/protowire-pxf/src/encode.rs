@@ -19,6 +19,7 @@ use prost_reflect::{
 use std::collections::HashSet;
 
 use crate::annotations::find_null_mask_field;
+use crate::bignum::{format_big_int, format_decimal};
 use crate::decode::TypeResolver;
 use crate::result::Presence;
 
@@ -189,24 +190,9 @@ impl<'a> Encoder<'a> {
         };
         let full = mdesc.full_name();
 
-        if full == "google.protobuf.Timestamp" {
+        if let Some(text) = message_shorthand(&mdesc, sub) {
             self.write_field_prefix(level, fd.name());
-            self.buf.push_str(&format_rfc3339_nano(sub));
-            self.buf.push('\n');
-            return;
-        }
-        if full == "google.protobuf.Duration" {
-            self.write_field_prefix(level, fd.name());
-            self.buf.push_str(&format_go_duration(sub));
-            self.buf.push('\n');
-            return;
-        }
-        if is_wrapper_full_name(full) {
-            let inner_fd = mdesc
-                .get_field_by_name("value")
-                .expect("wrapper missing 'value'");
-            self.write_field_prefix(level, fd.name());
-            self.write_scalar_value_for(&inner_fd, sub);
+            self.buf.push_str(&text);
             self.buf.push('\n');
             return;
         }
@@ -245,16 +231,8 @@ impl<'a> Encoder<'a> {
             self.write_indent(level + 1);
             match (&element_kind, elem) {
                 (Kind::Message(mdesc), Value::Message(sub)) => {
-                    let full = mdesc.full_name();
-                    if full == "google.protobuf.Timestamp" {
-                        self.buf.push_str(&format_rfc3339_nano(sub));
-                    } else if full == "google.protobuf.Duration" {
-                        self.buf.push_str(&format_go_duration(sub));
-                    } else if is_wrapper_full_name(full) {
-                        let inner_fd = mdesc
-                            .get_field_by_name("value")
-                            .expect("wrapper missing 'value'");
-                        self.write_scalar_value_for(&inner_fd, sub);
+                    if let Some(text) = message_shorthand(mdesc, sub) {
+                        self.buf.push_str(&text);
                     } else {
                         self.buf.push_str("{\n");
                         self.encode_message(sub, level + 2);
@@ -308,11 +286,19 @@ impl<'a> Encoder<'a> {
             self.buf.push_str(&key_str);
             self.buf.push_str(": ");
             match (&val_fd.kind(), &val) {
-                (Kind::Message(_), Value::Message(sub)) => {
-                    self.buf.push_str("{\n");
-                    self.encode_message(sub, level + 2);
-                    self.write_indent(level + 1);
-                    self.buf.push_str("}\n");
+                (Kind::Message(mdesc), Value::Message(sub)) => {
+                    // A message value takes the same shorthand it takes in
+                    // singular and list positions, as the reference writes
+                    // it (`alpha: 100`, `at: 2026-01-01T00:00:00Z`).
+                    if let Some(text) = message_shorthand(mdesc, sub) {
+                        self.buf.push_str(&text);
+                        self.buf.push('\n');
+                    } else {
+                        self.buf.push_str("{\n");
+                        self.encode_message(sub, level + 2);
+                        self.write_indent(level + 1);
+                        self.buf.push_str("}\n");
+                    }
                 }
                 (Kind::Enum(_), Value::EnumNumber(n)) => {
                     self.write_enum_value(&val_fd, *n);
@@ -346,6 +332,10 @@ impl<'a> Encoder<'a> {
         self.write_scalar_value(&fd.kind(), &v);
     }
 
+    fn write_scalar_value(&mut self, kind: &Kind, v: &Value) {
+        self.buf.push_str(&scalar_text(kind, v));
+    }
+
     fn write_enum_value(&mut self, fd: &FieldDescriptor, num: i32) {
         if let Kind::Enum(enum_desc) = fd.kind() {
             if let Some(ev) = enum_desc.get_value(num) {
@@ -355,35 +345,93 @@ impl<'a> Encoder<'a> {
             self.buf.push_str(&num.to_string());
         }
     }
+}
 
-    fn write_scalar_value(&mut self, kind: &Kind, v: &Value) {
-        match (kind, v) {
-            (Kind::String, Value::String(s)) => self.buf.push_str(&write_quoted_string(s)),
-            (Kind::Bool, Value::Bool(b)) => self.buf.push_str(if *b { "true" } else { "false" }),
-            (Kind::Int32 | Kind::Sint32 | Kind::Sfixed32, Value::I32(n)) => {
-                self.buf.push_str(&n.to_string())
-            }
-            (Kind::Int64 | Kind::Sint64 | Kind::Sfixed64, Value::I64(n)) => {
-                self.buf.push_str(&n.to_string())
-            }
-            (Kind::Uint32 | Kind::Fixed32, Value::U32(n)) => self.buf.push_str(&n.to_string()),
-            (Kind::Uint64 | Kind::Fixed64, Value::U64(n)) => self.buf.push_str(&n.to_string()),
-            (Kind::Float, Value::F32(f)) => self.buf.push_str(&format_float_f32(*f)),
-            (Kind::Double, Value::F64(f)) => self.buf.push_str(&format_float_f64(*f)),
-            (Kind::Bytes, Value::Bytes(b)) => {
-                self.buf.push_str("b\"");
-                self.buf.push_str(&encode_base64(b));
-                self.buf.push('"');
-            }
-            (Kind::Enum(_), Value::EnumNumber(_)) => {
-                // Enum scalars route through write_enum_value; reaching here
-                // means the caller got the dispatch wrong.
-                self.buf.push('0');
-            }
-            _ => self.buf.push('?'),
+/// The PXF text of a scalar value of `kind`.
+fn scalar_text(kind: &Kind, v: &Value) -> String {
+    match (kind, v) {
+        (Kind::String, Value::String(s)) => write_quoted_string(s),
+        (Kind::Bool, Value::Bool(b)) => (if *b { "true" } else { "false" }).to_string(),
+        (Kind::Int32 | Kind::Sint32 | Kind::Sfixed32, Value::I32(n)) => n.to_string(),
+        (Kind::Int64 | Kind::Sint64 | Kind::Sfixed64, Value::I64(n)) => n.to_string(),
+        (Kind::Uint32 | Kind::Fixed32, Value::U32(n)) => n.to_string(),
+        (Kind::Uint64 | Kind::Fixed64, Value::U64(n)) => n.to_string(),
+        (Kind::Float, Value::F32(f)) => format_float_f32(*f),
+        (Kind::Double, Value::F64(f)) => format_float_f64(*f),
+        (Kind::Bytes, Value::Bytes(b)) => format!("b\"{}\"", encode_base64(b)),
+        (Kind::Enum(_), Value::EnumNumber(_)) => {
+            // Enum scalars route through write_enum_value; reaching here
+            // means the caller got the dispatch wrong.
+            "0".to_string()
         }
+        _ => "?".to_string(),
     }
+}
 
+/// The single-literal form of a message value, for the message types that
+/// have one: `google.protobuf.Timestamp` (RFC 3339), `google.protobuf
+/// .Duration` (Go-style), the nine `*Value` wrappers (the bare scalar),
+/// `pxf.BigInt` (integer) and `pxf.Decimal` (decimal literal, scale
+/// preserved). `None` for every other message, which is written as a
+/// block. Used in singular, list and map-value positions alike, so the
+/// three agree with each other and with the reference.
+fn message_shorthand(mdesc: &MessageDescriptor, sub: &DynamicMessage) -> Option<String> {
+    let full = mdesc.full_name();
+    if full == "google.protobuf.Timestamp" {
+        return Some(format_rfc3339_nano(sub));
+    }
+    if full == "google.protobuf.Duration" {
+        return Some(format_go_duration(sub));
+    }
+    if is_wrapper_full_name(full) {
+        let inner_fd = mdesc
+            .get_field_by_name("value")
+            .expect("wrapper missing 'value'");
+        let v = sub.get_field(&inner_fd).into_owned();
+        return Some(scalar_text(&inner_fd.kind(), &v));
+    }
+    if full == "pxf.BigInt" {
+        let abs = bytes_field(sub, "abs");
+        let negative = bool_field(sub, "negative");
+        return Some(format_big_int(&abs, negative));
+    }
+    if full == "pxf.Decimal" {
+        let unscaled = bytes_field(sub, "unscaled");
+        let scale = match sub
+            .descriptor()
+            .get_field_by_name("scale")
+            .map(|fd| sub.get_field(&fd).into_owned())
+        {
+            Some(Value::I32(n)) => n,
+            _ => 0,
+        };
+        let negative = bool_field(sub, "negative");
+        return Some(format_decimal(&unscaled, scale, negative));
+    }
+    None
+}
+
+fn bytes_field(msg: &DynamicMessage, name: &str) -> Vec<u8> {
+    match msg
+        .descriptor()
+        .get_field_by_name(name)
+        .map(|fd| msg.get_field(&fd).into_owned())
+    {
+        Some(Value::Bytes(b)) => b.to_vec(),
+        _ => Vec::new(),
+    }
+}
+
+fn bool_field(msg: &DynamicMessage, name: &str) -> bool {
+    matches!(
+        msg.descriptor()
+            .get_field_by_name(name)
+            .map(|fd| msg.get_field(&fd).into_owned()),
+        Some(Value::Bool(true))
+    )
+}
+
+impl<'a> Encoder<'a> {
     /// Try Any sugar; returns true on success. When the resolver can't find
     /// the URL or the bytes don't decode, returns false so the caller falls
     /// back to the plain `{ type_url = …, value = … }` block path.

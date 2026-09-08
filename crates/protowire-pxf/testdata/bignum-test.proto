@@ -1,0 +1,29 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for the arbitrary-precision literal forms (draft -01
+// §well-known types; protowire-rust#34). Mirrors the schema in
+// protowire-go's encoding/pxf/bignum_test.go.
+syntax = "proto3";
+package bignum_test.v1;
+
+import "pxf/annotations.proto";
+import "pxf/bignum.proto";
+
+message BigNumDemo {
+  pxf.BigInt big_int_field = 1;
+  pxf.Decimal decimal_field = 2;
+  pxf.BigFloat big_float_field = 3;
+  repeated pxf.BigInt repeated_big_int = 4;
+  repeated pxf.Decimal repeated_decimal = 5;
+  repeated pxf.BigFloat repeated_big_float = 6;
+}
+
+message BigNumDefaults {
+  pxf.BigInt int_with_default = 1 [(pxf.default) = "42"];
+  pxf.Decimal dec_with_default = 2 [(pxf.default) = "3.14"];
+}
+
+message BigNumMaps {
+  map<string, pxf.BigInt> weights = 1;
+  map<string, pxf.Decimal> rates = 2;
+}

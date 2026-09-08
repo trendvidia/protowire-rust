@@ -7,6 +7,7 @@
 
 pub mod annotations;
 pub mod ast;
+pub mod bignum;
 pub mod dataset_reader;
 pub mod decode;
 pub mod encode;
@@ -23,6 +24,7 @@ pub use ast::{
     Directive, Document, DurationVal, Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry,
     NullVal, StringVal, TimestampVal, Value,
 };
+pub use bignum::MAX_NUMERIC_LITERAL_DIGITS;
 pub use dataset_reader::{bind_row, DatasetReader, DEFAULT_HEADER_MAX_BYTES};
 pub use decode::{unmarshal, unmarshal_full, PoolResolver, TypeResolver, UnmarshalOptions};
 pub use encode::{marshal, MarshalOptions};

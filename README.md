@@ -98,13 +98,16 @@ The Rust port is descriptor-driven via
 `DynamicMessage` everywhere, no codegen-bound types. A few items fall
 out of that or are explicit deferred work:
 
-- **No native `BigInt` / `Decimal` / `BigFloat` implementations**
-  (planned for 0.73.0). The codec faithfully encodes/decodes the
-  bytes for the `pxf.*` arbitrary-precision schemas, but the
-  user-facing type is `Vec<u8>` — callers convert to
-  `num-bigint::BigInt` / `rust_decimal::Decimal` themselves. The Go
-  reference's `bignum_test.go` is not yet ported (none of the sibling
-  ports have it either).
+- **No native big-number types.** `pxf.BigInt` and `pxf.Decimal`
+  take their literal forms in PXF (`amount = 1234567890123456789012`,
+  `rate = 1.00` with the scale preserved) and write them back, with
+  `MaxNumericLiteralDigits` enforced before the conversion; on the
+  wire the user-facing type stays `Vec<u8>` (big-endian magnitude) —
+  callers convert to `num-bigint::BigInt` / `rust_decimal::Decimal`
+  themselves. `pxf.BigFloat` reads and writes its block form only:
+  matching the reference's mantissa/exponent bytes for a decimal
+  literal means reproducing `big.Float`'s 256-bit rounding, which is
+  [#39](https://github.com/trendvidia/protowire-rust/issues/39).
 - **No runtime `.proto` compilation.** The Go port uses `protocompile`
   to turn a `.proto` schema into a `FileDescriptorSet` in-process;
   the prost ecosystem has no comparable embeddable compiler. You must
