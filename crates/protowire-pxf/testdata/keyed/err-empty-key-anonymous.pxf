@@ -1,0 +1,13 @@
+@type keyed.v1.Node
+
+# The empty-key rule applies in the anonymous form too: an explicit
+# empty-string assignment to the key field of an element of a keyed
+# repeated field MUST be rejected.
+
+id = "root"
+children = [
+  {
+    id = ""
+    type = "Label"
+  }
+]

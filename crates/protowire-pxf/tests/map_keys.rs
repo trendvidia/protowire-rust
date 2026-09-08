@@ -304,7 +304,8 @@ fn bool_keyword_key_in_parser() {
     for src in ["m = {\n  true = \"a\"\n}\n", "m = {\n  true { }\n}\n"] {
         let err = parse(src).expect_err("a bool key takes only the ':' tail");
         assert!(
-            err.msg.contains("requires an identifier key, got bool"),
+            err.msg
+                .contains("requires an identifier or string key, got bool"),
             "{src:?}: {}",
             err.msg
         );

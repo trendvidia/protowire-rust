@@ -602,14 +602,16 @@ impl<'a> Parser<'a> {
 
         match self.current.kind {
             TokenKind::Equals => {
-                // `=` denotes a field assignment on a proto message; the key
-                // must be an identifier. Map-style keys (string / integer /
-                // bool) are only valid with `:`.
-                if !matches!(key_kind, TokenKind::Ident) {
+                // `=` denotes a field assignment on a proto message: the key
+                // is an identifier, or a string — a quoted entry name, valid
+                // only in a keyed repeated field's block, which the schema
+                // layer checks (draft -01 §3.13). Integer and bool keys are
+                // only valid with `:`.
+                if !matches!(key_kind, TokenKind::Ident | TokenKind::String) {
                     return Err(PxfError::new(
                         pos,
                         format!(
-                            "field assignment with '=' requires an identifier key, got {} ({:?}); use ':' for map entries",
+                            "field assignment with '=' requires an identifier or string key, got {} ({:?}); use ':' for map entries",
                             key_kind.name(),
                             key
                         ),
@@ -620,6 +622,7 @@ impl<'a> Parser<'a> {
                 Ok(Entry::Assignment(Assignment {
                     pos,
                     key,
+                    key_quoted: matches!(key_kind, TokenKind::String),
                     value,
                     leading_comments,
                     trailing_comment: String::new(),
@@ -646,13 +649,13 @@ impl<'a> Parser<'a> {
                 }))
             }
             TokenKind::LBrace => {
-                // `{ ... }` denotes a submessage field; same identifier-only
-                // rule as `=` applies.
-                if !matches!(key_kind, TokenKind::Ident) {
+                // `{ ... }` denotes a submessage field, or a named entry of a
+                // keyed repeated field; same identifier-or-string rule as `=`.
+                if !matches!(key_kind, TokenKind::Ident | TokenKind::String) {
                     return Err(PxfError::new(
                         pos,
                         format!(
-                            "submessage block requires an identifier key, got {} ({:?})",
+                            "submessage block requires an identifier or string key, got {} ({:?})",
                             key_kind.name(),
                             key
                         ),
@@ -664,6 +667,7 @@ impl<'a> Parser<'a> {
                 Ok(Entry::Block(Block {
                     pos,
                     name: key,
+                    name_quoted: matches!(key_kind, TokenKind::String),
                     entries,
                     leading_comments,
                 }))

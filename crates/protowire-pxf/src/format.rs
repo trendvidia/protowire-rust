@@ -76,7 +76,14 @@ impl Formatter<'_> {
                 Entry::Assignment(a) => {
                     self.write_comments(&a.leading_comments, level);
                     self.write_indent(level);
-                    self.out.push_str(&a.key);
+                    // A quoted entry name stays quoted: without a schema the
+                    // formatter cannot know whether it is identifier-safe in
+                    // a keyed block (canonicalize_keyed does that).
+                    if a.key_quoted {
+                        self.out.push_str(&quote_string(&a.key));
+                    } else {
+                        self.out.push_str(&a.key);
+                    }
                     self.out.push_str(" = ");
                     self.format_value(&a.value, level);
                     if !a.trailing_comment.is_empty() {
@@ -108,7 +115,11 @@ impl Formatter<'_> {
                 Entry::Block(b) => {
                     self.write_comments(&b.leading_comments, level);
                     self.write_indent(level);
-                    self.out.push_str(&b.name);
+                    if b.name_quoted {
+                        self.out.push_str(&quote_string(&b.name));
+                    } else {
+                        self.out.push_str(&b.name);
+                    }
                     self.out.push_str(" {\n");
                     self.format_entries(&b.entries, level + 1);
                     self.write_indent(level);

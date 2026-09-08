@@ -55,10 +55,12 @@ gates merges.
   bytes (258 hex chars) starting `08 92 03 1a 04 de ad be ef 22 76 …`
   (the `22 76` is tag 4 length 118, framing a nested `AppError`).
 - `pxf` annotations: `pxf.required` = 1314, `pxf.default` = 1315,
-  `pxf.key` = 1316 (placement-checked at bind time; keyed surface form is
-  #20); `_null` field of type `google.protobuf.FieldMask` carries
-  null-survival across binary. Bind-time checks (`schema.rs`) cover the
-  import closure and are memoized per file descriptor.
+  `pxf.key` = 1316 (placement-checked at bind time; keyed surface form
+  decoded/encoded per draft -01 §3.13, canonicalized by
+  `keyed::canonicalize_keyed`); `_null` field of type
+  `google.protobuf.FieldMask` carries null-survival across binary.
+  Bind-time checks (`schema.rs`) cover the import closure and are
+  memoized per file descriptor.
 - `sbe` annotations: `sbe.schema_id` = 1319, `version` = 1320,
   `template_id` = 1321, `length` = 1322, `encoding` = 1323.
 - `sbe` wire: 8-byte LE message header + 4-byte LE group header.

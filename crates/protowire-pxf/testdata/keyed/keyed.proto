@@ -1,0 +1,42 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+
+// Schema for the keyed-repeated-field conformance fixtures under
+// testdata/keyed/ (issue #116; IETF draft -01 "Keyed Repeated Fields").
+//
+// Node.children is the reference keyed field (identifier-safe keys and
+// self-recursion); Deployment.regions exercises keys that are not
+// identifier-safe and therefore require the quoted entry-name form;
+// Doc.items is a plain (un-keyed) repeated message field used by the
+// quoted-name-outside-keyed-context schema-error fixture.
+
+syntax = "proto3";
+package keyed.v1;
+
+import "pxf/annotations.proto";
+
+message Node {
+  string id = 1;
+  string type = 2;
+  int32 weight = 3;
+  repeated Node children = 4 [(pxf.key) = "id"];
+}
+
+message Region {
+  string name = 1;
+  int32 replicas = 2;
+}
+
+message Deployment {
+  string service = 1;
+  repeated Region regions = 2 [(pxf.key) = "name"];
+}
+
+message Plain {
+  string id = 1;
+  string label = 2;
+}
+
+message Doc {
+  repeated Plain items = 1;
+}

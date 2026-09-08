@@ -195,7 +195,13 @@ impl Entry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Assignment {
     pub pos: Position,
+    /// The key as the document spelled it, without quotes.
     pub key: String,
+    /// Whether the key was written as a string literal. A quoted entry name
+    /// never names a field; it is meaningful only inside a keyed repeated
+    /// field's block, where it supplies the element's key (draft -01
+    /// §3.13). Kept so a schema-less formatter round-trips it.
+    pub key_quoted: bool,
     pub value: Value,
     pub leading_comments: Vec<Comment>,
     /// Inline comment after the value on the same source line, if any.
@@ -219,11 +225,16 @@ pub struct MapEntry {
     pub trailing_comment: String,
 }
 
-/// `name { entries }` — a nested message.
+/// `name { entries }` — a nested message, or one element of a keyed
+/// repeated field's block (draft -01 §3.13).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
     pub pos: Position,
+    /// The name as the document spelled it, without quotes.
     pub name: String,
+    /// Whether the name was written as a string literal (an entry name
+    /// that is not identifier-shaped, such as `"us-east-1"`).
+    pub name_quoted: bool,
     pub entries: Vec<Entry>,
     pub leading_comments: Vec<Comment>,
 }

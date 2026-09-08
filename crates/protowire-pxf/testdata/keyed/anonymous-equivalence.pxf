@@ -1,0 +1,20 @@
+@type keyed.v1.Node
+
+# Anonymous-form equivalence: decodes to exactly the same message as
+# roundtrip-keyed.pxf (key fields written explicitly, same order).
+# fmt canonicalizes this document to the keyed form.
+
+id = "root"
+type = "VBox"
+children = [
+  {
+    id = "greeting"
+    type = "Label"
+    weight = 1
+  }
+  {
+    id = "counter_row"
+    type = "HBox"
+    weight = 2
+  }
+]

@@ -126,10 +126,6 @@ out of that or are explicit deferred work:
   workspace pins `prost-reflect = "0.14"` (and `prost = "0.13"`).
   Bumping either may require small migrations in `protowire-pxf`'s
   annotation reader; tracked but not breaking today.
-- **Keyed repeated fields (v1.2 grammar) are not implemented**
-  ([#20](https://github.com/trendvidia/protowire-rust/issues/20)):
-  `(pxf.key)` is read and its placement is checked at bind time, but
-  the block-of-named-blocks surface form is not decoded or encoded.
 - **The shared CLI lives in
   [trendvidia/protowire/cmd/protowire](https://github.com/trendvidia/protowire/tree/main/cmd/protowire),
   not here.** This repo ships only library crates plus the four

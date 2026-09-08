@@ -29,6 +29,9 @@ use crate::ast::{
 use crate::bigfloat::{parse_big_float, BigFloatLit};
 use crate::bignum::{parse_big_int, parse_decimal, BigIntLit, DecimalLit};
 use crate::errors::PxfError;
+use crate::keyed::{
+    duplicate_key_error, empty_name_error, key_field, quoted_name_unkeyed_error, KeyedElemState,
+};
 use crate::lexer::Lexer;
 use crate::limits::{Limits, MAX_NUMERIC_LITERAL_DIGITS};
 use crate::result::Presence;
@@ -186,6 +189,10 @@ struct Decoder<'a> {
     /// document. Schema literals — a `(pxf.default)` — stay under the
     /// constants: they are the schema author's, not the document's.
     limits: Limits,
+    /// Context for the next `decode_fields` call: it decodes one element
+    /// of a keyed repeated field (draft -01 §3.13), whose key-field
+    /// assignments are checked against the entry name.
+    keyed_elem: Option<KeyedElemState>,
 }
 
 impl<'a> Decoder<'a> {
@@ -209,6 +216,7 @@ impl<'a> Decoder<'a> {
             path_prefix: String::new(),
             depth: 0,
             limits,
+            keyed_elem: None,
         }
     }
 
@@ -663,6 +671,10 @@ impl<'a> Decoder<'a> {
     ) -> Result<(), PxfError> {
         let desc = msg.descriptor();
         let mut set_oneofs: HashMap<String, String> = HashMap::new();
+        // A keyed-element context applies to exactly this body: the
+        // immediate entries of one element of a keyed repeated field.
+        // Take it so nested submessages don't inherit the key checks.
+        let ke = self.keyed_elem.take();
 
         loop {
             if in_block && matches!(self.current.kind, TokenKind::RBrace) {
@@ -690,12 +702,21 @@ impl<'a> Decoder<'a> {
                     ),
                 ));
             }
+            let key_quoted = matches!(key_kind, TokenKind::String);
             let key = std::mem::take(&mut self.current.value);
             self.advance();
 
             match self.current.kind {
                 TokenKind::Equals => {
                     self.advance();
+                    if key_quoted {
+                        // The grammar accepts a string at entry-name position
+                        // everywhere; the schema layer restricts it to keyed
+                        // repeated fields' blocks (draft -01 §3.13), which
+                        // have their own loop — in message context a quoted
+                        // name never names a field.
+                        return Err(quoted_name_unkeyed_error(pos, &key));
+                    }
                     let fd = match desc.get_field_by_name(&key) {
                         Some(fd) => fd,
                         None => {
@@ -715,11 +736,25 @@ impl<'a> Decoder<'a> {
                         self.advance();
                         continue;
                     }
+                    if let Some(ke) = &ke {
+                        if fd.name() == ke.key_name
+                            && matches!(self.current.kind, TokenKind::String)
+                        {
+                            // Explicit assignment to the element's key field:
+                            // the empty string is never a valid key, and in
+                            // the named form the value must agree with the
+                            // entry name (draft -01 §3.13).
+                            ke.check_explicit_key(&self.current.value, self.current.pos)?;
+                        }
+                    }
                     self.mark_present(&fd);
                     self.decode_field_value(msg, &fd)?;
                 }
                 TokenKind::LBrace => {
                     self.advance();
+                    if key_quoted {
+                        return Err(quoted_name_unkeyed_error(pos, &key));
+                    }
                     let fd = match desc.get_field_by_name(&key) {
                         Some(fd) => fd,
                         None => {
@@ -734,6 +769,24 @@ impl<'a> Decoder<'a> {
                         }
                     };
                     if fd.is_list() {
+                        // Keyed repeated field (draft -01 §3.13): the block
+                        // form is a sequence of named entries, one per
+                        // element.
+                        if let Some(key_fd) = key_field(&fd) {
+                            self.mark_present(&fd);
+                            self.decode_keyed_block_body(msg, &fd, &key_fd)?;
+                            continue;
+                        }
+                        if matches!(self.current.kind, TokenKind::String) {
+                            // The block spells the keyed form on a field
+                            // with no (pxf.key); report the quoted entry
+                            // name — the more specific schema violation —
+                            // rather than the generic shape error.
+                            return Err(quoted_name_unkeyed_error(
+                                self.current.pos,
+                                &self.current.value,
+                            ));
+                        }
                         return Err(self.err_at(
                             pos,
                             format!(
@@ -834,6 +887,15 @@ impl<'a> Decoder<'a> {
             return self.decode_map_inline(msg, fd);
         }
         if fd.is_list() {
+            // Keyed repeated field written `name = { ... }`: a block-tail is
+            // an abbreviation of `= { ... }` (draft -01 §3.13), so the
+            // assignment spelling of the keyed block form is equally valid.
+            if matches!(self.current.kind, TokenKind::LBrace) {
+                if let Some(key_fd) = key_field(fd) {
+                    self.advance();
+                    return self.decode_keyed_block_body(msg, fd, &key_fd);
+                }
+            }
             return self.decode_list_inline(msg, fd);
         }
         if let Kind::Message(inner_desc) = fd.kind() {
@@ -883,8 +945,13 @@ impl<'a> Decoder<'a> {
         self.enter()?;
         self.advance();
 
-        let mut elems: Vec<Value> = Vec::new();
+        // A repeated field bound more than once concatenates in document
+        // order (draft -01 § Entries and Keys), so start from what is there.
+        let mut elems: Vec<Value> = existing_list(msg, fd);
         let element_kind = fd.kind();
+        // Non-None: the anonymous form of a keyed repeated field, whose
+        // element bodies get the key-field checks (draft -01 §3.13).
+        let key_fd = key_field(fd);
 
         while !matches!(self.current.kind, TokenKind::RBracket | TokenKind::Eof) {
             self.illegal()?;
@@ -909,6 +976,14 @@ impl<'a> Decoder<'a> {
                             return Err(self.err("expected '{' for repeated message element"));
                         }
                         self.advance();
+                        if let Some(key_fd) = &key_fd {
+                            self.keyed_elem = Some(KeyedElemState {
+                                field: fd.name().to_string(),
+                                key_name: key_fd.name().to_string(),
+                                entry_name: String::new(),
+                                named: false,
+                            });
+                        }
                         self.decode_fields(&mut sub, true)?;
                     }
                     Value::Message(sub)
@@ -928,6 +1003,102 @@ impl<'a> Decoder<'a> {
         self.advance();
         self.leave();
 
+        msg.set_field(fd, Value::List(elems));
+        Ok(())
+    }
+
+    /// Decode the block form of a keyed repeated field (draft -01 §3.13):
+    /// a sequence of named entries — `name { ... }` or equivalently
+    /// `name = { ... }` — where each entry name (unquoted value, for
+    /// string-literal names) populates the element's key field and entry
+    /// order is list order. Duplicate entry names within the block, the
+    /// empty string as a name, and a disagreeing explicit key-field
+    /// assignment inside an entry are decode errors. The opening `{` has
+    /// been consumed; the closing `}` is consumed before returning.
+    fn decode_keyed_block_body(
+        &mut self,
+        msg: &mut DynamicMessage,
+        fd: &FieldDescriptor,
+        key_fd: &FieldDescriptor,
+    ) -> Result<(), PxfError> {
+        self.enter()?;
+        let elem_desc = match fd.kind() {
+            Kind::Message(m) => m,
+            _ => unreachable!("key_field only matches message-typed lists"),
+        };
+        let mut elems: Vec<Value> = existing_list(msg, fd);
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+        loop {
+            match self.current.kind {
+                TokenKind::RBrace => {
+                    self.advance();
+                    break;
+                }
+                TokenKind::Eof => {
+                    return Err(self.err(format!(
+                        "expected '}}' to close keyed field {:?}, got EOF",
+                        fd.name()
+                    )));
+                }
+                TokenKind::Ident | TokenKind::String => {}
+                other => {
+                    return Err(self.err(format!(
+                        "expected entry name (identifier or string) in keyed field {:?}, got {}",
+                        fd.name(),
+                        other
+                    )));
+                }
+            }
+            let name_pos = self.current.pos;
+            let name = std::mem::take(&mut self.current.value);
+            if name.is_empty() {
+                return Err(empty_name_error(name_pos, fd.name()));
+            }
+            if !seen.insert(name.clone()) {
+                return Err(duplicate_key_error(name_pos, fd.name(), &name));
+            }
+            self.advance();
+            match self.current.kind {
+                TokenKind::LBrace => self.advance(),
+                TokenKind::Equals => {
+                    self.advance();
+                    if !matches!(self.current.kind, TokenKind::LBrace) {
+                        return Err(self.err(format!(
+                            "keyed entry {:?} of field {:?} must have a block value ('{{ ... }}'): the element type is a message",
+                            name,
+                            fd.name()
+                        )));
+                    }
+                    self.advance();
+                }
+                other => {
+                    return Err(self.err(format!(
+                        "expected '{{' or '=' after entry name {:?} in keyed field {:?}, got {}",
+                        name,
+                        fd.name(),
+                        other
+                    )));
+                }
+            }
+            if elems.len() >= self.limits.max_repeated_count {
+                return Err(self.err(format!(
+                    "repeated field {:?} exceeds MaxRepeatedCount={}",
+                    fd.name(),
+                    self.limits.max_repeated_count
+                )));
+            }
+            let mut sub = DynamicMessage::new(elem_desc.clone());
+            sub.set_field(key_fd, Value::String(name.clone()));
+            self.keyed_elem = Some(KeyedElemState {
+                field: fd.name().to_string(),
+                key_name: key_fd.name().to_string(),
+                entry_name: name,
+                named: true,
+            });
+            self.decode_fields(&mut sub, true)?;
+            elems.push(Value::Message(sub));
+        }
+        self.leave();
         msg.set_field(fd, Value::List(elems));
         Ok(())
     }
@@ -1362,6 +1533,19 @@ impl<'a> Decoder<'a> {
 
 fn is_any_full_name(full: &str) -> bool {
     full == "google.protobuf.Any"
+}
+
+/// The elements a repeated field already holds, so a second binding of
+/// the same field appends rather than replaces (draft -01 § Entries and
+/// Keys: "elements concatenated in document order").
+fn existing_list(msg: &DynamicMessage, fd: &FieldDescriptor) -> Vec<Value> {
+    if !msg.has_field(fd) {
+        return Vec::new();
+    }
+    match msg.get_field(fd).into_owned() {
+        Value::List(items) => items,
+        _ => Vec::new(),
+    }
 }
 
 /// Validate `(pxf.required)` annotations and apply `(pxf.default)` values to

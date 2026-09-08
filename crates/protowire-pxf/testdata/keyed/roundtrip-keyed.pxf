@@ -1,0 +1,18 @@
+@type keyed.v1.Node
+
+# Keyed round-trip: canonical keyed-block form. Entry name = key-field
+# value, entry order = list order; the key field is not repeated inside
+# the entry blocks. decode → encode reproduces this body.
+
+id = "root"
+type = "VBox"
+children {
+  greeting {
+    type = "Label"
+    weight = 1
+  }
+  counter_row {
+    type = "HBox"
+    weight = 2
+  }
+}

@@ -1,0 +1,12 @@
+@type keyed.v1.Doc
+
+# 'items' carries no (pxf.key): a quoted entry name is only meaningful
+# as a key, so the schema layer MUST reject this document. The parse
+# itself succeeds — the grammar accepts quoted entry names everywhere;
+# the restriction is schema-layer.
+
+items {
+  "a" {
+    label = "first"
+  }
+}

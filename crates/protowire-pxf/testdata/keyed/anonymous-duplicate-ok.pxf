@@ -1,0 +1,18 @@
+@type keyed.v1.Node
+
+# Duplicate keys are representable only in the anonymous form. Where the
+# schema layer tolerates them (plain decode — no uniqueness constraint
+# beyond the keyed block itself), decode accepts, and encode/fmt MUST
+# keep the anonymous form: the keyed form requires all keys distinct.
+
+id = "root"
+children = [
+  {
+    id = "dup"
+    type = "Label"
+  }
+  {
+    id = "dup"
+    type = "HBox"
+  }
+]

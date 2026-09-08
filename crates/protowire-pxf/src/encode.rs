@@ -22,6 +22,7 @@ use crate::annotations::find_null_mask_field;
 use crate::bigfloat::format_big_float;
 use crate::bignum::{format_big_int, format_decimal};
 use crate::decode::TypeResolver;
+use crate::keyed::{ident_safe_entry_name, key_field};
 use crate::result::Presence;
 
 #[derive(Clone, Copy)]
@@ -77,6 +78,10 @@ struct Encoder<'a> {
     null_set: Option<HashSet<String>>,
     null_mask_fd: Option<FieldDescriptor>,
     path_prefix: String,
+    /// Key field to omit from the NEXT `encode_message` call: the body of
+    /// a keyed-block entry already carries the key as its entry name
+    /// (draft -01 §3.13).
+    skip_key_fd: Option<FieldDescriptor>,
 }
 
 impl<'a> Encoder<'a> {
@@ -89,6 +94,7 @@ impl<'a> Encoder<'a> {
             null_set: None,
             null_mask_fd: None,
             path_prefix: String::new(),
+            skip_key_fd: None,
         }
     }
 
@@ -141,9 +147,16 @@ impl<'a> Encoder<'a> {
 
     fn encode_message(&mut self, parent: &DynamicMessage, level: usize) {
         let desc = parent.descriptor();
+        // A pending skip applies to exactly this body.
+        let skip_key = self.skip_key_fd.take();
         for fd in desc.fields() {
             if let Some(null_fd) = &self.null_mask_fd {
                 if self.path_prefix.is_empty() && fd.number() == null_fd.number() {
+                    continue;
+                }
+            }
+            if let Some(k) = &skip_key {
+                if fd.number() == k.number() {
                     continue;
                 }
             }
@@ -224,6 +237,17 @@ impl<'a> Encoder<'a> {
             return;
         }
 
+        // Keyed repeated field (draft -01 §3.13): emit the keyed block form
+        // whenever every element's key is present, non-empty and distinct;
+        // otherwise the anonymous list form (elements with absent or
+        // duplicate keys can only be represented anonymously).
+        if let Some(key_fd) = key_field(fd) {
+            if !list.is_empty() && keyed_form_eligible(&list, &key_fd) {
+                self.encode_keyed_list(fd, &list, &key_fd, level);
+                return;
+            }
+        }
+
         self.write_field_prefix(level, fd.name());
         self.buf.push_str("[\n");
 
@@ -256,6 +280,42 @@ impl<'a> Encoder<'a> {
 
         self.write_indent(level);
         self.buf.push_str("]\n");
+    }
+
+    /// Emit a keyed repeated field in the keyed block form: one named block
+    /// per element, in list order. Entry names are written unquoted when
+    /// identifier-safe and quoted otherwise; the key field is not
+    /// additionally emitted inside the entry's block.
+    fn encode_keyed_list(
+        &mut self,
+        fd: &FieldDescriptor,
+        list: &[Value],
+        key_fd: &FieldDescriptor,
+        level: usize,
+    ) {
+        self.write_indent(level);
+        self.buf.push_str(fd.name());
+        self.buf.push_str(" {\n");
+        for elem in list {
+            let Value::Message(sub) = elem else { continue };
+            let key = match sub.get_field(key_fd).into_owned() {
+                Value::String(s) => s,
+                _ => String::new(),
+            };
+            self.write_indent(level + 1);
+            if ident_safe_entry_name(&key) {
+                self.buf.push_str(&key);
+            } else {
+                self.buf.push_str(&write_quoted_string(&key));
+            }
+            self.buf.push_str(" {\n");
+            self.skip_key_fd = Some(key_fd.clone());
+            self.encode_message(sub, level + 2);
+            self.write_indent(level + 1);
+            self.buf.push_str("}\n");
+        }
+        self.write_indent(level);
+        self.buf.push_str("}\n");
     }
 
     fn encode_map_field(&mut self, parent: &DynamicMessage, fd: &FieldDescriptor, level: usize) {
@@ -590,6 +650,26 @@ fn encode_base64(bytes: &[u8]) -> String {
         out.push('=');
     }
     out
+}
+
+/// Whether every element of `list` has a non-empty key value that is
+/// distinct within the collection — the draft -01 §3.13 condition for
+/// emitting the keyed block form.
+fn keyed_form_eligible(list: &[Value], key_fd: &FieldDescriptor) -> bool {
+    let mut seen = HashSet::with_capacity(list.len());
+    for elem in list {
+        let Value::Message(sub) = elem else {
+            return false;
+        };
+        let key = match sub.get_field(key_fd).into_owned() {
+            Value::String(s) => s,
+            _ => return false,
+        };
+        if key.is_empty() || !seen.insert(key) {
+            return false;
+        }
+    }
+    true
 }
 
 fn is_valid_ident(s: &str) -> bool {
