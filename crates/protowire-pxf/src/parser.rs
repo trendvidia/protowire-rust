@@ -14,16 +14,31 @@ use crate::ast::{
 };
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
+use crate::limits::Limits;
 use crate::token::{Position, Token, TokenKind};
 
-/// HARDENING.md `MaxNestingDepth`: caps `{` and `[` nesting at 100. The same
-/// constant lives on [`crate::decode::MAX_NESTING_DEPTH`]; both apply per the
-/// HARDENING.md threat model so adversarial input can't overflow the native
-/// recursion stack regardless of which entry point is used.
-pub const MAX_NESTING_DEPTH: usize = 100;
+/// HARDENING.md `MaxNestingDepth`, re-exported from [`crate::limits`]: the
+/// parser and the decoder cap `{` / `[` nesting at the same bound so
+/// adversarial input can't overflow the native recursion stack regardless
+/// of which entry point is used.
+pub use crate::limits::MAX_NESTING_DEPTH;
 
+/// Parse a PXF document into its AST under the default [`Limits`].
 pub fn parse(input: &str) -> Result<Document, PxfError> {
-    Parser::new(input).parse_document()
+    parse_with_limits(input, Limits::default())
+}
+
+/// Parse a PXF document into its AST under per-call [`Limits`]: the
+/// input is refused past `max_message_size` before the first token is
+/// read, nesting past `max_nesting_depth`, and a `b"…"` literal past
+/// `max_bytes_literal_length`. The parser has no schema, so
+/// `max_repeated_count` and `max_numeric_literal_digits` do not apply
+/// here; they are the decoder's.
+pub fn parse_with_limits(input: &str, limits: Limits) -> Result<Document, PxfError> {
+    limits
+        .check_message_size(input.len())
+        .map_err(|m| PxfError::new(Position::new(1, 1), m))?;
+    Parser::new(input, limits).parse_document()
 }
 
 struct Parser<'a> {
@@ -33,27 +48,29 @@ struct Parser<'a> {
     /// Live `{` + `[` depth, incremented at each opening token and
     /// decremented at the matching close. Exceeds → reject before recursing.
     depth: usize,
+    limits: Limits,
 }
 
 impl<'a> Parser<'a> {
-    fn new(input: &'a str) -> Self {
+    fn new(input: &'a str, limits: Limits) -> Self {
         let mut p = Self {
-            lex: Lexer::new(input),
+            lex: Lexer::with_limits(input, limits.max_bytes_literal_length),
             current: Token::new(TokenKind::Eof, "", Position::new(1, 1)),
             pending: Vec::new(),
             depth: 0,
+            limits,
         };
         p.advance();
         p
     }
 
     fn enter(&mut self, pos: Position) -> Result<(), PxfError> {
-        if self.depth >= MAX_NESTING_DEPTH {
+        if self.depth >= self.limits.max_nesting_depth {
             return Err(PxfError::new(
                 pos,
                 format!(
-                    "nesting depth exceeds MaxNestingDepth ({})",
-                    MAX_NESTING_DEPTH
+                    "nesting depth exceeds MaxNestingDepth={}",
+                    self.limits.max_nesting_depth
                 ),
             ));
         }

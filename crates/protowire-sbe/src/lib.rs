@@ -20,7 +20,9 @@ pub mod view;
 pub mod xmlschema;
 pub mod xmltoproto;
 
-pub use codec::{Codec, GROUP_HEADER_SIZE, HEADER_SIZE};
+pub use codec::{
+    Codec, Limits, GROUP_HEADER_SIZE, HEADER_SIZE, MAX_MESSAGE_SIZE, MAX_REPEATED_COUNT,
+};
 pub use errors::SbeError;
 pub use marshal::marshal;
 pub use prototoxml::proto_to_xml;

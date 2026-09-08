@@ -19,14 +19,7 @@
 //! arbitrary-precision arithmetic; tracked in protowire-rust#39. A
 //! `pxf.BigFloat` field still reads and writes its block form.
 
-/// HARDENING.md § Mandatory limits: the digit count of any single PXF
-/// numeric literal before it is parsed into a `pxf.BigInt` / `pxf.Decimal`
-/// / `pxf.BigFloat`, bounding the quadratic conversions above. A literal
-/// of exactly this many digits is within the limit. Also bounds the
-/// magnitude of `pxf.Decimal.scale` on the PB wire, since a scale is a
-/// digit count and a decoder that materialises the value computes
-/// `10^scale` from it.
-pub const MAX_NUMERIC_LITERAL_DIGITS: usize = 4096;
+pub use crate::limits::MAX_NUMERIC_LITERAL_DIGITS;
 
 /// A parsed `pxf.BigInt` literal: unsigned big-endian magnitude with no
 /// leading zero bytes (empty for zero), and the sign. Zero is never

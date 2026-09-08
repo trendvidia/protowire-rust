@@ -9,7 +9,7 @@
 //! `composite()` / `group()` return new views over the same backing slice
 //! without copying.
 
-use crate::codec::{Codec, GROUP_HEADER_SIZE, HEADER_SIZE};
+use crate::codec::{check_group_header, Codec, GROUP_HEADER_SIZE, HEADER_SIZE};
 use crate::errors::SbeError;
 use crate::template::{FieldTemplate, GroupTemplate, SbeEncoding};
 
@@ -23,17 +23,29 @@ pub struct View<'a> {
     fields: &'a [FieldTemplate],
     groups: &'a [GroupTemplate],
     groups_start: usize,
+    max_repeated_count: usize,
 }
 
 impl Codec {
-    /// Construct a [`View`] over `data` by looking up its template ID.
+    /// Construct a [`View`] over `data` by looking up its template ID. The
+    /// input is refused past `MaxMessageSize` before the header is read,
+    /// and a wire block shorter than the template's is rejected
+    /// (HARDENING.md § SBE step 2); groups are validated as [`View::group`]
+    /// walks to them.
     pub fn view<'a>(&'a self, data: &'a [u8]) -> Result<View<'a>, SbeError> {
+        self.check_message_size(data.len())?;
         if data.len() < HEADER_SIZE {
             return Err(SbeError::new("sbe: data too short for header"));
         }
         let block_length = read_u16_le(data, 0) as usize;
         let template_id = read_u16_le(data, 2) as u32;
         let tmpl = self.template_by_id(template_id)?;
+        if block_length < tmpl.block_length {
+            return Err(SbeError::new(format!(
+                "sbe: wire block_length {} is below template block_length {}",
+                block_length, tmpl.block_length
+            )));
+        }
         let end = HEADER_SIZE + block_length;
         if data.len() < end {
             return Err(SbeError::new("sbe: data too short for root block"));
@@ -45,6 +57,7 @@ impl Codec {
             fields: &tmpl.fields,
             groups: &tmpl.groups,
             groups_start: end,
+            max_repeated_count: self.limits().max_repeated_count,
         })
     }
 }
@@ -192,17 +205,24 @@ impl<'a> View<'a> {
             fields: &ft.composite,
             groups: &[],
             groups_start: 0,
+            max_repeated_count: self.max_repeated_count,
         })
     }
 
+    /// The repeating group `name`. Every group walked past on the way is
+    /// validated as the decoder validates it (HARDENING.md § SBE steps 3
+    /// and 4, `MaxRepeatedCount`), in 64-bit arithmetic against the
+    /// buffer, so the returned view's entries are all in bounds.
     pub fn group(&self, name: &str) -> Result<GroupView<'a>, SbeError> {
         let mut pos = self.groups_start;
         for gt in self.groups {
-            if pos + GROUP_HEADER_SIZE > self.data.len() {
-                return Err(SbeError::new("sbe: data too short for group header"));
-            }
-            let block_length = read_u16_le(self.data, pos) as usize;
-            let count = read_u16_le(self.data, pos + 2) as usize;
+            let (block_length, count, total) = check_group_header(
+                self.data,
+                pos,
+                gt.fd.name(),
+                gt.block_length,
+                self.max_repeated_count,
+            )?;
             if gt.fd.name() == name {
                 return Ok(GroupView {
                     data: self.data,
@@ -212,7 +232,7 @@ impl<'a> View<'a> {
                     fields: &gt.fields,
                 });
             }
-            pos += GROUP_HEADER_SIZE + count * block_length;
+            pos += total;
         }
         Err(SbeError::new(format!("sbe: unknown group: {}", name)))
     }
@@ -251,6 +271,7 @@ impl<'a> GroupView<'a> {
             fields: self.fields,
             groups: &[],
             groups_start: 0,
+            max_repeated_count: 0,
         })
     }
 }
