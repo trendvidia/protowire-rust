@@ -115,6 +115,13 @@ out of that or are explicit deferred work:
   `protoc --include_imports --descriptor_set_out=…`) and load it via
   `DescriptorPool::decode`. This is also the reason SBE XML
   round-trip is not implemented here.
+- **`prost-reflect` is pinned by caret**: the workspace depends on
+  `prost-reflect = "0.16"` and `prost = "0.14"` (see `Cargo.toml`;
+  Dependabot moves them). `protowire-pxf`'s annotation reader resolves
+  the `(pxf.*)` and `(sbe.*)` extensions by name through the descriptor
+  pool rather than by field number, and it has not needed a change
+  across the 0.14 → 0.16 bumps; a future bump that reshapes the
+  extension API would be caught by the annotation tests.
 - **`prost-reflect` upstream-API drift.** The `FieldOptions`
   extension API has shifted shape across recent releases, so the
   workspace pins `prost-reflect = "0.14"` (and `prost = "0.13"`).
