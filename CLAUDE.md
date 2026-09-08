@@ -97,10 +97,9 @@ gates merges.
 
 ## Explicitly deferred
 
-- pxf `BigFloat` literal form — `BigInt` and `Decimal` literals landed
-  (`src/bignum.rs`, hand-rolled decimal ↔ big-endian conversion, no bignum
-  dependency); `BigFloat` needs `big.Float`-compatible 256-bit rounding to
-  produce the reference's bytes and is still block-form only.
+- (none for bignum: `BigInt` / `Decimal` in `src/bignum.rs`, `BigFloat`
+  in `src/bigfloat.rs` mirroring `math/big` at 256 bits, all hand-rolled,
+  no bignum dependency.)
 - SBE XML round-trip via in-process protoc — Go has it (protocompile),
   TS doesn't, Rust likely won't unless we bind libprotoc.
 

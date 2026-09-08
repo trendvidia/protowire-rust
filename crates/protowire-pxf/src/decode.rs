@@ -26,6 +26,7 @@ use crate::ast::{
     IntVal as AstIntVal, NullVal as AstNullVal, ProtoDirective, ProtoShape,
     StringVal as AstStringVal, TimestampVal as AstTimestampVal, Value as AstValue,
 };
+use crate::bigfloat::{parse_big_float, BigFloatLit};
 use crate::bignum::{parse_big_int, parse_decimal, BigIntLit, DecimalLit};
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
@@ -1145,6 +1146,15 @@ impl<'a> Decoder<'a> {
             self.advance();
             return Ok(true);
         }
+        if full == "pxf.BigFloat" && matches!(self.current.kind, TokenKind::Int | TokenKind::Float)
+        {
+            let pos = self.current.pos;
+            let lit = parse_big_float(&self.current.value, self.limits.max_numeric_literal_digits)
+                .map_err(|e| PxfError::new(pos, e))?;
+            set_big_float_fields(target, &lit);
+            self.advance();
+            return Ok(true);
+        }
         Ok(false)
     }
 
@@ -1465,6 +1475,31 @@ fn set_big_int_fields(target: &mut DynamicMessage, lit: &BigIntLit) {
     }
 }
 
+/// Write a parsed `pxf.BigFloat` literal into its message, mirroring the
+/// reference's `setBigFloatFields`: `mantissa` only when non-zero,
+/// `exponent` only when non-zero, `prec` always, `negative` only when set.
+fn set_big_float_fields(target: &mut DynamicMessage, lit: &BigFloatLit) {
+    let desc = target.descriptor();
+    if !lit.mantissa.is_empty() {
+        if let Some(fd) = desc.get_field_by_name("mantissa") {
+            target.set_field(&fd, Value::Bytes(lit.mantissa.clone().into()));
+        }
+    }
+    if lit.exponent != 0 {
+        if let Some(fd) = desc.get_field_by_name("exponent") {
+            target.set_field(&fd, Value::I32(lit.exponent));
+        }
+    }
+    if let Some(fd) = desc.get_field_by_name("prec") {
+        target.set_field(&fd, Value::U32(lit.prec));
+    }
+    if lit.negative {
+        if let Some(fd) = desc.get_field_by_name("negative") {
+            target.set_field(&fd, Value::Bool(true));
+        }
+    }
+}
+
 /// Write a parsed `pxf.Decimal` literal into its message, mirroring the
 /// reference's `setDecimalFields`: `unscaled` only when non-zero, `scale`
 /// only when non-zero, `negative` only when set.
@@ -1658,6 +1693,17 @@ fn apply_message_default(
             )
         })?;
         set_decimal_fields(&mut sub, &lit);
+        parent.set_field(fd, Value::Message(sub));
+        return Ok(());
+    }
+    if full == "pxf.BigFloat" {
+        let lit = parse_big_float(def, MAX_NUMERIC_LITERAL_DIGITS).map_err(|e| {
+            PxfError::new(
+                pos,
+                format!("invalid default for field {:?}: {}", fd.name(), e),
+            )
+        })?;
+        set_big_float_fields(&mut sub, &lit);
         parent.set_field(fd, Value::Message(sub));
         return Ok(());
     }

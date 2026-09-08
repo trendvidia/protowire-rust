@@ -7,6 +7,7 @@
 
 pub mod annotations;
 pub mod ast;
+pub mod bigfloat;
 pub mod bignum;
 pub mod dataset_reader;
 pub mod decode;

@@ -383,23 +383,103 @@ fn digit_cap_is_inclusive() {
     );
 }
 
-// ---------------- Pinned gap ----------------
+// ---------------- BigFloat literal form (#39) ----------------
+//
+// The byte-exact table is tests/bigfloat.rs; these are the reference's
+// own bignum_test.go cases.
 
-/// `pxf.BigFloat` has no literal form in this port yet: matching the
-/// reference's mantissa/exponent bytes for a decimal literal means
-/// reproducing `big.Float`'s 256-bit rounding. Pinned so the gap is
-/// visible; the block form is unaffected. Tracking issue: #39.
-#[test]
-fn big_float_literal_form_is_not_yet_supported() {
-    let err = unmarshal("big_float_field = 42", &demo(), UnmarshalOptions::default())
-        .expect_err("BigFloat literal form is a documented gap");
-    assert!(
-        err.msg
-            .contains("expected '{' for message field \"big_float_field\""),
-        "{}",
-        err.msg
+fn big_float(m: &DynamicMessage) -> (Vec<u8>, i32, u32, bool) {
+    let mantissa = match m.get_field_by_name("mantissa").map(|v| v.into_owned()) {
+        Some(Value::Bytes(b)) => b.to_vec(),
+        _ => Vec::new(),
+    };
+    let exponent = match m.get_field_by_name("exponent").map(|v| v.into_owned()) {
+        Some(Value::I32(n)) => n,
+        _ => 0,
+    };
+    let prec = match m.get_field_by_name("prec").map(|v| v.into_owned()) {
+        Some(Value::U32(n)) => n,
+        _ => 0,
+    };
+    let neg = matches!(
+        m.get_field_by_name("negative").map(|v| v.into_owned()),
+        Some(Value::Bool(true))
     );
-    // The block form reads.
+    (mantissa, exponent, prec, neg)
+}
+
+#[test]
+fn big_float_basic_and_integer() {
+    let m = decode("big_float_field = 6.02214076e+23", &demo());
+    let (mant, exp, prec, neg) = big_float(&sub(&m, "big_float_field"));
+    assert_eq!(mant.len(), 32, "256-bit mantissa, top bit set");
+    assert_eq!(mant[0] & 0x80, 0x80);
+    assert_eq!((exp, prec, neg), (-177, 256, false));
+
+    let m = decode("big_float_field = 42", &demo());
+    let (mant, exp, prec, neg) = big_float(&sub(&m, "big_float_field"));
+    assert_eq!(mant[0], 0xa8);
+    assert!(mant[1..].iter().all(|&b| b == 0));
+    assert_eq!((exp, prec, neg), (-250, 256, false));
+}
+
+#[test]
+fn big_float_round_trips_through_marshal() {
+    let d = demo();
+    let m = decode("big_float_field = 3.14159265358979323846", &d);
+    let out = marshal(&m, &d, MarshalOptions::default());
+    assert!(
+        out.contains("big_float_field = 3.14159265358979323846"),
+        "{out}"
+    );
+    let back = decode(&out, &d);
+    assert_eq!(
+        back.encode_to_vec(),
+        m.encode_to_vec(),
+        "pb bytes after re-read"
+    );
+}
+
+#[test]
+fn repeated_big_float() {
+    let m = decode("repeated_big_float = [1e100, -3.14159]", &demo());
+    let fd = m
+        .descriptor()
+        .get_field_by_name("repeated_big_float")
+        .unwrap();
+    let Value::List(items) = m.get_field(&fd).into_owned() else {
+        panic!("not a list")
+    };
+    assert_eq!(items.len(), 2);
+    let Value::Message(first) = &items[0] else {
+        panic!()
+    };
+    assert_eq!(big_float(first).1, 77);
+    let Value::Message(second) = &items[1] else {
+        panic!()
+    };
+    assert_eq!((big_float(second).1, big_float(second).3), (-254, true));
+    let out = marshal(&m, &demo(), MarshalOptions::default());
+    assert!(out.contains("1e+100"), "{out}");
+    assert!(
+        out.contains(
+            "-3.14159000000000000000000000000000000000000000000000000000000000000000000000001"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
+fn big_float_default_applies() {
+    let d = desc("bignum_test.v1.BigNumDefaults");
+    let (m, _) = unmarshal_full("", &d, UnmarshalOptions::default()).expect("defaults apply");
+    let (mant, exp, prec, neg) = big_float(&sub(&m, "float_with_default"));
+    assert_eq!(mant[..4], [0xad, 0xf3, 0xb6, 0x45]);
+    assert_eq!((exp, prec, neg), (-254, 256, false));
+}
+
+#[test]
+fn big_float_block_form_still_reads() {
     let m = decode(
         "big_float_field { mantissa = b\"AQ==\"\n exponent = 3\n prec = 64 }",
         &demo(),

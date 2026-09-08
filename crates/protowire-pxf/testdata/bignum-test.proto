@@ -21,6 +21,7 @@ message BigNumDemo {
 message BigNumDefaults {
   pxf.BigInt int_with_default = 1 [(pxf.default) = "42"];
   pxf.Decimal dec_with_default = 2 [(pxf.default) = "3.14"];
+  pxf.BigFloat float_with_default = 3 [(pxf.default) = "2.718"];
 }
 
 message BigNumMaps {

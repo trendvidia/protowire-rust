@@ -19,6 +19,7 @@ use prost_reflect::{
 use std::collections::HashSet;
 
 use crate::annotations::find_null_mask_field;
+use crate::bigfloat::format_big_float;
 use crate::bignum::{format_big_int, format_decimal};
 use crate::decode::TypeResolver;
 use crate::result::Presence;
@@ -371,9 +372,9 @@ fn scalar_text(kind: &Kind, v: &Value) -> String {
 /// The single-literal form of a message value, for the message types that
 /// have one: `google.protobuf.Timestamp` (RFC 3339), `google.protobuf
 /// .Duration` (Go-style), the nine `*Value` wrappers (the bare scalar),
-/// `pxf.BigInt` (integer) and `pxf.Decimal` (decimal literal, scale
-/// preserved). `None` for every other message, which is written as a
-/// block. Used in singular, list and map-value positions alike, so the
+/// `pxf.BigInt` (integer), `pxf.Decimal` (decimal literal, scale
+/// preserved) and `pxf.BigFloat` (the reference's `%g` rendering). `None`
+/// for every other message, which is written as a block. Used in singular, list and map-value positions alike, so the
 /// three agree with each other and with the reference.
 fn message_shorthand(mdesc: &MessageDescriptor, sub: &DynamicMessage) -> Option<String> {
     let full = mdesc.full_name();
@@ -407,6 +408,30 @@ fn message_shorthand(mdesc: &MessageDescriptor, sub: &DynamicMessage) -> Option<
         };
         let negative = bool_field(sub, "negative");
         return Some(format_decimal(&unscaled, scale, negative));
+    }
+    if full == "pxf.BigFloat" {
+        let mantissa = bytes_field(sub, "mantissa");
+        let exponent = match sub
+            .descriptor()
+            .get_field_by_name("exponent")
+            .map(|fd| sub.get_field(&fd).into_owned())
+        {
+            Some(Value::I32(n)) => n,
+            _ => 0,
+        };
+        let prec = match sub
+            .descriptor()
+            .get_field_by_name("prec")
+            .map(|fd| sub.get_field(&fd).into_owned())
+        {
+            Some(Value::U32(n)) => n,
+            _ => 0,
+        };
+        let negative = bool_field(sub, "negative");
+        // A message the literal form cannot render — a `prec` past the digit
+        // cap — falls back to the block form, which is lossless; the
+        // reference errors instead, but a marshal here is infallible.
+        return format_big_float(&mantissa, exponent, prec, negative).ok();
     }
     None
 }

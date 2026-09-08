@@ -39,6 +39,19 @@ format changes.
   honor, and the diagnostic names the field by fully-qualified name (the
   spec repo's STABILITY.md records the narrowing under v1.11).
 
+- **`pxf.BigFloat` takes its literal form**
+  ([#39](https://github.com/trendvidia/protowire-rust/issues/39)), closing
+  the last gap in the arbitrary-precision types. A numeric literal on a
+  `pxf.BigFloat` field decodes to the reference's bytes and the message
+  marshals back to the reference's text, in every position and as a
+  `(pxf.default)`. The reference parses with `math/big` at 256 bits and
+  that conversion is not correctly rounded — it multiplies or divides by
+  a power of five rounded to 320 bits and built by square-and-multiply at
+  384 — so `src/bigfloat.rs` mirrors those steps on a hand-rolled big
+  integer rather than computing the nearest value, and renders with the
+  reference's `%g` at 78 digits. `testdata/bigfloat-oracle.tsv`, produced
+  from protowire-go v1.6.0, pins 31 literals byte for byte, including the
+  three range errors. No new dependency.
 - **Every HARDENING § Mandatory limit is enforced, and configurable per
   call** ([#33](https://github.com/trendvidia/protowire-rust/issues/33)).
   `MaxMessageSize` (64 MiB, the total input to one decode or parse),
