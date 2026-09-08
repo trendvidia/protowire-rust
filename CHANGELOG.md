@@ -70,6 +70,29 @@ format changes.
   decoder does. The spec repo's `testdata/map-keys/` corpus is vendored
   under `crates/protowire-pxf/testdata/map-keys/` and driven by
   `tests/map_keys.rs`.
+  
+- **`(pxf.default)` on a oneof member no longer destroys the arm the
+  document chose** ([#24](https://github.com/trendvidia/protowire-rust/issues/24)).
+  `post_decode` tested presence per field, so a member's default was
+  applied over a chosen sibling — and setting a oneof member clears the
+  rest, so `a = "written"` decoded as `b = "bbb"` with `a` gone. The
+  default now applies only when no member of the oneof is present in the
+  document (a member bound to `null` counts as present), per draft `-01`
+  §annotation-extensions "Oneof Members". A proto3 `optional` field's
+  synthetic oneof is excluded, so its default keeps applying.
+  
+- **`(pxf.default)` on a `repeated` or `map` field is an error, not a
+  one-element list** ([#23](https://github.com/trendvidia/protowire-rust/issues/23)).
+  `apply_default` dispatched on the element kind and handed `set_field` a
+  scalar for a list field, which prost-reflect accepts and encodes as
+  `tags = ["ignored"]` — pb bytes no other port emits. Draft `-01`
+  "Default Placement" forbids inventing that semantics; the decode now
+  fails with `default values not supported for repeated field "tags"`
+  (the message protowire-typescript and protowire-go already produce),
+  and the map case names the placement rather than the synthetic
+  `…Entry` type. The bind-time half of the rule is
+  [#25](https://github.com/trendvidia/protowire-rust/issues/25).
+  
 - README and CONTRIBUTING both claimed an MSRV of **1.74**, which had not
   matched `Cargo.toml` since the pin moved to 1.82. Both now state 1.85,
   and CONTRIBUTING no longer describes the workspace as depending on

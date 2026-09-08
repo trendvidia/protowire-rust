@@ -6,6 +6,7 @@ syntax = "proto3";
 package d4_test.v1;
 
 import "google/protobuf/field_mask.proto";
+import "google/protobuf/wrappers.proto";
 import "pxf/annotations.proto";
 
 message WithRequired {
@@ -32,4 +33,28 @@ message Outer {
 message Inner {
   string label = 1 [(pxf.default) = "fallback"];
   int32 num = 2;
+}
+
+// Oneof members (draft -01 §annotation-extensions, "Oneof Members";
+// protowire-rust#24). A member's (pxf.default) applies only when no member
+// of the oneof is present in the document; a proto3 `optional` field sits
+// in a synthetic single-member oneof that nothing can clear, so its
+// default keeps applying.
+message OneofDefault {
+  oneof choice {
+    string a = 1;
+    string b = 2 [(pxf.default) = "bbb"];
+  }
+  string outside = 3 [(pxf.default) = "out"];
+}
+
+message OneofNullableSibling {
+  oneof choice {
+    google.protobuf.StringValue w = 1;
+    string b = 2 [(pxf.default) = "bbb"];
+  }
+}
+
+message SyntheticOneof {
+  optional string opt = 1 [(pxf.default) = "syn"];
 }
