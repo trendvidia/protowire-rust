@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// A (pxf.default) on a group field (draft -01 "Default Placement"; groups
+// exist in proto2 only). Non-conformant; kept in its own file.
+syntax = "proto2";
+package group_placement_test.v1;
+
+import "pxf/annotations.proto";
+
+message WithGroup {
+  optional group Sub = 1 [(pxf.default) = "ignored"] {
+    optional string x = 1;
+  }
+}

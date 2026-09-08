@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// (pxf.required) on a member of a oneof: read per field it demands one
+// arm always be chosen, so every other arm is undecodable (draft -01
+// "Oneof Members"). Non-conformant; own file (protowire-rust#25).
+syntax = "proto3";
+package oneof_required_test.v1;
+
+import "pxf/annotations.proto";
+
+message RequiredMember {
+  oneof choice {
+    string a = 1 [(pxf.required) = true];
+    string b = 2;
+  }
+}

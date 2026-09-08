@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Two members of one oneof carry (pxf.default): with two, declaration
+// order would decide which wins, so the schema is rejected (draft -01
+// "Oneof Members"). Non-conformant; own file (protowire-rust#25).
+syntax = "proto3";
+package oneof_two_defaults_test.v1;
+
+import "pxf/annotations.proto";
+
+message TwoDefaults {
+  oneof choice {
+    string a = 1 [(pxf.default) = "aaa"];
+    string other = 2;
+    string b = 3 [(pxf.default) = "bbb"];
+  }
+  oneof second {
+    int32 x = 4 [(pxf.default) = "1"];
+    int32 y = 5;
+  }
+}

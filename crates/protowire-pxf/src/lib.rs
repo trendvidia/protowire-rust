@@ -37,5 +37,7 @@ pub use limits::{
 };
 pub use parser::{parse, parse_with_limits};
 pub use result::Presence;
-pub use schema::{validate_descriptor, validate_file, Violation, ViolationKind};
+pub use schema::{
+    is_defaultable_message, validate_descriptor, validate_file, Violation, ViolationKind,
+};
 pub use token::{Position, Token, TokenKind};

@@ -2,13 +2,13 @@
 // Copyright (c) 2026 TrendVidia, LLC.
 // Schemas that place (pxf.default) where no PXF literal can denote the
 // field (draft -01 §annotation-extensions, "Default Placement";
-// protowire-rust#23). They are kept apart from d4-test.proto because the
-// v1.11 bind-time placement check (protowire-rust#25) will refuse to bind
-// this whole file, and a violating message would poison the conformant
-// ones that share a file with it.
+// protowire-rust#23, #25). One message per shape. Every message here is
+// non-conformant, and a violating file poisons every message declared
+// in it, so the accepted placements live in placement-accepted-test.proto.
 syntax = "proto3";
 package default_placement_test.v1;
 
+import "google/protobuf/duration.proto";
 import "pxf/annotations.proto";
 
 message RepeatedDefault {
@@ -17,4 +17,25 @@ message RepeatedDefault {
 
 message MapDefault {
   map<string, string> labels = 1 [(pxf.default) = "ignored"];
+}
+
+message ListMessage {
+  repeated google.protobuf.Duration ds = 1 [(pxf.default) = "5s"];
+}
+
+message MapMessage {
+  map<string, google.protobuf.Duration> m = 1 [(pxf.default) = "5s"];
+}
+
+message Plain {
+  string x = 1;
+}
+
+message MessageNonWkt {
+  Plain p = 1 [(pxf.default) = "ignored"];
+}
+
+// Conformant on its own; inherits the file's violations at bind time.
+message Sibling {
+  string ok = 1;
 }
