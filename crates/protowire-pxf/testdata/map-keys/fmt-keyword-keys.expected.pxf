@@ -1,0 +1,10 @@
+@type mapkeys.v1.Labels
+
+by_label = {
+  "true": "quoted keyword"
+  "false": "quoted keyword"
+  "null": "quoted keyword"
+  "123": "quoted integer"
+  plain: "quoted identifier-safe key"
+  bare: "bare identifier"
+}

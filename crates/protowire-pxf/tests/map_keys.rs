@@ -5,8 +5,9 @@
 //!
 //! The fixture corpus under `testdata/map-keys/` is vendored verbatim from
 //! the spec repository (trendvidia/protowire `testdata/map-keys/`, commit
-//! fb3bff7) and is shared by every port; keep the two in sync when the spec
-//! repo adds fixtures. Its README states each document's verdict: the three
+//! fb3bff7 plus the two fmt pairs of trendvidia/protowire#311) and is
+//! shared by every port; keep the two in sync when the spec repo adds
+//! fixtures. Its README states each document's verdict: the three
 //! at the top MUST bind to the keys true and false, and every document
 //! under `invalid/` MUST be rejected with an error naming the key.
 
@@ -46,11 +47,17 @@ fn fixture_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/map-keys")
 }
 
+/// The `.pxf` documents in `dir`, excluding the `fmt-*` canonicalization
+/// pairs, which have their own test below.
 fn pxf_files(dir: &Path) -> Vec<PathBuf> {
     let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
         .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
         .map(|e| e.unwrap().path())
         .filter(|p| p.extension().is_some_and(|x| x == "pxf"))
+        .filter(|p| {
+            !p.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with("fmt-"))
+        })
         .collect();
     files.sort();
     files
@@ -306,4 +313,63 @@ fn bool_keyword_key_in_parser() {
     // mistaken for the next entry's key.
     let doc = parse("flag = true\nother = 1\n").expect("parses");
     assert_eq!(doc.entries.len(), 2);
+}
+
+// ---------------- Canonical spelling of map keys (protowire#306) ----------------
+
+/// Both fmt pairs of the spec corpus are fixed points, and both inputs
+/// bind. `fmt-keyword-keys` (string-keyed): `"true"`, `"false"`, `"null"`
+/// and `"123"` stay quoted — bare they would be a bool key, no key, or
+/// an integer key — the quoted identifier-safe `"plain"` canonicalizes to
+/// bare, `bare` stays bare. `fmt-bare-keys` (bool-keyed): a bare `true`
+/// and a bare `0` stay bare — the formatter does not add quotes the
+/// author did not write.
+#[test]
+fn fmt_pairs_are_fixed_points_and_bind() {
+    let dir = fixture_dir();
+    let pool = DescriptorPool::decode(FLAGS_FDS).unwrap();
+    for (pair, message, want_keys) in [
+        (
+            "fmt-keyword-keys",
+            "mapkeys.v1.Labels",
+            vec![
+                MapKey::String("123".into()),
+                MapKey::String("bare".into()),
+                MapKey::String("false".into()),
+                MapKey::String("null".into()),
+                MapKey::String("plain".into()),
+                MapKey::String("true".into()),
+            ],
+        ),
+        (
+            "fmt-bare-keys",
+            "mapkeys.v1.Flags",
+            vec![MapKey::Bool(false), MapKey::Bool(true)],
+        ),
+    ] {
+        let input = std::fs::read_to_string(dir.join(format!("{pair}.pxf"))).unwrap();
+        let expected = std::fs::read_to_string(dir.join(format!("{pair}.expected.pxf"))).unwrap();
+        assert_eq!(
+            format(&parse(&input).expect("input parses")),
+            expected,
+            "{pair}"
+        );
+        assert_eq!(
+            format(&parse(&expected).expect("expected parses")),
+            expected,
+            "{pair}: fixed point"
+        );
+        let desc = pool.get_message_by_name(message).expect(message);
+        let field = desc.fields().next().unwrap().name().to_string();
+        for doc in [&input, &expected] {
+            let msg = unmarshal(doc, &desc, UnmarshalOptions::default())
+                .unwrap_or_else(|e| panic!("{pair}: {e}"));
+            let m = map_of(&msg, &field);
+            let mut keys: Vec<String> = m.keys().map(|k| format!("{k:?}")).collect();
+            keys.sort();
+            let mut want: Vec<String> = want_keys.iter().map(|k| format!("{k:?}")).collect();
+            want.sort();
+            assert_eq!(keys, want, "{pair}");
+        }
+    }
 }

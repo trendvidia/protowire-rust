@@ -88,7 +88,11 @@ impl Formatter<'_> {
                 Entry::MapEntry(m) => {
                     self.write_comments(&m.leading_comments, level);
                     self.write_indent(level);
-                    if needs_quoting(&m.key) {
+                    // A bare key stays bare; a quoted key is unquoted only
+                    // when the bare spelling would denote the same key
+                    // (draft -01 § Entries and Keys, "Canonical spelling of
+                    // map keys"; protowire#306).
+                    if m.quoted && needs_quoting(&m.key) {
                         self.out.push_str(&quote_string(&m.key));
                     } else {
                         self.out.push_str(&m.key);
@@ -173,11 +177,16 @@ fn quote_string(s: &str) -> String {
     out
 }
 
-/// A map key needs quoting unless it's a valid identifier — first char must
+/// A quoted map key keeps its quotes unless it is identifier-safe: it
+/// matches the identifier production and is not one of the value keywords
+/// `null` / `true` / `false`. Bare, those keywords are a bool key or no
+/// key at all, and a key starting with a digit is an integer key, so
+/// unquoting such a key would change what it denotes — the same test the
+/// marshaller's `is_valid_ident` applies. First char must
 /// be `[A-Za-z_]`, subsequent chars must be `[A-Za-z0-9_]`. Numeric keys
 /// (e.g. `404`) end up quoted because the first char isn't ident-start.
 fn needs_quoting(s: &str) -> bool {
-    if s.is_empty() {
+    if s.is_empty() || s == "null" || s == "true" || s == "false" {
         return true;
     }
     for (i, ch) in s.chars().enumerate() {
@@ -369,14 +378,32 @@ mod tests {
         );
     }
 
+    /// A bare integer key stays bare and a quoted one stays quoted: bare,
+    /// `404` is an integer key; quoted, it is the string "404" — the
+    /// formatter must not move a key between the two (protowire#306).
+    /// Before this the formatter quoted every bare integer key.
     #[test]
-    fn map_int_keyed_quotes_numeric_keys() {
-        // "404" / "500" begin with a digit, so needs_quoting returns true and
-        // the formatter wraps them in quotes.
-        let src = "codes = {\n  404: \"Not Found\"\n  500: \"Internal\"\n}";
+    fn map_integer_keys_keep_their_spelling() {
+        let src = "codes = {\n  404: \"Not Found\"\n  \"500\": \"Internal\"\n}";
         assert_eq!(
             round_trip(src),
-            "codes = {\n  \"404\": \"Not Found\"\n  \"500\": \"Internal\"\n}\n"
+            "codes = {\n  404: \"Not Found\"\n  \"500\": \"Internal\"\n}\n"
+        );
+    }
+
+    /// A quoted keyword key keeps its quotes and a bare one stays bare:
+    /// `"true"` is a string key, `true` a bool key, `"null"` a string key
+    /// and `null` no key at all. A quoted identifier-safe key is unquoted.
+    #[test]
+    fn map_keyword_keys_keep_their_spelling() {
+        let src = "labels = {\n  \"true\": \"a\"\n  \"false\": \"b\"\n  \"null\": \"c\"\n  \"plain\": \"d\"\n}";
+        assert_eq!(
+            round_trip(src),
+            "labels = {\n  \"true\": \"a\"\n  \"false\": \"b\"\n  \"null\": \"c\"\n  plain: \"d\"\n}\n"
+        );
+        assert_eq!(
+            round_trip("by_flag = {\n  true: \"a\"\n  false: \"b\"\n}"),
+            "by_flag = {\n  true: \"a\"\n  false: \"b\"\n}\n"
         );
     }
 
