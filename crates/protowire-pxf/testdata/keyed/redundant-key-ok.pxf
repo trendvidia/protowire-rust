@@ -1,0 +1,13 @@
+@type keyed.v1.Node
+
+# An explicit key-field assignment inside a named entry that AGREES with
+# the entry name is redundant but legal. Decode accepts; fmt drops the
+# redundant assignment when canonicalizing.
+
+id = "root"
+children {
+  greeting {
+    id = "greeting"
+    type = "Label"
+  }
+}

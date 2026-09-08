@@ -13,6 +13,29 @@ format changes.
 
 ### Added
 
+- **Keyed repeated fields** (draft `-01` §3.13; [#20](https://github.com/trendvidia/protowire-rust/issues/20),
+  [protowire#116](https://github.com/trendvidia/protowire/issues/116)).
+  A `repeated <Message>` field carrying `(pxf.key)` may be written as a
+  block of named blocks — entry name = key-field value, entry order = list
+  order — and the anonymous list form stays valid for the same field. The
+  grammar accepts a quoted entry name anywhere (`field_entry = (identifier
+  | string) …`); `Assignment` and `Block` record whether it was quoted, and
+  the schema-less formatter reproduces it. The decoder reads the keyed
+  block in both spellings (`name { }` and `name = { }`), rejects duplicate
+  entry names (compared unquoted), the empty key in either form, and a
+  disagreeing explicit key-field assignment, and rejects a quoted entry
+  name outside a keyed block; the encoder emits the keyed form whenever
+  every key is present, non-empty and distinct, unquoted iff
+  identifier-safe, and the anonymous form otherwise. `canonicalize_keyed`
+  is the schema-aware half of `pxf fmt`: anonymous → keyed where eligible,
+  `name = { }` → `name { }`, identifier-safe quoted names unquoted,
+  redundant key assignments dropped. The spec repo's `testdata/keyed/`
+  corpus is vendored and driven by `tests/keyed.rs`. `Assignment` and
+  `Block` gain public fields (breaking for struct-literal construction).
+- **A repeated field bound more than once now concatenates** in document
+  order, as draft `-01` § Entries and Keys says and the reference does; a
+  second `tags = [...]` used to replace the first.
+
 - **The v1.11 bind-time placement checks, over the import closure**
   ([#25](https://github.com/trendvidia/protowire-rust/issues/25)).
   `validate_descriptor` / `validate_file` now enforce, besides the

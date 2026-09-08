@@ -1,0 +1,11 @@
+@type keyed.v1.Node
+
+# The empty string is not a valid key. A quoted entry name "" MUST be
+# rejected.
+
+id = "root"
+children {
+  "" {
+    type = "Label"
+  }
+}

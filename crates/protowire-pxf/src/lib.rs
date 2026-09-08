@@ -14,6 +14,7 @@ pub mod decode;
 pub mod encode;
 pub mod errors;
 pub mod format;
+pub mod keyed;
 pub mod lexer;
 pub mod limits;
 pub mod parser;
@@ -31,6 +32,7 @@ pub use decode::{unmarshal, unmarshal_full, PoolResolver, TypeResolver, Unmarsha
 pub use encode::{marshal, MarshalOptions};
 pub use errors::PxfError;
 pub use format::{format, format_with_options, FormatOptions};
+pub use keyed::{canonicalize_keyed, ident_safe_entry_name, key_field};
 pub use lexer::Lexer;
 pub use limits::{
     Limits, MAX_BYTES_LITERAL_LENGTH, MAX_MESSAGE_SIZE, MAX_NESTING_DEPTH,

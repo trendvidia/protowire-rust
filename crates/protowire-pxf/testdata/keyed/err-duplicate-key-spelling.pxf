@@ -1,0 +1,15 @@
+@type keyed.v1.Node
+
+# Spelling-equivalence duplicate: duplicate detection compares UNQUOTED
+# values, so "greeting" (quoted) and greeting (bare) are the same key.
+# MUST be rejected exactly like err-duplicate-key.pxf.
+
+id = "root"
+children {
+  greeting {
+    type = "Label"
+  }
+  "greeting" {
+    type = "HBox"
+  }
+}

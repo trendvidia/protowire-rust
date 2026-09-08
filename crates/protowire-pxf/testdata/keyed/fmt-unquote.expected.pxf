@@ -1,0 +1,12 @@
+@type keyed.v1.Node
+
+id = "root"
+type = "VBox"
+children {
+  greeting {
+    type = "Label"
+  }
+  counter_row {
+    type = "HBox"
+  }
+}

@@ -1,0 +1,14 @@
+@type keyed.v1.Node
+
+# Duplicate entry names in one keyed block MUST be rejected (decode
+# error; diagnostic in tolerant mode).
+
+id = "root"
+children {
+  greeting {
+    type = "Label"
+  }
+  greeting {
+    type = "HBox"
+  }
+}

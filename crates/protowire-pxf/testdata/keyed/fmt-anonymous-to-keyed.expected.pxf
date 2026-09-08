@@ -1,0 +1,11 @@
+@type keyed.v1.Deployment
+
+service = "edge"
+regions {
+  "us-east-1" {
+    replicas = 3
+  }
+  primary {
+    replicas = 2
+  }
+}

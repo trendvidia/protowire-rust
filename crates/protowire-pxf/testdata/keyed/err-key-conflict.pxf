@@ -1,0 +1,12 @@
+@type keyed.v1.Node
+
+# Key conflict: an explicit key-field assignment inside a named entry
+# that DISAGREES with the entry name MUST be rejected.
+
+id = "root"
+children {
+  greeting {
+    id = "farewell"
+    type = "Label"
+  }
+}

@@ -1,0 +1,14 @@
+@type keyed.v1.Deployment
+
+# Quoted-name round-trip: keys that are not identifier-safe are written
+# as string-literal entry names and stay quoted in canonical form.
+
+service = "edge"
+regions {
+  "us-east-1" {
+    replicas = 3
+  }
+  "eu-west-2" {
+    replicas = 1
+  }
+}
