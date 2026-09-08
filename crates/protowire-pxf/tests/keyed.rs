@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use prost::Message as _;
-use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor, ReflectMessage, Value};
+use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor, Value};
 use protowire_pxf::{
     canonicalize_keyed, format, ident_safe_entry_name, key_field, marshal, parse, unmarshal,
     unmarshal_full, Entry, MarshalOptions, UnmarshalOptions,
