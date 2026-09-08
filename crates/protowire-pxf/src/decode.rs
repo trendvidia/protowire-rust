@@ -930,6 +930,7 @@ impl<'a> Decoder<'a> {
                 return Err(self.err_at(pos, format!("expected map key, got {}", tk)));
             }
             let key_str = std::mem::take(&mut self.current.value);
+            let key_kind = tk;
             self.advance();
 
             match self.current.kind {
@@ -945,7 +946,7 @@ impl<'a> Decoder<'a> {
                 }
             }
 
-            let key = decode_map_key(&key_fd, key_str, pos)?;
+            let key = decode_map_key(fd, &key_fd, key_str, key_kind, pos)?;
 
             if matches!(self.current.kind, TokenKind::Null) {
                 return Err(self.err(format!(
@@ -1331,7 +1332,9 @@ fn post_decode(
                 ));
             }
             if let Some(def) = get_default(fd) {
-                apply_default(parent, fd, &def, pos)?;
+                if !oneof_already_chosen(fd, presence, path_prefix) {
+                    apply_default(parent, fd, &def, pos)?;
+                }
             }
             continue;
         }
@@ -1355,6 +1358,34 @@ fn post_decode(
         }
     }
     Ok(())
+}
+
+/// Reports whether `fd` is a member of a real oneof some *other* member of
+/// which the document supplied, in which case `fd`'s `(pxf.default)` MUST
+/// NOT be applied (draft -01 §annotation-extensions, "Oneof Members").
+/// Setting any member of a oneof clears the rest, so applying the default
+/// over a chosen sibling does not shadow the supplied value — it destroys
+/// it (protowire-rust#24).
+///
+/// Presence is read from the document, not from the decoded message's
+/// current oneof case: a default applied earlier in the same pass would
+/// itself set the case and let the first annotated member suppress every
+/// later one. A member bound to `null` is present (`mark_null` records it
+/// as present too), consistent with null suppressing a default.
+///
+/// A proto3 `optional` field sits in a synthetic single-member oneof that
+/// nothing can clear; it is excluded so its default keeps applying.
+fn oneof_already_chosen(fd: &FieldDescriptor, presence: &Presence, path_prefix: &str) -> bool {
+    let Some(oo) = fd.containing_oneof() else {
+        return false;
+    };
+    if oo.is_synthetic() {
+        return false;
+    }
+    let chosen = oo.fields().any(|m| {
+        m.number() != fd.number() && !presence.is_absent(&format!("{}{}", path_prefix, m.name()))
+    });
+    chosen
 }
 
 fn is_wkt_skip_recursion(full: &str) -> bool {
@@ -1412,6 +1443,29 @@ fn apply_default(
     def: &str,
     pos: Position,
 ) -> Result<(), PxfError> {
+    // A (pxf.default) carries exactly one PXF literal, so it can denote a
+    // singular field only (draft -01 §annotation-extensions, "Default
+    // Placement"). `fd.kind()` reports the *element* kind and says nothing
+    // about cardinality — `repeated string` is `Kind::String` — so without
+    // this guard the scalar branch below handed `set_field` a scalar for a
+    // list field, which prost-reflect accepts and encodes as a one-element
+    // list: pb bytes no other port emits (protowire-rust#23). The spec
+    // forbids inventing that semantics; the placement is an error.
+    if fd.is_map() {
+        return Err(PxfError::new(
+            pos,
+            format!("default values not supported for map field {:?}", fd.name()),
+        ));
+    }
+    if fd.is_list() {
+        return Err(PxfError::new(
+            pos,
+            format!(
+                "default values not supported for repeated field {:?}",
+                fd.name()
+            ),
+        ));
+    }
     if let Kind::Enum(enum_desc) = fd.kind() {
         if let Some(ev) = enum_desc.get_value_by_name(def) {
             parent.set_field(fd, Value::EnumNumber(ev.number()));
@@ -1595,13 +1649,36 @@ fn set_seconds_nanos(target: &mut DynamicMessage, seconds: i64, nanos: i32) {
 /// Coerce an owned key string into a [`MapKey`]. For string-typed maps the
 /// String moves directly into `MapKey::String` (no extra allocation); for
 /// numeric/bool maps the String is parsed and dropped.
+///
+/// `kind` is the token the key arrived as — `map-key = identifier / string
+/// / integer / bool` (draft -01 §abnf-grammar) — because the spelling
+/// decides what a key means on a bool `K`, and a quoted `"1"` is not the
+/// same key as a bare `1`.
 fn decode_map_key(
+    field: &FieldDescriptor,
     key_fd: &FieldDescriptor,
     key: String,
+    kind: TokenKind,
     pos: Position,
 ) -> Result<MapKey, PxfError> {
     match key_fd.kind() {
-        Kind::String => Ok(MapKey::String(key)),
+        Kind::String => {
+            if matches!(kind, TokenKind::Bool) {
+                // A bool key matches a map<bool,V> field and nothing else;
+                // the string "true" is spelled quoted.
+                return Err(PxfError::new(
+                    pos,
+                    format!(
+                        "invalid string map key {} for field {:?}: the keyword {} is a bool key; write {:?} for the string",
+                        key,
+                        field.name(),
+                        key,
+                        key
+                    ),
+                ));
+            }
+            Ok(MapKey::String(key))
+        }
         Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => {
             let n: i32 = key
                 .parse()
@@ -1626,11 +1703,53 @@ fn decode_map_key(
                 .map_err(|_| PxfError::new(pos, format!("invalid uint64 map key: {}", key)))?;
             Ok(MapKey::U64(n))
         }
-        Kind::Bool => match key.as_str() {
-            "true" => Ok(MapKey::Bool(true)),
-            "false" => Ok(MapKey::Bool(false)),
-            _ => Err(PxfError::new(pos, format!("invalid bool map key: {}", key))),
-        },
+        Kind::Bool => {
+            // A bool map key has three spellings in the grammar (draft -01
+            // §entries-and-keys; protowire#284): the keyword true / false,
+            // bare; the bare integers 0 / 1 (an integer key matches "bool
+            // encoded as 0/1"); and the quoted literals "true" / "false" (a
+            // string key "is parsed as a literal of K's type", and a PXF
+            // bool literal is exactly those two words).
+            //
+            // NOT the twelve strconv.ParseBool spellings — t, T, TRUE, True,
+            // f, F, FALSE, False — which no port that follows the grammar
+            // binds. An identifier key on a bool K matches nothing: an
+            // identifier names a field, and a map has none. "1" / "0" in
+            // quotes are rejected too: an integer literal inside a string
+            // is not a bool literal (protowire-rust#31).
+            let spelled = match kind {
+                TokenKind::Bool => Some(key == "true"),
+                TokenKind::String => match key.as_str() {
+                    "true" => Some(true),
+                    "false" => Some(false),
+                    _ => None,
+                },
+                TokenKind::Int => match key.as_str() {
+                    "1" => Some(true),
+                    "0" => Some(false),
+                    _ => None,
+                },
+                _ => None,
+            };
+            match spelled {
+                Some(b) => Ok(MapKey::Bool(b)),
+                None => {
+                    let shown = if matches!(kind, TokenKind::String) {
+                        format!("{:?}", key)
+                    } else {
+                        key
+                    };
+                    Err(PxfError::new(
+                        pos,
+                        format!(
+                            "invalid bool map key {} for field {:?}: a bool key is true, false, 0, 1, \"true\" or \"false\"",
+                            shown,
+                            field.name()
+                        ),
+                    ))
+                }
+            }
+        }
         other => Err(PxfError::new(
             pos,
             format!("unsupported map key kind: {:?}", other),

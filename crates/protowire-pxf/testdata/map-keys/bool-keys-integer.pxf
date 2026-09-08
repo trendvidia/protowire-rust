@@ -1,0 +1,8 @@
+@type mapkeys.v1.Flags
+
+# The integer spelling: an integer key matches a bool K "encoded as 0/1".
+
+by_flag = {
+  1: "integer one"
+  0: "integer zero"
+}

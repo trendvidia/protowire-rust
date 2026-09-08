@@ -1,0 +1,6 @@
+@type mapkeys.v1.Flags
+
+# A string key is parsed as a literal of K's type, and a bool literal is
+# exactly "true" or "false". "0" is not one. MUST be rejected.
+
+by_flag = { "0": "v" }
