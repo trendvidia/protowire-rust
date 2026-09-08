@@ -26,12 +26,10 @@ use crate::ast::{
     IntVal as AstIntVal, NullVal as AstNullVal, ProtoDirective, ProtoShape,
     StringVal as AstStringVal, TimestampVal as AstTimestampVal, Value as AstValue,
 };
-use crate::bignum::{
-    parse_big_int, parse_decimal, BigIntLit, DecimalLit, MAX_NUMERIC_LITERAL_DIGITS,
-};
+use crate::bignum::{parse_big_int, parse_decimal, BigIntLit, DecimalLit};
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
-use crate::parser::MAX_NESTING_DEPTH;
+use crate::limits::{Limits, MAX_NUMERIC_LITERAL_DIGITS};
 use crate::result::Presence;
 use crate::token::{Position, Token, TokenKind};
 
@@ -69,6 +67,16 @@ pub struct UnmarshalOptions<'a> {
     /// via [`crate::validate_descriptor`] in a one-time codegen or
     /// registry-load pass) can set this to bypass the per-call recheck.
     pub skip_validate: bool,
+    /// The draft's per-call limits (draft -01 § Mandatory Limits); the
+    /// default is the HARDENING constants. `max_message_size` is checked
+    /// before the first token is read; `max_nesting_depth` caps block /
+    /// list nesting; `max_numeric_literal_digits` the digits of a
+    /// `pxf.BigInt` / `pxf.Decimal` literal; `max_bytes_literal_length`
+    /// the decoded length of a `b"…"` literal, judged from its length;
+    /// `max_repeated_count` the elements of a repeated field or the
+    /// entries of a map. Schema literals — a `(pxf.default)` — stay under
+    /// the constants.
+    pub limits: Limits,
 }
 
 /// Decode PXF text into a fresh [`DynamicMessage`] for `desc`.
@@ -105,6 +113,10 @@ fn unmarshal_inner(
     options: UnmarshalOptions<'_>,
     track_presence: bool,
 ) -> Result<(DynamicMessage, Option<Presence>), PxfError> {
+    options
+        .limits
+        .check_message_size(data.len())
+        .map_err(|m| PxfError::new(Position::new(1, 1), m))?;
     if !options.skip_validate {
         let vs = crate::schema::validate_descriptor(desc);
         if let Some(msg) = crate::schema::as_validation_error_message(&vs) {
@@ -116,6 +128,7 @@ fn unmarshal_inner(
         options.discard_unknown,
         options.type_resolver,
         track_presence,
+        options.limits,
     );
     decoder.advance();
     decoder.consume_directives()?;
@@ -163,16 +176,15 @@ struct Decoder<'a> {
     presence: Option<Presence>,
     path_prefix: String,
     /// Live `{` + `[` depth, mirrors the parser's counter. Capped at
-    /// [`MAX_NESTING_DEPTH`] per HARDENING.md §Recursion. Threaded across
-    /// `decode_fields` / `decode_list_inline` / `decode_map_inline` /
-    /// `decode_any_inner` so adversarial deep input rejects before the
+    /// `limits.max_nesting_depth` per HARDENING.md §Recursion. Threaded
+    /// across `decode_fields` / `decode_list_inline` / `decode_map_inline`
+    /// / `decode_any_inner` so adversarial deep input rejects before the
     /// recursive descent overflows the native stack.
     depth: usize,
-    /// This call's `MaxNumericLiteralDigits`, applied to the document's
-    /// `pxf.BigInt` / `pxf.Decimal` literals before they are converted.
-    /// Schema literals — a `(pxf.default)` — stay under the constant: they
-    /// are the schema author's, not the document's.
-    max_digits: usize,
+    /// This call's limits (`UnmarshalOptions::limits`), applied to the
+    /// document. Schema literals — a `(pxf.default)` — stay under the
+    /// constants: they are the schema author's, not the document's.
+    limits: Limits,
 }
 
 impl<'a> Decoder<'a> {
@@ -181,9 +193,10 @@ impl<'a> Decoder<'a> {
         discard_unknown: bool,
         type_resolver: Option<&'a dyn TypeResolver>,
         track_presence: bool,
+        limits: Limits,
     ) -> Self {
         Self {
-            lex: Lexer::new(input),
+            lex: Lexer::with_limits(input, limits.max_bytes_literal_length),
             current: Token::new(TokenKind::Eof, "", Position::new(1, 1)),
             discard_unknown,
             type_resolver,
@@ -194,18 +207,32 @@ impl<'a> Decoder<'a> {
             },
             path_prefix: String::new(),
             depth: 0,
-            max_digits: MAX_NUMERIC_LITERAL_DIGITS,
+            limits,
         }
     }
 
     fn enter(&mut self) -> Result<(), PxfError> {
-        if self.depth >= MAX_NESTING_DEPTH {
+        if self.depth >= self.limits.max_nesting_depth {
             return Err(self.err(format!(
-                "nesting depth exceeds MaxNestingDepth ({})",
-                MAX_NESTING_DEPTH
+                "nesting depth exceeds MaxNestingDepth={}",
+                self.limits.max_nesting_depth
             )));
         }
         self.depth += 1;
+        Ok(())
+    }
+
+    /// Report the lexer's own diagnostic when the decoder sits on an
+    /// `Illegal` token. `Illegal` is admitted at no position in the
+    /// grammar, so at a value position there is nothing the decoder's own
+    /// expectation can add: "5seconds" is not a badly-shaped message, it is
+    /// not a token at all, and a `b"…"` past `MaxBytesLiteralLength` must
+    /// name the limit rather than "expected bytes". Call before deciding
+    /// what was wanted instead.
+    fn illegal(&self) -> Result<(), PxfError> {
+        if matches!(self.current.kind, TokenKind::Illegal) {
+            return Err(self.err(self.current.value.clone()));
+        }
         Ok(())
     }
 
@@ -801,6 +828,7 @@ impl<'a> Decoder<'a> {
         msg: &mut DynamicMessage,
         fd: &FieldDescriptor,
     ) -> Result<(), PxfError> {
+        self.illegal()?;
         if fd.is_map() {
             return self.decode_map_inline(msg, fd);
         }
@@ -858,6 +886,14 @@ impl<'a> Decoder<'a> {
         let element_kind = fd.kind();
 
         while !matches!(self.current.kind, TokenKind::RBracket | TokenKind::Eof) {
+            self.illegal()?;
+            if elems.len() >= self.limits.max_repeated_count {
+                return Err(self.err(format!(
+                    "repeated field {:?} exceeds MaxRepeatedCount={}",
+                    fd.name(),
+                    self.limits.max_repeated_count
+                )));
+            }
             if matches!(self.current.kind, TokenKind::Null) {
                 return Err(self.err(format!(
                     "null is not allowed in repeated field {:?}",
@@ -923,6 +959,17 @@ impl<'a> Decoder<'a> {
         while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof) {
             let pos = self.current.pos;
             let tk = self.current.kind;
+            self.illegal()?;
+            if map.len() >= self.limits.max_repeated_count {
+                return Err(self.err_at(
+                    pos,
+                    format!(
+                        "map field {:?} exceeds MaxRepeatedCount={}",
+                        fd.name(),
+                        self.limits.max_repeated_count
+                    ),
+                ));
+            }
             if !matches!(
                 tk,
                 TokenKind::Ident | TokenKind::String | TokenKind::Int | TokenKind::Bool
@@ -947,6 +994,7 @@ impl<'a> Decoder<'a> {
 
             let key = decode_map_key(&key_fd, key_str, pos)?;
 
+            self.illegal()?;
             if matches!(self.current.kind, TokenKind::Null) {
                 return Err(self.err(format!(
                     "null is not allowed as map value in field {:?}",
@@ -1082,7 +1130,7 @@ impl<'a> Decoder<'a> {
         // cap runs before the quadratic conversion.
         if full == "pxf.BigInt" && matches!(self.current.kind, TokenKind::Int) {
             let pos = self.current.pos;
-            let lit = parse_big_int(&self.current.value, self.max_digits)
+            let lit = parse_big_int(&self.current.value, self.limits.max_numeric_literal_digits)
                 .map_err(|e| PxfError::new(pos, e))?;
             set_big_int_fields(target, &lit);
             self.advance();
@@ -1090,7 +1138,7 @@ impl<'a> Decoder<'a> {
         }
         if full == "pxf.Decimal" && matches!(self.current.kind, TokenKind::Int | TokenKind::Float) {
             let pos = self.current.pos;
-            let lit = parse_decimal(&self.current.value, self.max_digits)
+            let lit = parse_decimal(&self.current.value, self.limits.max_numeric_literal_digits)
                 .map_err(|e| PxfError::new(pos, e))?;
             set_decimal_fields(target, &lit);
             self.advance();
@@ -1100,6 +1148,7 @@ impl<'a> Decoder<'a> {
     }
 
     fn consume_scalar(&mut self, fd: &FieldDescriptor) -> Result<Value, PxfError> {
+        self.illegal()?;
         let pos = self.current.pos;
         let kind = fd.kind();
         match kind {
@@ -1219,6 +1268,7 @@ impl<'a> Decoder<'a> {
     }
 
     fn consume_enum(&mut self, fd: &FieldDescriptor) -> Result<Value, PxfError> {
+        self.illegal()?;
         let pos = self.current.pos;
         let enum_desc = match fd.kind() {
             Kind::Enum(e) => e,

@@ -19,7 +19,7 @@
 //! - repeated fields: one tag+value per element (non-packed).
 //! - maps: each entry is a length-delimited `MapEntry { key=1; value=2 }`.
 
-use crate::wire::{Error, Reader, Result, WireType, Writer, MAX_NESTING_DEPTH};
+use crate::wire::{Error, Limits, Reader, Result, WireType, Writer};
 
 /// A message with self-contained encode/decode. Mirrors the role of
 /// `prost::Message` for our trait-based codec.
@@ -45,9 +45,23 @@ pub fn marshal<M: Message>(value: &M) -> Vec<u8> {
     w.finish()
 }
 
-/// Decode a message from a byte slice.
+/// Decode a message from a byte slice under the default [`Limits`].
 pub fn unmarshal<M: Message>(data: &[u8]) -> Result<M> {
-    let mut r = Reader::new(data);
+    unmarshal_with(data, Limits::default())
+}
+
+/// Decode a message from a byte slice under per-call [`Limits`]: the input
+/// is refused past `max_message_size` before anything is read; nesting
+/// past `max_nesting_depth` and a repeated field past `max_repeated_count`
+/// are refused as they are reached (HARDENING.md § Mandatory limits).
+pub fn unmarshal_with<M: Message>(data: &[u8], limits: Limits) -> Result<M> {
+    if data.len() > limits.max_message_size {
+        return Err(Error::MessageTooLarge {
+            len: data.len(),
+            max: limits.max_message_size,
+        });
+    }
+    let mut r = Reader::with_limits(data, limits);
     let mut msg = M::default();
     while !r.eof() {
         let (num, wt) = r.tag()?;
@@ -69,10 +83,11 @@ pub fn write_message<M: Message>(w: &mut Writer, field_number: u32, msg: &M) {
 /// Read a length-delimited nested message. The reader's tag is already consumed.
 ///
 /// Increments `r.depth` for the duration of the inner decode and rejects with
-/// [`Error::DepthExceeded`] before recursing past [`MAX_NESTING_DEPTH`]. Per
-/// HARDENING.md §Recursion, the counter must persist across `merge_field` →
-/// `read_message` re-entry; that's why it lives on the `Reader`, not as a
-/// thread-local or function argument.
+/// [`Error::DepthExceeded`] before recursing past the reader's
+/// `max_nesting_depth` (the default is [`crate::wire::MAX_NESTING_DEPTH`]).
+/// Per HARDENING.md §Recursion, the counter must persist across
+/// `merge_field` → `read_message` re-entry; that's why it lives on the
+/// `Reader`, not as a thread-local or function argument.
 ///
 /// The length-prefix bounds check uses `checked_add` so that a maximum-value
 /// varint length (2^64 - 1) cannot wrap `pos + len` past a naive comparison
@@ -84,8 +99,8 @@ pub fn read_message<M: Message>(r: &mut Reader<'_>) -> Result<M> {
     if end > r.data().len() {
         return Err(Error::NestedExceedsBuffer);
     }
-    if r.depth >= MAX_NESTING_DEPTH {
-        return Err(Error::DepthExceeded(MAX_NESTING_DEPTH));
+    if r.depth >= r.limits.max_nesting_depth {
+        return Err(Error::DepthExceeded(r.limits.max_nesting_depth));
     }
     r.depth += 1;
     let result = (|| -> Result<M> {
@@ -107,6 +122,159 @@ pub fn read_message<M: Message>(r: &mut Reader<'_>) -> Result<M> {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+
+    /// HARDENING.md `MaxMessageSize`: the input to one decode call is
+    /// capped before anything is read — at the default, and lowered per
+    /// call.
+    #[test]
+    fn max_message_size() {
+        let big = Outer {
+            data: vec![0u8; crate::wire::MAX_MESSAGE_SIZE],
+            ..Default::default()
+        };
+        let bytes = marshal(&big);
+        assert!(
+            bytes.len() > crate::wire::MAX_MESSAGE_SIZE,
+            "tag and length push it past"
+        );
+        let err = unmarshal::<Outer>(&bytes).unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "input of {} bytes exceeds MaxMessageSize={}",
+                bytes.len(),
+                crate::wire::MAX_MESSAGE_SIZE
+            )
+        );
+        let fits = Outer {
+            data: vec![0u8; crate::wire::MAX_MESSAGE_SIZE - 16],
+            ..Default::default()
+        };
+        let bytes = marshal(&fits);
+        assert!(bytes.len() <= crate::wire::MAX_MESSAGE_SIZE);
+        unmarshal::<Outer>(&bytes).expect("64 MiB is within the limit");
+
+        let small = marshal(&Outer {
+            data: vec![7u8; 32],
+            ..Default::default()
+        });
+        unmarshal::<Outer>(&small).expect("default");
+        let at = Limits {
+            max_message_size: small.len(),
+            ..Limits::default()
+        };
+        unmarshal_with::<Outer>(&small, at).expect("at the bound");
+        let low = Limits {
+            max_message_size: 16,
+            ..Limits::default()
+        };
+        assert_eq!(
+            unmarshal_with::<Outer>(&small, low)
+                .unwrap_err()
+                .to_string(),
+            format!("input of {} bytes exceeds MaxMessageSize=16", small.len())
+        );
+    }
+
+    /// HARDENING.md `MaxRepeatedCount`: a repeated field past the bound is
+    /// refused before the element is added — unpacked through
+    /// `push_element`, packed through a `packed()` sub-reader — and
+    /// `MaxNestingDepth` is per call too.
+    #[test]
+    fn max_repeated_count_and_depth_per_call() {
+        let outer = Outer {
+            items: (0..5)
+                .map(|i| Inner {
+                    name: format!("i{i}"),
+                    value: i,
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let bytes = marshal(&outer);
+        unmarshal::<Outer>(&bytes).expect("default");
+        let five = Limits {
+            max_repeated_count: 5,
+            ..Limits::default()
+        };
+        assert_eq!(
+            unmarshal_with::<Outer>(&bytes, five).unwrap().items.len(),
+            5,
+            "at the bound"
+        );
+        let four = Limits {
+            max_repeated_count: 4,
+            ..Limits::default()
+        };
+        assert_eq!(
+            unmarshal_with::<Outer>(&bytes, four)
+                .unwrap_err()
+                .to_string(),
+            "repeated field exceeds MaxRepeatedCount=4"
+        );
+
+        // Packed: five int32 varints under one length prefix at field 1.
+        #[derive(Debug, Default)]
+        struct Packed {
+            xs: Vec<i32>,
+        }
+        impl Message for Packed {
+            fn encode_to(&self, w: &mut Writer) {
+                let mut inner = Writer::new();
+                for x in &self.xs {
+                    inner.varint_i32(*x);
+                }
+                let payload = inner.finish();
+                w.tag(1, WireType::LengthDelimited);
+                w.bytes(&payload);
+            }
+            fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
+                match (num, wt) {
+                    (1, WireType::LengthDelimited) => {
+                        let mut p = r.packed()?;
+                        while !p.eof() {
+                            let v = p.varint()? as i32;
+                            r.push_element(&mut self.xs, v)?;
+                        }
+                    }
+                    (1, _) => {
+                        let v = r.varint()? as i32;
+                        r.push_element(&mut self.xs, v)?;
+                    }
+                    _ => r.skip(wt)?,
+                }
+                Ok(())
+            }
+        }
+        let bytes = marshal(&Packed {
+            xs: vec![1, 2, 3, 4, 5],
+        });
+        assert_eq!(unmarshal::<Packed>(&bytes).unwrap().xs, vec![1, 2, 3, 4, 5]);
+        assert_eq!(
+            unmarshal_with::<Packed>(&bytes, four)
+                .unwrap_err()
+                .to_string(),
+            "repeated field exceeds MaxRepeatedCount=4"
+        );
+
+        // Depth: Outer → items[0] is one descent.
+        let one = Limits {
+            max_nesting_depth: 1,
+            ..Limits::default()
+        };
+        let bytes = marshal(&outer);
+        unmarshal_with::<Outer>(&bytes, one).expect("one descent at the bound");
+        let zero = Limits {
+            max_nesting_depth: 0,
+            ..Limits::default()
+        };
+        assert_eq!(
+            unmarshal_with::<Outer>(&bytes, zero)
+                .unwrap_err()
+                .to_string(),
+            "nesting depth exceeds MaxNestingDepth=0"
+        );
+    }
 
     // --- Test message types ---
     //
@@ -194,7 +362,10 @@ mod tests {
                 3 => self.score = r.double()?,
                 4 => self.active = r.varint()? != 0,
                 5 => self.data = r.bytes()?,
-                6 => self.items.push(read_message(r)?),
+                6 => {
+                    let item = read_message(r)?;
+                    r.push_element(&mut self.items, item)?;
+                }
                 8 => self.signed = r.varint()? as i64,
                 9 => self.small_f = r.float()?,
                 _ => r.skip(wt)?,

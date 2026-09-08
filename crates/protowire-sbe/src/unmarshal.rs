@@ -8,19 +8,26 @@ use prost_reflect::{
     DynamicMessage, FieldDescriptor, Kind, MessageDescriptor, ReflectMessage, Value,
 };
 
-use crate::codec::{Codec, GROUP_HEADER_SIZE, HEADER_SIZE};
+use crate::codec::{check_group_header, Codec, GROUP_HEADER_SIZE, HEADER_SIZE};
 use crate::errors::SbeError;
 use crate::template::{FieldTemplate, GroupTemplate, MessageTemplate, SbeEncoding};
 
+/// Decode `data` into `msg` under the codec's limits: the input is refused
+/// past `MaxMessageSize` before the header is read, a wire block shorter
+/// than the template's is rejected (HARDENING.md § SBE step 2), and each
+/// group's header is validated before any entry is allocated (steps 3 and
+/// 4, and `MaxRepeatedCount`).
 pub fn unmarshal(codec: &Codec, msg: &mut DynamicMessage, data: &[u8]) -> Result<(), SbeError> {
+    codec.check_message_size(data.len())?;
     let tmpl = codec.template(msg.descriptor().full_name())?;
-    unmarshal_message(msg, tmpl, data)
+    unmarshal_message(msg, tmpl, data, codec.limits().max_repeated_count)
 }
 
 fn unmarshal_message(
     msg: &mut DynamicMessage,
     tmpl: &MessageTemplate,
     data: &[u8],
+    max_repeated_count: usize,
 ) -> Result<(), SbeError> {
     if data.len() < HEADER_SIZE {
         return Err(SbeError::new(format!(
@@ -37,6 +44,15 @@ fn unmarshal_message(
         )));
     }
 
+    // HARDENING.md § SBE step 2: a wire block strictly smaller than the
+    // template's means some field's offset + size exceeds it; larger is
+    // valid (a newer schema with trailing fields).
+    if block_length < tmpl.block_length {
+        return Err(SbeError::new(format!(
+            "sbe: wire block_length {} is below template block_length {}",
+            block_length, tmpl.block_length
+        )));
+    }
     let end = HEADER_SIZE + block_length;
     if data.len() < end {
         return Err(SbeError::new(format!(
@@ -52,7 +68,7 @@ fn unmarshal_message(
 
     let mut pos = end;
     for gt in &tmpl.groups {
-        pos += unmarshal_group(data, pos, msg, gt)?;
+        pos += unmarshal_group(data, pos, msg, gt, max_repeated_count)?;
     }
     Ok(())
 }
@@ -62,20 +78,10 @@ fn unmarshal_group(
     pos: usize,
     parent: &mut DynamicMessage,
     gt: &GroupTemplate,
+    max_repeated_count: usize,
 ) -> Result<usize, SbeError> {
-    if data.len() < pos + GROUP_HEADER_SIZE {
-        return Err(SbeError::new("sbe: data too short for group header"));
-    }
-    let block_length = read_u16_le(data, pos) as usize;
-    let num_in_group = read_u16_le(data, pos + 2) as usize;
-    let total = GROUP_HEADER_SIZE + num_in_group * block_length;
-    if data.len() < pos + total {
-        return Err(SbeError::new(format!(
-            "sbe: data too short for group entries: need {}, have {}",
-            pos + total,
-            data.len()
-        )));
-    }
+    let (block_length, num_in_group, total) =
+        check_group_header(data, pos, gt.fd.name(), gt.block_length, max_repeated_count)?;
 
     let elem_desc = group_element_descriptor(&gt.fd);
     let mut entries: Vec<Value> = Vec::with_capacity(num_in_group);

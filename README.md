@@ -132,10 +132,17 @@ out of that or are explicit deferred work:
   walk in lockstep and writes straight into `DynamicMessage`; there
   is no separate AST-walking slow path to swap in. See
   `crates/protowire-pxf/src/decode.rs`.
-- **HARDENING.md decoder safety (M8)**: bounded recursion depth and
-  PB length-prefix overflow rejection. The `check-decode` harness
-  under `crates/check-decode/` runs the upstream adversarial corpus
-  on every PR.
+- **HARDENING.md decoder safety (M8)**: every § Mandatory limit —
+  `MaxNestingDepth`, `MaxMessageSize`, `MaxNumericLiteralDigits`,
+  `MaxBytesLiteralLength`, `MaxRepeatedCount` — enforced at the
+  defaults and configurable per call (`protowire_pxf::Limits` on
+  `UnmarshalOptions` / `parse_with_limits` / `DatasetReader::with_limits`,
+  `protowire_pb::unmarshal_with`, `protowire_sbe::Codec::from_files_with_limits`),
+  PB length-prefix overflow rejection, and the § SBE header checks
+  (short wire block, zero block length with entries, 64-bit group
+  arithmetic). The `check-decode` harness under `crates/check-decode/`
+  runs the upstream adversarial corpus on every PR, with `--limit
+  NAME=VALUE` for the rows that prove a limit with a small fixture.
 
 ## Repository layout
 
