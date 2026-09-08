@@ -13,7 +13,8 @@
 //!  - Bytes: `b"<base64>"` (standard or raw, validated at lex time)
 //!  - Integers, floats (with optional sign and exponent)
 //!  - RFC 3339 timestamps: 4 digits + `-` triggers timestamp lex; validated
-//!  - Go-style durations: digits + a unit letter (h/m/s/ns/us/ms); validated
+//!  - Go-style durations: one or more `<digits>[.<digits>]<unit>` segments
+//!    with unit ∈ {ns, us, µs, ms, s, m, h} (draft §3.3); validated
 //!  - Identifiers (with `.` allowed for dotted package names), `true` /
 //!    `false` / `null` keywords, `@type` directive
 //!  - Punctuation: `{ } [ ] = : ,`
@@ -157,8 +158,20 @@ impl<'a> Lexer<'a> {
             return self.lex_ident(pos);
         }
 
+        // Name the whole character rather than its first byte: the input
+        // is a `&str`, so a non-ASCII lead byte is followed by its
+        // continuation bytes, and reporting each of them as its own token
+        // would spell "μ" as two illegal tokens.
+        let start = self.pos;
         self.advance();
-        Token::new(TokenKind::Illegal, byte_as_string(ch), pos)
+        while self.pos < self.input.len() && (self.input[self.pos] & 0xC0) == 0x80 {
+            self.advance();
+        }
+        Token::new(
+            TokenKind::Illegal,
+            slice_to_string(&self.input[start..self.pos]),
+            pos,
+        )
     }
 
     /// Drains the lexer into a Vec, including a terminating EOF token.
@@ -490,15 +503,33 @@ impl<'a> Lexer<'a> {
             return self.lex_timestamp(pos, start);
         }
 
-        if self.pos < self.input.len() {
-            let c = self.peek();
-            if c == b'.' || c == b'e' || c == b'E' {
-                return self.lex_float(pos, start);
+        // Fraction: '.' followed by at least one digit. Floats and durations
+        // both admit one (draft §3.3: duration-segment = 1*DIGIT [ "." 1*DIGIT ]
+        // time-unit), so it is consumed here and the two are told apart by
+        // what follows it. A '.' with no digit after it is not a
+        // duration-segment; the float branch below keeps it as it always has.
+        let mut frac = false;
+        if self.peek() == b'.' && is_digit(self.peek_at(1)) {
+            frac = true;
+            self.advance(); // .
+            while self.pos < self.input.len() && is_digit(self.peek()) {
+                self.advance();
             }
         }
-
-        if self.pos < self.input.len() && is_duration_unit(self.peek()) {
+        // Duration: magnitude followed by a time unit (§3.10). Checked before
+        // the float branch so "1.5ms" is one Duration token rather than Float
+        // "1.5" followed by Ident "ms" — which is what the encoder writes for
+        // any Duration that is not a whole multiple of its largest unit
+        // (protowire-rust#26).
+        if self.at_duration_unit() {
             return self.lex_duration(pos, start);
+        }
+        // Float: fraction, or 'e'/'E' exponent, or a bare trailing '.'
+        if frac
+            || (self.pos < self.input.len()
+                && (self.peek() == b'.' || self.peek() == b'e' || self.peek() == b'E'))
+        {
+            return self.lex_float(pos, start);
         }
 
         Token::new(
@@ -506,6 +537,28 @@ impl<'a> Lexer<'a> {
             slice_to_string(&self.input[start..self.pos]),
             pos,
         )
+    }
+
+    /// Reports whether the input at the current position begins a time-unit
+    /// (draft §3.3): one of the ASCII unit letters, or the two-byte UTF-8
+    /// encoding of "µ" (U+00B5 MICRO SIGN, %xC2.B5) that opens micro-us.
+    /// Only the first byte(s) are inspected; `lex_duration` consumes the
+    /// candidate and `is_valid_go_duration` decides whether it was a unit at
+    /// all. Does not advance.
+    fn at_duration_unit(&self) -> bool {
+        if self.pos >= self.input.len() {
+            return false;
+        }
+        is_duration_unit(self.peek()) || self.at_micro_sign()
+    }
+
+    /// Reports whether the next two bytes are the UTF-8 encoding of U+00B5
+    /// MICRO SIGN. This is the only non-ASCII byte sequence the duration
+    /// grammar admits (micro-us = %xC2.B5 %x73); U+03BC GREEK SMALL LETTER
+    /// MU, which Go's `time.ParseDuration` would also accept, is
+    /// deliberately not recognised. Does not advance.
+    fn at_micro_sign(&self) -> bool {
+        self.peek() == 0xC2 && self.peek_at(1) == 0xB5
     }
 
     fn lex_float(&mut self, pos: Position, start: usize) -> Token {
@@ -561,10 +614,27 @@ impl<'a> Lexer<'a> {
         Token::new(TokenKind::Timestamp, raw, pos)
     }
 
+    /// Consumes a duration literal — one or more segments of digits, an
+    /// optional "." fraction, and a unit (§3.3) — starting from `start`, and
+    /// validates the whole with `is_valid_go_duration`. The scan is
+    /// deliberately loose (any run of digits, unit letters, "." followed by
+    /// a digit, and "µ") so that a malformed literal such as "5min" is
+    /// reported as one invalid duration rather than tokenised as a duration
+    /// plus an identifier.
     fn lex_duration(&mut self, pos: Position, start: usize) -> Token {
-        while self.pos < self.input.len() && (is_digit(self.peek()) || is_lower_alpha(self.peek()))
-        {
-            self.advance();
+        loop {
+            if self.pos >= self.input.len() {
+                break;
+            }
+            let c = self.peek();
+            if is_digit(c) || is_lower_alpha(c) || (c == b'.' && is_digit(self.peek_at(1))) {
+                self.advance();
+            } else if self.at_micro_sign() {
+                self.advance();
+                self.advance();
+            } else {
+                break;
+            }
         }
         let raw = slice_to_string(&self.input[start..self.pos]);
         if !is_valid_go_duration(&raw) {
@@ -594,12 +664,6 @@ impl<'a> Lexer<'a> {
 fn slice_to_string(bytes: &[u8]) -> String {
     // Input slices come from a `&str`, so byte-aligned views remain valid UTF-8.
     String::from_utf8(bytes.to_vec()).expect("lexer slice is valid UTF-8")
-}
-
-fn byte_as_string(b: u8) -> String {
-    let mut s = String::new();
-    s.push(b as char);
-    s
 }
 
 fn is_digit(ch: u8) -> bool {
@@ -826,10 +890,10 @@ fn days_in_month(y: u32, m: u32) -> u32 {
 }
 
 /// Validate a Go-style duration string: optional leading sign, then one or
-/// more `<digits>[.<digits>]<unit>` groups where unit ∈ {ns, us, ms, s, m, h}.
-///
-/// The lexer never emits non-ASCII bytes here, so `µs` (which Go's parser
-/// accepts) is intentionally not handled — same as `lexer.go`.
+/// more `<digits>[.<digits>]<unit>` groups where unit ∈ {ns, us, µs, ms, s,
+/// m, h}. `µs` is U+00B5 MICRO SIGN only (draft §3.3 micro-us = %xC2.B5
+/// %x73); U+03BC GREEK SMALL LETTER MU is not in the grammar even though
+/// Go's `time.ParseDuration` accepts it, and the lexer never lets it in.
 fn is_valid_go_duration(s: &str) -> bool {
     let bytes = s.as_bytes();
     if bytes.is_empty() {
@@ -873,6 +937,7 @@ fn is_valid_go_duration(s: &str) -> bool {
             (b'n', Some(b's')) => 2,
             (b'u', Some(b's')) => 2,
             (b'm', Some(b's')) => 2,
+            (0xC2, Some(0xB5)) if bytes.get(i + 2) == Some(&b's') => 3,
             (b's', _) | (b'm', _) | (b'h', _) => 1,
             _ => return false,
         };
@@ -1161,13 +1226,99 @@ mod tests {
         );
     }
 
+    // Pins the tokenisation of duration literals against draft §3.3:
+    //
+    //   duration-segment = 1*DIGIT [ "." 1*DIGIT ] time-unit
+    //   time-unit        = "ns" / "us" / micro-us / "ms" / "s" / "m" / "h"
+    //   micro-us         = %xC2.B5 %x73    ; UTF-8 of "µs"
+    //
+    // Before protowire-rust#26 the lexer decided Float on seeing "." before
+    // it looked for a unit, so "1.5ms" came out as Float "1.5" + Ident
+    // "ms", and it never admitted the two-byte "µ", so "2µs" was Int "2"
+    // + Illegal. Both are what the encoder writes for any Duration that
+    // is not a whole multiple of its largest unit, so this port could not
+    // read its own output. The table is protowire-go's
+    // lexer_duration_test.go, case for case.
     #[test]
-    fn duration_float_path_wins_over_duration() {
-        let ts = tokens("1.5s");
-        assert_eq!(
-            ts.iter().map(|t| t.kind).collect::<Vec<_>>(),
-            vec![TokenKind::Float, TokenKind::Ident]
-        );
+    fn duration_fractional_and_micro_tokens() {
+        use TokenKind::*;
+        let cases: &[(&str, &[(TokenKind, &str)])] = &[
+            // §3.10 examples.
+            ("30s", &[(Duration, "30s")]),
+            ("1h30m", &[(Duration, "1h30m")]),
+            ("500ms", &[(Duration, "500ms")]),
+            ("1.5h", &[(Duration, "1.5h")]),
+            ("2µs", &[(Duration, "2µs")]),
+            ("2us", &[(Duration, "2us")]),
+            // What the encoder emits for measured values.
+            ("1.234567ms", &[(Duration, "1.234567ms")]),
+            ("1.5ms", &[(Duration, "1.5ms")]),
+            ("312.5µs", &[(Duration, "312.5µs")]),
+            ("1.234µs", &[(Duration, "1.234µs")]),
+            ("1h30m0.5s", &[(Duration, "1h30m0.5s")]),
+            ("-1.5s", &[(Duration, "-1.5s")]),
+            ("-312.5µs", &[(Duration, "-312.5µs")]),
+            ("0s", &[(Duration, "0s")]),
+            // Every unit, fractional.
+            ("1.5ns", &[(Duration, "1.5ns")]),
+            ("1.5us", &[(Duration, "1.5us")]),
+            ("1.5µs", &[(Duration, "1.5µs")]),
+            ("1.5s", &[(Duration, "1.5s")]),
+            ("1.5m", &[(Duration, "1.5m")]),
+            // A fraction in any segment, not only the first (§3.3 puts the
+            // optional fraction inside duration-segment).
+            ("1h30.5m", &[(Duration, "1h30.5m")]),
+            ("1.5h30.5m1.5s", &[(Duration, "1.5h30.5m1.5s")]),
+            // Unchanged forms.
+            ("1h30m500ms", &[(Duration, "1h30m500ms")]),
+            ("1ms234us567ns", &[(Duration, "1ms234us567ns")]),
+            ("250ms", &[(Duration, "250ms")]),
+            // Still a float when no unit follows...
+            ("1.5", &[(Float, "1.5")]),
+            ("1.5e3", &[(Float, "1.5e3")]),
+            ("1.5E-3", &[(Float, "1.5E-3")]),
+            ("-1.5", &[(Float, "-1.5")]),
+            ("1.", &[(Float, "1.")]),
+            ("1.e3", &[(Float, "1.e3")]),
+            // ...an exponent is not a unit, so "1.5e3ms" is a float and an
+            // identifier, exactly as before...
+            ("1.5e3ms", &[(Float, "1.5e3"), (Ident, "ms")]),
+            ("1e3s", &[(Float, "1e3"), (Ident, "s")]),
+            // ...a fraction with no digits after the "." is not a
+            // duration-segment, so the float branch keeps it...
+            ("1.ms", &[(Float, "1."), (Ident, "ms")]),
+            // ...and a non-unit letter is an identifier following the number.
+            ("1.5x", &[(Float, "1.5"), (Ident, "x")]),
+            ("1.5 x", &[(Float, "1.5"), (Ident, "x")]),
+            ("5x", &[(Int, "5"), (Ident, "x")]),
+            // A unit letter that starts a longer word is consumed into the
+            // duration attempt and rejected there (unchanged: "5min" was
+            // already Illegal); the fraction does not change that.
+            ("1.5min", &[(Illegal, "invalid duration: 1.5min")]),
+            ("5min", &[(Illegal, "invalid duration: 5min")]),
+            // Only U+00B5 MICRO SIGN (C2 B5) is micro-us. U+03BC GREEK SMALL
+            // LETTER MU (CE BC) is not in the grammar even though Go's
+            // time.ParseDuration would accept it, and must not sneak in via
+            // the lexer. It falls to the Illegal path, which names the whole
+            // character rather than each of its two bytes.
+            ("2μs", &[(Int, "2"), (Illegal, "μ"), (Ident, "s")]),
+            // A bare micro sign with no "s" is not a unit either.
+            ("2µ", &[(Illegal, "invalid duration: 2µ")]),
+            ("2µm", &[(Illegal, "invalid duration: 2µm")]),
+            // The token ends where the value ends.
+            ("1.5ms,", &[(Duration, "1.5ms"), (Comma, ",")]),
+            ("1.5ms]", &[(Duration, "1.5ms"), (RBracket, "]")]),
+            ("1.5ms}", &[(Duration, "1.5ms"), (RBrace, "}")]),
+            ("1.5ms#c", &[(Duration, "1.5ms"), (Comment, "#c")]),
+            ("1.5ms\n", &[(Duration, "1.5ms"), (Newline, "")]),
+            ("2µs 3", &[(Duration, "2µs"), (Int, "3")]),
+        ];
+        for (input, want) in cases {
+            let got = tokens(input);
+            let got_pairs: Vec<(TokenKind, &str)> =
+                got.iter().map(|t| (t.kind, t.value.as_str())).collect();
+            assert_eq!(&got_pairs[..], *want, "input {input:?}");
+        }
     }
 
     #[test]
