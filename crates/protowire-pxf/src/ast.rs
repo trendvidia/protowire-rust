@@ -206,7 +206,14 @@ pub struct Assignment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapEntry {
     pub pos: Position,
+    /// The key as the document spelled it, without quotes.
     pub key: String,
+    /// Whether the document wrote the key quoted. The quotes on a key are
+    /// meaningful — bare, `true` is a bool key, `123` an integer key and
+    /// `null` no key at all — so the formatter reproduces this spelling
+    /// wherever changing it would change what the key denotes (draft -01
+    /// § Entries and Keys, "Canonical spelling of map keys"; protowire#306).
+    pub quoted: bool,
     pub value: Value,
     pub leading_comments: Vec<Comment>,
     pub trailing_comment: String,

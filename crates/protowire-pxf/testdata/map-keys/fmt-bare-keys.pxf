@@ -1,0 +1,6 @@
+@type mapkeys.v1.Flags
+
+by_flag = {
+  true: "keyword"
+  0: "integer"
+}

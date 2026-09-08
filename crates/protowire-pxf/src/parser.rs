@@ -639,6 +639,7 @@ impl<'a> Parser<'a> {
                 Ok(Entry::MapEntry(MapEntry {
                     pos,
                     key,
+                    quoted: matches!(key_kind, TokenKind::String),
                     value,
                     leading_comments,
                     trailing_comment: String::new(),
