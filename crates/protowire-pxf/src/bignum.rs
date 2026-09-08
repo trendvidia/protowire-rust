@@ -13,11 +13,9 @@
 //! semantic drift, no new dependency. Both are quadratic in the digit
 //! count, which [`MAX_NUMERIC_LITERAL_DIGITS`] bounds *before* they run.
 //!
-//! `pxf.BigFloat`'s literal form is not implemented: producing the same
-//! mantissa/exponent bytes as the reference for a decimal literal means
-//! reproducing `big.Float`'s 256-bit rounding, which is real
-//! arbitrary-precision arithmetic; tracked in protowire-rust#39. A
-//! `pxf.BigFloat` field still reads and writes its block form.
+//! `pxf.BigFloat`'s literal form lives in [`crate::bigfloat`]: it needs
+//! real arithmetic, since the reference parses it with `math/big` at 256
+//! bits and the port must produce the same bytes.
 
 pub use crate::limits::MAX_NUMERIC_LITERAL_DIGITS;
 

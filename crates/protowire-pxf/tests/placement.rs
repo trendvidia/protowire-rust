@@ -142,15 +142,7 @@ fn accepted_placements_are_clean_and_apply() {
     let keyed = msg(ACCEPTED, "placement_accepted_test.v1.KeyedOk");
     assert!(validate_descriptor(&keyed).is_empty());
 
-    // `bf` is supplied so its default is not applied: a pxf.BigFloat
-    // placement is conformant, but this port cannot apply its literal yet
-    // (protowire-rust#39) — pinned below rather than hidden here.
-    let (m, _) = unmarshal_full(
-        "req = \"x\"\nbf { prec = 1 }",
-        &desc,
-        UnmarshalOptions::default(),
-    )
-    .expect("binds");
+    let (m, _) = unmarshal_full("req = \"x\"", &desc, UnmarshalOptions::default()).expect("binds");
     let get = |name: &str| m.get_field_by_name(name).unwrap().into_owned();
     assert_eq!(get("s"), Value::String("hello".into()));
     assert_eq!(get("i32"), Value::I32(-1));
@@ -180,22 +172,26 @@ fn accepted_placements_are_clean_and_apply() {
     );
 }
 
-/// Pinned gap (protowire-rust#39): a `(pxf.default)` on a `pxf.BigFloat`
-/// field is a conformant placement — the schema binds — but applying the
-/// literal is not implemented in this port, so a document that leaves the
-/// field absent fails where the default is applied, not at bind time.
+/// A `(pxf.default)` on a `pxf.BigFloat` field binds and applies
+/// (protowire-rust#39): `2.718` at 256 bits, the reference's bytes.
 #[test]
-fn big_float_default_placement_binds_but_cannot_apply_yet() {
+fn big_float_default_placement_binds_and_applies() {
     let desc = msg(
         ACCEPTED,
         "placement_accepted_test.v1.EveryAcceptedPlacement",
     );
     assert!(validate_descriptor(&desc).is_empty());
-    let err = unmarshal_full("req = \"x\"", &desc, UnmarshalOptions::default())
-        .expect_err("BigFloat default literal is a documented gap");
+    let (m, _) = unmarshal_full("req = \"x\"", &desc, UnmarshalOptions::default()).expect("binds");
+    let Value::Message(bf) = m.get_field_by_name("bf").unwrap().into_owned() else {
+        panic!("bf")
+    };
+    let Value::Bytes(mant) = bf.get_field_by_name("mantissa").unwrap().into_owned() else {
+        panic!("mantissa")
+    };
+    assert_eq!(&mant[..4], &[0xad, 0xf3, 0xb6, 0x45]);
     assert_eq!(
-        err.msg,
-        "default values not supported for message type pxf.BigFloat (field \"bf\")"
+        bf.get_field_by_name("exponent").unwrap().into_owned(),
+        Value::I32(-254)
     );
 }
 

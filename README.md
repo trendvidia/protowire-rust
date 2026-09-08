@@ -104,10 +104,9 @@ out of that or are explicit deferred work:
   `MaxNumericLiteralDigits` enforced before the conversion; on the
   wire the user-facing type stays `Vec<u8>` (big-endian magnitude) —
   callers convert to `num-bigint::BigInt` / `rust_decimal::Decimal`
-  themselves. `pxf.BigFloat` reads and writes its block form only:
-  matching the reference's mantissa/exponent bytes for a decimal
-  literal means reproducing `big.Float`'s 256-bit rounding, which is
-  [#39](https://github.com/trendvidia/protowire-rust/issues/39).
+  themselves. `pxf.BigFloat` literals are parsed and rendered exactly as
+  the reference's `math/big` does at 256 bits (`src/bigfloat.rs`), so the
+  bytes match across ports; the value type is again the raw message.
 - **No runtime `.proto` compilation.** The Go port uses `protocompile`
   to turn a `.proto` schema into a `FileDescriptorSet` in-process;
   the prost ecosystem has no comparable embeddable compiler. You must
