@@ -5,6 +5,7 @@
 //! `_null` `FieldMask` mirror channel. Mirrors the
 //! `pxf.unmarshalFull — *` blocks in the TS port's `pxf/decode.test.ts`.
 
+use prost::Message as _;
 use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor, ReflectMessage, Value};
 use protowire_pxf::{unmarshal_full, UnmarshalOptions};
 
@@ -185,4 +186,116 @@ fn null_mask_untouched_when_no_field_is_null() {
     let with_null_mask = d4_msg("d4_test.v1.WithNullMask");
     let (m, _) = full("name = \"ok\"\nvalue = 1", &with_null_mask);
     assert_eq!(null_mask_paths(&m), Vec::<String>::new());
+}
+
+// ---------------- (pxf.default) on oneof members (#24) ----------------
+//
+// Setting any member of a oneof clears the others, so the per-field
+// reading of "absent" does not hold inside one: a member is absent
+// precisely when a sibling was chosen. Draft -01 §annotation-extensions
+// ("Oneof Members") is the rule these pin.
+
+/// The #24 repro: a document that chooses one arm keeps it. Before the fix
+/// this returned a="" b="bbb" case=b — the written value cleared, not
+/// shadowed.
+#[test]
+fn oneof_default_does_not_clobber_chosen_arm() {
+    let desc = d4_msg("d4_test.v1.OneofDefault");
+    let (m, p) = full("a = \"written\"", &desc);
+    assert_eq!(field_value(&m, "a"), Value::String("written".into()));
+    let b_fd = desc.get_field_by_name("b").unwrap();
+    assert!(!m.has_field(&b_fd), "sibling default must not be applied");
+    assert!(p.is_absent("b"));
+    // The default outside the oneof still applies.
+    assert_eq!(field_value(&m, "outside"), Value::String("out".into()));
+    // Byte for byte: only field 1 reaches the wire.
+    assert_eq!(
+        m.encode_to_vec(),
+        b"\x0a\x07written\x1a\x03out".to_vec(),
+        "pb output must carry the arm the document chose"
+    );
+}
+
+#[test]
+fn oneof_default_applies_when_no_member_is_present() {
+    let desc = d4_msg("d4_test.v1.OneofDefault");
+    let (m, _) = full("outside = \"x\"", &desc);
+    assert_eq!(field_value(&m, "b"), Value::String("bbb".into()));
+    let a_fd = desc.get_field_by_name("a").unwrap();
+    assert!(!m.has_field(&a_fd));
+}
+
+/// A member bound to `null` counts as present for the oneof test,
+/// consistent with the rule that null suppresses a default.
+#[test]
+fn oneof_default_is_suppressed_by_null_sibling() {
+    let desc = d4_msg("d4_test.v1.OneofNullableSibling");
+    let (m, p) = full("w = null", &desc);
+    assert!(p.is_null("w"));
+    let b_fd = desc.get_field_by_name("b").unwrap();
+    assert!(
+        !m.has_field(&b_fd),
+        "a null sibling is present; the default must not be applied"
+    );
+}
+
+/// A proto3 `optional` field sits in a synthetic single-member oneof that
+/// nothing can clear, so its default must keep applying.
+#[test]
+fn synthetic_oneof_default_still_applies() {
+    let desc = d4_msg("d4_test.v1.SyntheticOneof");
+    let (m, _) = full("", &desc);
+    assert_eq!(field_value(&m, "opt"), Value::String("syn".into()));
+}
+
+// ---------------- (pxf.default) placement on repeated / map (#23) ----------------
+//
+// A (pxf.default) carries one PXF literal, so it can denote a singular
+// field only (draft -01 §annotation-extensions, "Default Placement"). A
+// single literal on a repeated field MUST NOT be applied as a one-element
+// list: the resulting pb output would differ from a port that rejects the
+// schema. Until the v1.11 bind-time check lands (#25) the runtime guard
+// is what refuses it.
+
+const PLACEMENT_FDS: &[u8] = include_bytes!("../testdata/default-placement-test.binpb");
+
+fn placement_msg(name: &str) -> MessageDescriptor {
+    DescriptorPool::decode(PLACEMENT_FDS)
+        .expect("decode default-placement-test.binpb")
+        .get_message_by_name(name)
+        .unwrap_or_else(|| panic!("missing {name}"))
+}
+
+#[test]
+fn repeated_default_is_rejected_not_applied_as_one_element_list() {
+    let desc = placement_msg("default_placement_test.v1.RepeatedDefault");
+    let err = unmarshal_full("", &desc, UnmarshalOptions::default()).expect_err("must reject");
+    assert_eq!(
+        err.msg,
+        "default values not supported for repeated field \"tags\""
+    );
+}
+
+#[test]
+fn map_default_is_rejected_naming_the_placement() {
+    let desc = placement_msg("default_placement_test.v1.MapDefault");
+    let err = unmarshal_full("", &desc, UnmarshalOptions::default()).expect_err("must reject");
+    // Names the placement, not the synthetic `LabelsEntry` message type.
+    assert_eq!(
+        err.msg,
+        "default values not supported for map field \"labels\""
+    );
+}
+
+/// A document that supplies the field is unaffected by the annotation: the
+/// guard runs only for absent fields, so existing documents keep decoding.
+#[test]
+fn repeated_default_schema_still_decodes_when_field_is_supplied() {
+    let desc = placement_msg("default_placement_test.v1.RepeatedDefault");
+    let (m, _) = unmarshal_full("tags = [\"a\"]", &desc, UnmarshalOptions::default())
+        .expect("supplied field decodes");
+    assert_eq!(
+        field_value(&m, "tags"),
+        Value::List(vec![Value::String("a".into())])
+    );
 }

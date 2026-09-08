@@ -38,6 +38,12 @@ buf build --as-file-descriptor-set --exclude-source-info \
 echo "wrote crates/protowire-pxf/testdata/d4-test.binpb (buf)"
 
 buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/default-placement-test.proto \
+  -o crates/protowire-pxf/testdata/default-placement-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/default-placement-test.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
   --path crates/protowire-pxf/testdata/hardening-test.proto \
   -o crates/protowire-pxf/testdata/hardening-test.binpb
 
@@ -48,6 +54,14 @@ buf build --as-file-descriptor-set --exclude-source-info \
   -o crates/protowire-pxf/testdata/schema-test.binpb
 
 echo "wrote crates/protowire-pxf/testdata/schema-test.binpb (buf)"
+
+# Vendored verbatim from the spec repo's testdata/map-keys/ (protowire#284);
+# keep in sync when the spec repo adds fixtures.
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/map-keys/bool-keys.proto \
+  -o crates/protowire-pxf/testdata/map-keys/bool-keys.binpb
+
+echo "wrote crates/protowire-pxf/testdata/map-keys/bool-keys.binpb (buf)"
 
 buf build --as-file-descriptor-set --exclude-source-info \
   --path crates/protowire-pxf/testdata/bignum-test.proto \

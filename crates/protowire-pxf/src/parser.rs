@@ -563,11 +563,17 @@ impl<'a> Parser<'a> {
         let pos = self.current.pos;
         let k = self.current.kind;
 
-        if !matches!(k, TokenKind::Ident | TokenKind::String | TokenKind::Int) {
+        // map-key = identifier / string / integer / bool (draft -01
+        // §abnf-grammar; the keyword spelling landed in protowire#284). A
+        // bool key takes only the ':' tail, exactly as an integer key does.
+        if !matches!(
+            k,
+            TokenKind::Ident | TokenKind::String | TokenKind::Int | TokenKind::Bool
+        ) {
             return Err(PxfError::new(
                 pos,
                 format!(
-                    "expected identifier, string, or integer, got {} ({:?})",
+                    "expected identifier, string, integer, or bool, got {} ({:?})",
                     k.name(),
                     self.current.value
                 ),
@@ -580,8 +586,8 @@ impl<'a> Parser<'a> {
         match self.current.kind {
             TokenKind::Equals => {
                 // `=` denotes a field assignment on a proto message; the key
-                // must be an identifier. Map-style keys (string / integer) are
-                // only valid with `:`.
+                // must be an identifier. Map-style keys (string / integer /
+                // bool) are only valid with `:`.
                 if !matches!(key_kind, TokenKind::Ident) {
                     return Err(PxfError::new(
                         pos,

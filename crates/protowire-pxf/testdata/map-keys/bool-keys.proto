@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+
+syntax = "proto3";
+package mapkeys.v1;
+
+// Schema for the bool map-key fixtures under testdata/map-keys/.
+message Flags {
+  map<bool, string> by_flag = 1;
+}

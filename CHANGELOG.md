@@ -72,6 +72,63 @@ format changes.
 
 ### Fixed
 
+- **The lexer reads fractional and `µs` duration literals** (`1.5ms`,
+  `312.5µs`, `1h30m0.5s`, `2µs`)
+  ([#26](https://github.com/trendvidia/protowire-rust/issues/26)). Draft
+  `-01` §3.3 admits `duration-segment = 1*DIGIT [ "." 1*DIGIT ] time-unit`
+  with `µs` (U+00B5) among the units, and the encoder writes exactly those
+  forms for any `google.protobuf.Duration` that is not a whole multiple of
+  its largest unit — so this port could not read its own output for a
+  measured latency. Two defects inherited from the Go reference lexer
+  (fixed there in protowire-go#76): the number path decided *float* on
+  seeing `.` before it looked for a unit, and the duration scan was
+  ASCII-only. The lexer now consumes an optional fraction first and takes
+  the duration branch when a unit (or the `C2 B5` micro sign) follows;
+  `1.5` stays a float, `1.5e3ms` stays a float plus an identifier, `1.ms`
+  stays `1.` plus an identifier, and U+03BC GREEK SMALL LETTER MU is not a
+  unit. The 47-case token table from protowire-go and a marshal → read-back
+  property test over every `Duration.String()` branch pin it. An illegal
+  non-ASCII character is now reported as one token naming the character,
+  not one per UTF-8 byte.
+  
+- **Bool map keys accept exactly the spellings the grammar admits**
+  ([#31](https://github.com/trendvidia/protowire-rust/issues/31)). A
+  `map<bool, V>` key was matched against the text `true` / `false` only, so
+  the bare integers `0` / `1` — the "bool encoded as 0/1" spelling draft
+  `-01` § Entries and Keys names, which Go and Java bind — were a syntax
+  error here. A bool key is now the keyword `true` / `false` bare (decided
+  in [protowire#284](https://github.com/trendvidia/protowire/issues/284)),
+  the bare integers `0` / `1`, or the quoted literals `"true"` / `"false"`;
+  every other spelling (`t`, `TRUE`, `yes`, `"1"`, `"0"`, `"TRUE"`, …) is an
+  error naming the key. The keyword bare on a `map<string, V>` is rejected
+  too — the string is spelled quoted — and the AST parser admits a bool key
+  with the `:` tail so `format` and `validate` see the same documents the
+  decoder does. The spec repo's `testdata/map-keys/` corpus is vendored
+  under `crates/protowire-pxf/testdata/map-keys/` and driven by
+  `tests/map_keys.rs`.
+  
+- **`(pxf.default)` on a oneof member no longer destroys the arm the
+  document chose** ([#24](https://github.com/trendvidia/protowire-rust/issues/24)).
+  `post_decode` tested presence per field, so a member's default was
+  applied over a chosen sibling — and setting a oneof member clears the
+  rest, so `a = "written"` decoded as `b = "bbb"` with `a` gone. The
+  default now applies only when no member of the oneof is present in the
+  document (a member bound to `null` counts as present), per draft `-01`
+  §annotation-extensions "Oneof Members". A proto3 `optional` field's
+  synthetic oneof is excluded, so its default keeps applying.
+  
+- **`(pxf.default)` on a `repeated` or `map` field is an error, not a
+  one-element list** ([#23](https://github.com/trendvidia/protowire-rust/issues/23)).
+  `apply_default` dispatched on the element kind and handed `set_field` a
+  scalar for a list field, which prost-reflect accepts and encodes as
+  `tags = ["ignored"]` — pb bytes no other port emits. Draft `-01`
+  "Default Placement" forbids inventing that semantics; the decode now
+  fails with `default values not supported for repeated field "tags"`
+  (the message protowire-typescript and protowire-go already produce),
+  and the map case names the placement rather than the synthetic
+  `…Entry` type. The bind-time half of the rule is
+  [#25](https://github.com/trendvidia/protowire-rust/issues/25).
+  
 - README and CONTRIBUTING both claimed an MSRV of **1.74**, which had not
   matched `Cargo.toml` since the pin moved to 1.82. Both now state 1.85,
   and CONTRIBUTING no longer describes the workspace as depending on

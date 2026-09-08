@@ -1,0 +1,9 @@
+@type mapkeys.v1.Flags
+
+# The quoted-literal spelling: a string key is parsed as a literal of
+# K's type, and a bool literal is exactly "true" or "false".
+
+by_flag = {
+  "true": "quoted literal"
+  "false": "quoted literal"
+}
