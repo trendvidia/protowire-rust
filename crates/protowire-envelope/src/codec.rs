@@ -47,7 +47,10 @@ impl Message for FieldError {
             1 => self.field = r.string()?,
             2 => self.code = r.string()?,
             3 => self.message = r.string()?,
-            4 => self.args.push(r.string()?),
+            4 => {
+                let arg = r.string()?;
+                r.push_element(&mut self.args, arg)?;
+            }
             _ => r.skip(wt)?,
         }
         Ok(())
@@ -82,8 +85,14 @@ impl Message for AppError {
         match num {
             1 => self.code = r.string()?,
             2 => self.message = r.string()?,
-            3 => self.args.push(r.string()?),
-            4 => self.details.push(read_message(r)?),
+            3 => {
+                let arg = r.string()?;
+                r.push_element(&mut self.args, arg)?;
+            }
+            4 => {
+                let detail = read_message(r)?;
+                r.push_element(&mut self.details, detail)?;
+            }
             5 => {
                 let len = r.varint()? as usize;
                 let end = r.pos + len;
@@ -96,6 +105,9 @@ impl Message for AppError {
                         2 => v = r.string()?,
                         _ => r.skip(ewt)?,
                     }
+                }
+                if !self.metadata.contains_key(&k) {
+                    r.check_repeated(self.metadata.len())?;
                 }
                 self.metadata.insert(k, v);
             }
@@ -333,6 +345,32 @@ mod tests {
             assert_eq!(meta.len(), 1, "{hex}");
             assert_eq!(meta.get(""), Some(&String::new()), "{hex}");
         }
+    }
+
+    /// HARDENING.md `MaxRepeatedCount` reaches the envelope's repeated
+    /// and map fields through the pb reader's helpers, lowered per call.
+    #[test]
+    fn repeated_count_is_enforced_per_call() {
+        let mut env = Envelope::err(402, "E", "m", vec![s("a"), s("b"), s("c")]);
+        env.error
+            .as_mut()
+            .unwrap()
+            .with_meta("k1", "v")
+            .with_meta("k2", "v")
+            .with_meta("k3", "v");
+        let bytes = marshal(&env);
+        unmarshal::<Envelope>(&bytes).expect("default");
+        let three = protowire_pb::Limits {
+            max_repeated_count: 3,
+            ..Default::default()
+        };
+        protowire_pb::unmarshal_with::<Envelope>(&bytes, three).expect("at the bound");
+        let two = protowire_pb::Limits {
+            max_repeated_count: 2,
+            ..Default::default()
+        };
+        let err = protowire_pb::unmarshal_with::<Envelope>(&bytes, two).unwrap_err();
+        assert_eq!(err.to_string(), "repeated field exceeds MaxRepeatedCount=2");
     }
 
     #[test]

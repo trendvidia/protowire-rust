@@ -26,6 +26,11 @@ pub struct Lexer<'a> {
     pos: usize,
     line: usize,
     col: usize,
+    /// Bounds the decoded length of a `b"…"` literal, checked from the
+    /// literal's length while it is scanned (HARDENING.md
+    /// `MaxBytesLiteralLength`); the decoder and parser set it from their
+    /// per-call limits.
+    max_bytes_literal: usize,
 }
 
 /// Snapshot of [`Lexer`] state. Used to roll back the lexer for
@@ -39,11 +44,19 @@ pub struct LexerState {
 
 impl<'a> Lexer<'a> {
     pub fn new(input: &'a str) -> Self {
+        Self::with_limits(input, crate::limits::MAX_BYTES_LITERAL_LENGTH)
+    }
+
+    /// A lexer whose `b"…"` literals are refused past `max_bytes_literal`
+    /// decoded bytes, judged from the literal's length before it is
+    /// decoded (draft -01 § Mandatory Limits, `MaxBytesLiteralLength`).
+    pub fn with_limits(input: &'a str, max_bytes_literal: usize) -> Self {
         Self {
             input: input.as_bytes(),
             pos: 0,
             line: 1,
             col: 1,
+            max_bytes_literal,
         }
     }
 
@@ -442,6 +455,19 @@ impl<'a> Lexer<'a> {
         let start = self.pos;
         while self.pos < self.input.len() {
             let ch = self.input[self.pos];
+            if (self.pos - start) / 4 * 3 > self.max_bytes_literal {
+                // Decoded base64 is three bytes per four characters; judged
+                // from the length so the literal is neither scanned to its
+                // end nor decoded before it is refused.
+                return Token::new(
+                    TokenKind::Illegal,
+                    format!(
+                        "bytes literal decodes to more than MaxBytesLiteralLength={} bytes",
+                        self.max_bytes_literal
+                    ),
+                    pos,
+                );
+            }
             if ch == b'"' {
                 let raw = slice_to_string(&self.input[start..self.pos]);
                 self.advance(); // closing "

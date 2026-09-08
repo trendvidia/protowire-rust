@@ -18,6 +18,10 @@ pub mod codec;
 pub mod wire;
 
 pub use codec::{
-    marshal, read_message, unmarshal, write_map_entry, write_message, MapEntryField, Message,
+    marshal, read_message, unmarshal, unmarshal_with, write_map_entry, write_message,
+    MapEntryField, Message,
 };
-pub use wire::{Error, Reader, Result, WireType, Writer};
+pub use wire::{
+    Error, Limits, Reader, Result, WireType, Writer, MAX_MESSAGE_SIZE, MAX_NESTING_DEPTH,
+    MAX_REPEATED_COUNT,
+};

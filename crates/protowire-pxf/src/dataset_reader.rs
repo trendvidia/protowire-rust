@@ -24,7 +24,8 @@ use prost_reflect::{DynamicMessage, MessageDescriptor};
 
 use crate::ast::{DatasetRow, Directive, Value};
 use crate::errors::PxfError;
-use crate::parser::parse;
+use crate::limits::Limits;
+use crate::parser::parse_with_limits;
 use crate::token::Position;
 use crate::{unmarshal, UnmarshalOptions};
 
@@ -58,6 +59,7 @@ pub struct DatasetReader<R: Read> {
     type_: String,
     columns: Vec<String>,
     directives: Vec<Directive>,
+    limits: Limits,
 }
 
 impl<R: Read> DatasetReader<R> {
@@ -69,6 +71,15 @@ impl<R: Read> DatasetReader<R> {
     /// before EOF, on a header parse error, or if the header byte
     /// budget (64 KiB by default) is exceeded.
     pub fn new(src: R) -> Result<Self, PxfError> {
+        Self::with_limits(src, Limits::default())
+    }
+
+    /// [`DatasetReader::new`] under per-call [`Limits`]: the bytes held
+    /// while looking for a row boundary are capped at
+    /// `max_message_size`, so a stream that never ends a row cannot grow
+    /// the buffer without bound, and each row is parsed under the same
+    /// limits (HARDENING.md § Mandatory limits).
+    pub fn with_limits(src: R, limits: Limits) -> Result<Self, PxfError> {
         let mut r = Self {
             src,
             pending: Vec::new(),
@@ -78,6 +89,7 @@ impl<R: Read> DatasetReader<R> {
             type_: String::new(),
             columns: Vec::new(),
             directives: Vec::new(),
+            limits,
         };
         r.read_header()?;
         Ok(r)
@@ -128,7 +140,7 @@ impl<R: Read> DatasetReader<R> {
                     // v1 cell-grammar enforcement.
                     let row_bytes = &self.pending[start..=end];
                     let synthetic = build_synthetic_row(&self.columns, row_bytes);
-                    let parsed = parse(&synthetic);
+                    let parsed = parse_with_limits(&synthetic, self.limits);
                     // Advance past the consumed bytes whether parse
                     // succeeded or not — on failure we don't want to
                     // retry the same bad row forever.
@@ -163,6 +175,17 @@ impl<R: Read> DatasetReader<R> {
                     if self.src_eof {
                         self.finished = true;
                         return None;
+                    }
+                    if self.pending.len() >= self.limits.max_message_size {
+                        let e = PxfError::new(
+                            Position::default(),
+                            format!(
+                                "pxf: DatasetReader: row exceeds MaxMessageSize={} bytes without a row boundary",
+                                self.limits.max_message_size
+                            ),
+                        );
+                        self.err = Some(e.clone());
+                        return Some(Err(e));
                     }
                     if let Err(e) = self.pull(STREAM_PULL_SIZE) {
                         self.err = Some(e.clone());
@@ -244,7 +267,7 @@ impl<R: Read> DatasetReader<R> {
                             "pxf: @dataset header is not valid UTF-8",
                         )
                     })?;
-                    let doc = parse(header)?;
+                    let doc = parse_with_limits(header, self.limits)?;
                     if doc.datasets.is_empty() {
                         // Defensive — scan_header_end found @dataset but
                         // parse() disagreed.

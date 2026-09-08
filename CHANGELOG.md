@@ -13,6 +13,31 @@ format changes.
 
 ### Added
 
+- **Every HARDENING § Mandatory limit is enforced, and configurable per
+  call** ([#33](https://github.com/trendvidia/protowire-rust/issues/33)).
+  `MaxMessageSize` (64 MiB, the total input to one decode or parse),
+  `MaxBytesLiteralLength` and `MaxRepeatedCount` were not enforced at all
+  — a 65 MiB document decoded — and `MaxNestingDepth` and
+  `MaxNumericLiteralDigits` were fixed constants. New: `protowire_pxf::Limits`
+  on `UnmarshalOptions::limits`, `parse_with_limits`,
+  `DatasetReader::with_limits` (which also caps the bytes held while
+  looking for a row boundary); `protowire_pb::Limits` with
+  `unmarshal_with`, `Reader::with_limits`, and the element helpers
+  `Reader::push_element` / `check_repeated` / `packed` a `Message` impl
+  appends through so a repeated field is refused before the element past
+  the bound is added; `protowire_sbe::Limits` with
+  `Codec::from_files_with_limits`, refusing a group's `numInGroup` before
+  any entry is allocated. The defaults are the constants, exported from
+  each crate. Rejections name the limit (`input of N bytes exceeds
+  MaxMessageSize=M`), and the PXF decoder now surfaces the lexer's own
+  diagnostic at a value position (`invalid duration: 5seconds`, the bytes
+  cap) instead of `expected bytes for field`. `check-decode` accepts
+  `--limit NAME=VALUE` for the corpus rows that prove a limit with a small
+  fixture (protowire#299), links `adversarial.v1.ListHolder`, and
+  **decodes SBE for real** — its SBE leg returned "not implemented", which
+  the harness reads as a rejection, so every SBE corpus row passed without
+  decoding a byte.
+
 - **`pxf.BigInt` and `pxf.Decimal` take their literal forms**
   ([#34](https://github.com/trendvidia/protowire-rust/issues/34)). A bare
   integer on a `pxf.BigInt` field and an integer or decimal literal on a
@@ -33,6 +58,15 @@ format changes.
 
 ### Changed
 
+- **Accepted input narrows at the HARDENING defaults**: a document, PB
+  message or SBE buffer over 64 MiB is rejected where it decoded before,
+  and the SBE decoder and `View` reject a wire `block_length` below the
+  template's (HARDENING § SBE step 2), a zero entry `block_length` with a
+  non-zero count (step 4), and a group whose `count × block_length` runs
+  past the buffer — `View::group` used to accept the header and let
+  `entry()` index out of bounds. STABILITY.md promise 1 calls the size cap
+  a narrowing; the spec repo's v1.13 section records why the family takes
+  it. The nesting-depth message is now `MaxNestingDepth=N` in every crate.
 - **The encoder writes message shorthand for map values** — a
   `Timestamp`, `Duration` or `*Value` wrapper as a map value was written
   as a block (`at: { seconds = … }`) where singular and repeated positions

@@ -14,6 +14,44 @@ use thiserror::Error;
 /// of a stack-overflow abort.
 pub const MAX_NESTING_DEPTH: usize = 100;
 
+/// HARDENING.md `MaxMessageSize` — caps the total input to one decode call,
+/// checked before anything is read: peak memory is a multiple of the input,
+/// so the input is what bounds it.
+pub const MAX_MESSAGE_SIZE: usize = 64 << 20;
+
+/// HARDENING.md `MaxRepeatedCount` — caps the element count of any repeated
+/// or map field. Elements arrive one record each, so the count is bounded
+/// by [`MAX_MESSAGE_SIZE`] transitively; the check keeps the bound when a
+/// caller raises the message cap alone. A `Message` impl enforces it by
+/// appending through [`Reader::push_element`] (and checking a map with
+/// [`Reader::check_repeated`]) rather than pushing directly.
+pub const MAX_REPEATED_COUNT: usize = MAX_MESSAGE_SIZE;
+
+/// The per-call limits of one decode (draft -01 § Mandatory Limits: every
+/// limit but `MaxVarintBytes` is "configurable per call by the calling
+/// application"). The default is the HARDENING constants; lower a field
+/// to tighten one call: `Limits { max_message_size: 1 << 20,
+/// ..Limits::default() }`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// [`MAX_MESSAGE_SIZE`]: total input to this call.
+    pub max_message_size: usize,
+    /// [`MAX_NESTING_DEPTH`]: submessage / map-entry recursion.
+    pub max_nesting_depth: usize,
+    /// [`MAX_REPEATED_COUNT`]: elements of a repeated or map field.
+    pub max_repeated_count: usize,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            max_message_size: MAX_MESSAGE_SIZE,
+            max_nesting_depth: MAX_NESTING_DEPTH,
+            max_repeated_count: MAX_REPEATED_COUNT,
+        }
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("truncated varint")]
@@ -38,8 +76,12 @@ pub enum Error {
     NestedExceedsBuffer,
     #[error("message overran (pos={pos}, end={end})")]
     Overrun { pos: usize, end: usize },
-    #[error("nesting depth exceeds MaxNestingDepth ({0})")]
+    #[error("nesting depth exceeds MaxNestingDepth={0}")]
     DepthExceeded(usize),
+    #[error("input of {len} bytes exceeds MaxMessageSize={max}")]
+    MessageTooLarge { len: usize, max: usize },
+    #[error("repeated field exceeds MaxRepeatedCount={0}")]
+    RepeatedCountExceeded(usize),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -186,15 +228,68 @@ pub struct Reader<'a> {
     /// `merge_field` calls so a `Message` impl that hands the same `Reader`
     /// to a fresh `read_message` cannot reset it to zero.
     pub(crate) depth: usize,
+    /// This decode's limits; `read_message` and the element helpers below
+    /// read them, and a packed sub-reader inherits them.
+    pub(crate) limits: Limits,
 }
 
 impl<'a> Reader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
+        Self::with_limits(data, Limits::default())
+    }
+
+    /// A reader whose nested decodes and element helpers enforce `limits`.
+    /// The message-size cap is the caller's to check on the whole input
+    /// ([`crate::codec::unmarshal_with`] does); a reader over a slice of
+    /// it does not re-check.
+    pub fn with_limits(data: &'a [u8], limits: Limits) -> Self {
         Self {
             data,
             pos: 0,
             depth: 0,
+            limits,
         }
+    }
+
+    /// This decode's limits.
+    pub fn limits(&self) -> Limits {
+        self.limits
+    }
+
+    /// Append one element of a repeated field, refusing it when the field
+    /// already holds `max_repeated_count` elements (HARDENING.md
+    /// `MaxRepeatedCount`) — before the element is added. `Message` impls
+    /// use this in place of `vec.push` for every repeated field.
+    pub fn push_element<T>(&self, list: &mut Vec<T>, elem: T) -> Result<()> {
+        self.check_repeated(list.len())?;
+        list.push(elem);
+        Ok(())
+    }
+
+    /// Refuse to add an element to a repeated or map field that already
+    /// holds `len` elements when `len` has reached `max_repeated_count`.
+    /// For a map, check with the map's length before inserting a key it
+    /// does not already hold.
+    pub fn check_repeated(&self, len: usize) -> Result<()> {
+        if len >= self.limits.max_repeated_count {
+            return Err(Error::RepeatedCountExceeded(self.limits.max_repeated_count));
+        }
+        Ok(())
+    }
+
+    /// The payload of a packed repeated field as its own reader, sharing
+    /// this reader's limits and depth, so the elements can be read with the
+    /// scalar methods and appended through [`Reader::push_element`]. The
+    /// length prefix is validated against the buffer before the slice is
+    /// taken.
+    pub fn packed(&mut self) -> Result<Reader<'a>> {
+        let view = self.bytes_view()?;
+        Ok(Reader {
+            data: view,
+            pos: 0,
+            depth: self.depth,
+            limits: self.limits,
+        })
     }
 
     pub fn data(&self) -> &'a [u8] {
