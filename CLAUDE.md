@@ -41,9 +41,10 @@ All 15 slices have landed (one commit each on `main`, mirroring
 | 14. sbe-C View / GroupView | 8 | done |
 | 15. sbe-D XML — saxlite + parse_xml_schema + xml_to_proto + proto_to_xml | 26 | done |
 
-Workspace currently runs **304 tests** (one shy of the ~305 target —
-one TS view test was inlined into another). `cargo clippy --workspace
---tests` is clean.
+The per-slice counts above are historical; `cargo test --workspace` is
+the number (457 at the time of writing, 2026-09-08). `cargo clippy
+--all-targets --all-features --workspace -- -D warnings` is clean and
+gates merges.
 
 ## Cross-port wire contracts (don't re-derive)
 
