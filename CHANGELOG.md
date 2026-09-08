@@ -13,6 +13,32 @@ format changes.
 
 ### Added
 
+- **The v1.11 bind-time placement checks, over the import closure**
+  ([#25](https://github.com/trendvidia/protowire-rust/issues/25)).
+  `validate_descriptor` / `validate_file` now enforce, besides the
+  reserved-name rule, `(pxf.key)` placement (draft `-01` §3.13.1: a
+  repeated message-typed field whose value names a singular string field
+  of the element message), `(pxf.default)` placement ("Default
+  Placement": never a `repeated`, `map` or group field, nor a message
+  type outside `Timestamp`, `Duration`, the nine `*Value` wrappers,
+  `pxf.BigInt`, `pxf.Decimal`, `pxf.BigFloat`), and the two oneof rules
+  ("Oneof Members": at most one `(pxf.default)` per oneof, and no
+  `(pxf.required)` on a member). All four families cover the bound file
+  **and its transitive imports** ("Scope of Bind-Time Checks"): a
+  violation in an imported `.proto` is reported, attributed to the file
+  that declares it, a diamond is checked once, and results are memoized
+  per file descriptor at two grains (closure and file) keyed on
+  descriptor identity, so the wider check costs less per decode than the
+  single-file walk it replaces. `ViolationKind` gains `KeyOption`,
+  `DefaultOption`, `RequiredOption`; `Violation` gains `detail`; the
+  decode error header is `PXF schema violations:`. The vendored
+  `pxf/annotations.proto` gains `key = 1316` and `annotations::get_key`
+  reads it. **This narrows accepted schema input**: a schema carrying any
+  of these placements bound before and is rejected now, over the whole
+  closure — every rejected placement is one no implementation could
+  honor, and the diagnostic names the field by fully-qualified name (the
+  spec repo's STABILITY.md records the narrowing under v1.11).
+
 - **Every HARDENING § Mandatory limit is enforced, and configurable per
   call** ([#33](https://github.com/trendvidia/protowire-rust/issues/33)).
   `MaxMessageSize` (64 MiB, the total input to one decode or parse),

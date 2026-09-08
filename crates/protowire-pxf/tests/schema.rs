@@ -134,9 +134,14 @@ fn unmarshal_rejects_non_conformant_schema() {
         UnmarshalOptions::default(),
     )
     .unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("PXF schema reserved-name violations"));
+    let text = err.to_string();
+    assert!(text.contains("PXF schema violations:"), "{text}");
+    assert!(
+        text.contains(
+            "message field \"schema.test.v1.FieldNull.null\" uses PXF-reserved name \"null\""
+        ),
+        "{text}"
+    );
 }
 
 #[test]
@@ -147,9 +152,14 @@ fn unmarshal_full_also_gated() {
         UnmarshalOptions::default(),
     )
     .unwrap_err();
-    assert!(err
-        .to_string()
-        .contains("PXF schema reserved-name violations"));
+    let text = err.to_string();
+    assert!(text.contains("PXF schema violations:"), "{text}");
+    assert!(
+        text.contains(
+            "message field \"schema.test.v1.FieldNull.null\" uses PXF-reserved name \"null\""
+        ),
+        "{text}"
+    );
 }
 
 #[test]

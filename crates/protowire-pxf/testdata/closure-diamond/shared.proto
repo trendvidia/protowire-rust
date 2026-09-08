@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Reached through both arms of the diamond; reported once.
+syntax = "proto3";
+package closure_diamond_test.shared;
+
+import "pxf/annotations.proto";
+
+message Shared {
+  repeated string tags = 1 [(pxf.default) = "dup"];
+}

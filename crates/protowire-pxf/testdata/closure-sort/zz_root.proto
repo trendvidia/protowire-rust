@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+syntax = "proto3";
+package closure_sort_test.root;
+
+import "closure-sort/mm_mid.proto";
+
+message Root {
+  closure_sort_test.mid.Mid mid = 1;
+  string false = 2;
+}

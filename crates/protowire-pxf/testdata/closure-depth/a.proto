@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+syntax = "proto3";
+package closure_depth_test.a;
+
+import "closure-depth/b.proto";
+
+message Root {
+  closure_depth_test.b.Mid mid = 1;
+}

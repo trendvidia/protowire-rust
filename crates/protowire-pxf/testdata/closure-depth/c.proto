@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Three imports down from the bound file, and no field of Root is typed
+// by this file (draft -01 "Scope of Bind-Time Checks"; protowire-rust#25).
+syntax = "proto3";
+package closure_depth_test.c;
+
+import "pxf/annotations.proto";
+
+message Leaf {
+  map<string, string> labels = 1 [(pxf.default) = "nope"];
+}

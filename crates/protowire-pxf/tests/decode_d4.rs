@@ -248,14 +248,14 @@ fn synthetic_oneof_default_still_applies() {
     assert_eq!(field_value(&m, "opt"), Value::String("syn".into()));
 }
 
-// ---------------- (pxf.default) placement on repeated / map (#23) ----------------
+// ---------------- (pxf.default) placement on repeated / map (#23, #25) ----------------
 //
 // A (pxf.default) carries one PXF literal, so it can denote a singular
-// field only (draft -01 §annotation-extensions, "Default Placement"). A
-// single literal on a repeated field MUST NOT be applied as a one-element
-// list: the resulting pb output would differ from a port that rejects the
-// schema. Until the v1.11 bind-time check lands (#25) the runtime guard
-// is what refuses it.
+// field only (draft -01 §annotation-extensions, "Default Placement"). The
+// v1.11 bind-time check (#25) rejects the schema before any document is
+// read; the runtime guard (#23) stays load-bearing for callers that set
+// `skip_validate`, since a single literal on a repeated field MUST NOT be
+// applied as a one-element list under any revision of the spec.
 
 const PLACEMENT_FDS: &[u8] = include_bytes!("../testdata/default-placement-test.binpb");
 
@@ -266,10 +266,26 @@ fn placement_msg(name: &str) -> MessageDescriptor {
         .unwrap_or_else(|| panic!("missing {name}"))
 }
 
+fn skip_validate() -> UnmarshalOptions<'static> {
+    UnmarshalOptions {
+        skip_validate: true,
+        ..Default::default()
+    }
+}
+
 #[test]
-fn repeated_default_is_rejected_not_applied_as_one_element_list() {
+fn repeated_default_is_rejected_at_bind_time_and_by_the_runtime_guard() {
     let desc = placement_msg("default_placement_test.v1.RepeatedDefault");
     let err = unmarshal_full("", &desc, UnmarshalOptions::default()).expect_err("must reject");
+    assert!(err.msg.starts_with("PXF schema violations:"), "{}", err.msg);
+    assert!(
+        err.msg.contains("field \"default_placement_test.v1.RepeatedDefault.tags\": invalid (pxf.default) = \"ignored\": (pxf.default) is not valid on repeated fields"),
+        "{}",
+        err.msg
+    );
+    // Bypassing the bind-time check, the placement is still never applied
+    // as a one-element list.
+    let err = unmarshal_full("", &desc, skip_validate()).expect_err("must reject");
     assert_eq!(
         err.msg,
         "default values not supported for repeated field \"tags\""
@@ -280,20 +296,31 @@ fn repeated_default_is_rejected_not_applied_as_one_element_list() {
 fn map_default_is_rejected_naming_the_placement() {
     let desc = placement_msg("default_placement_test.v1.MapDefault");
     let err = unmarshal_full("", &desc, UnmarshalOptions::default()).expect_err("must reject");
-    // Names the placement, not the synthetic `LabelsEntry` message type.
+    assert!(
+        err.msg.contains("field \"default_placement_test.v1.MapDefault.labels\": invalid (pxf.default) = \"ignored\": (pxf.default) is not valid on map fields"),
+        "{}",
+        err.msg
+    );
+    // The runtime guard names the placement, not the synthetic
+    // `LabelsEntry` message type.
+    let err = unmarshal_full("", &desc, skip_validate()).expect_err("must reject");
     assert_eq!(
         err.msg,
         "default values not supported for map field \"labels\""
     );
 }
 
-/// A document that supplies the field is unaffected by the annotation: the
-/// guard runs only for absent fields, so existing documents keep decoding.
+/// The bind-time check is independent of what the document contains: a
+/// document that supplies the field is rejected too. Only with
+/// `skip_validate` does it decode, and then the guard runs only for
+/// absent fields.
 #[test]
-fn repeated_default_schema_still_decodes_when_field_is_supplied() {
+fn repeated_default_schema_is_rejected_even_when_field_is_supplied() {
     let desc = placement_msg("default_placement_test.v1.RepeatedDefault");
-    let (m, _) = unmarshal_full("tags = [\"a\"]", &desc, UnmarshalOptions::default())
-        .expect("supplied field decodes");
+    unmarshal_full("tags = [\"a\"]", &desc, UnmarshalOptions::default())
+        .expect_err("rejected independently of the document");
+    let (m, _) = unmarshal_full("tags = [\"a\"]", &desc, skip_validate())
+        .expect("supplied field decodes under skip_validate");
     assert_eq!(
         field_value(&m, "tags"),
         Value::List(vec![Value::String("a".into())])

@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Violations from several files sort by declaring file first, then by
+// element, so one file's violations stay together in the error text.
+syntax = "proto3";
+package closure_sort_test.mid;
+
+message Mid {
+  string null = 1;
+  string true = 2;
+}
