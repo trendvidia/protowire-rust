@@ -55,6 +55,24 @@ format changes.
 
 ### Fixed
 
+- **The lexer reads fractional and `µs` duration literals** (`1.5ms`,
+  `312.5µs`, `1h30m0.5s`, `2µs`)
+  ([#26](https://github.com/trendvidia/protowire-rust/issues/26)). Draft
+  `-01` §3.3 admits `duration-segment = 1*DIGIT [ "." 1*DIGIT ] time-unit`
+  with `µs` (U+00B5) among the units, and the encoder writes exactly those
+  forms for any `google.protobuf.Duration` that is not a whole multiple of
+  its largest unit — so this port could not read its own output for a
+  measured latency. Two defects inherited from the Go reference lexer
+  (fixed there in protowire-go#76): the number path decided *float* on
+  seeing `.` before it looked for a unit, and the duration scan was
+  ASCII-only. The lexer now consumes an optional fraction first and takes
+  the duration branch when a unit (or the `C2 B5` micro sign) follows;
+  `1.5` stays a float, `1.5e3ms` stays a float plus an identifier, `1.ms`
+  stays `1.` plus an identifier, and U+03BC GREEK SMALL LETTER MU is not a
+  unit. The 47-case token table from protowire-go and a marshal → read-back
+  property test over every `Duration.String()` branch pin it. An illegal
+  non-ASCII character is now reported as one token naming the character,
+  not one per UTF-8 byte.
 - README and CONTRIBUTING both claimed an MSRV of **1.74**, which had not
   matched `Cargo.toml` since the pin moved to 1.82. Both now state 1.85,
   and CONTRIBUTING no longer describes the workspace as depending on

@@ -1769,6 +1769,8 @@ fn parse_go_duration(s: &str) -> Result<(i64, i32), String> {
         let (unit_nanos, unit_len): (i128, usize) = match (bytes[i], next) {
             (b'n', Some(b's')) => (1, 2),
             (b'u', Some(b's')) => (1_000, 2),
+            // "µs": U+00B5 MICRO SIGN (C2 B5) then 's' (draft §3.3 micro-us).
+            (0xC2, Some(0xB5)) if bytes.get(i + 2) == Some(&b's') => (1_000, 3),
             (b'm', Some(b's')) => (1_000_000, 2),
             (b's', _) => (1_000_000_000, 1),
             (b'm', _) => (60_000_000_000, 1),
