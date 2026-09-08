@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+syntax = "proto3";
+package closure_diamond_test.top;
+
+import "closure-diamond/left.proto";
+import "closure-diamond/right.proto";
+
+message Top {
+  closure_diamond_test.left.Left l = 1;
+  closure_diamond_test.right.Right r = 2;
+}

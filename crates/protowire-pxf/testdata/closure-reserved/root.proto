@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+syntax = "proto3";
+package closure_reserved_test.root;
+
+import "closure-reserved/imported.proto";
+
+message Root {
+  closure_reserved_test.imported.Inner inner = 1;
+}

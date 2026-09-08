@@ -1,0 +1,62 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Every placement draft -01 "Default Placement" and §3.13.1 "Schema
+// Placement" accept: singular scalars of every kind, an enum, and exactly
+// the message types a PXF literal can denote; a well-placed (pxf.key); a
+// (pxf.required) outside any oneof; one (pxf.default) per oneof. This
+// file must validate clean (protowire-rust#25).
+syntax = "proto3";
+package placement_accepted_test.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "pxf/annotations.proto";
+import "pxf/bignum.proto";
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_VIEWER = 1;
+}
+
+message EveryAcceptedPlacement {
+  string s = 1 [(pxf.default) = "hello"];
+  bool b = 2 [(pxf.default) = "true"];
+  int32 i32 = 3 [(pxf.default) = "-1"];
+  int64 i64 = 4 [(pxf.default) = "-2"];
+  uint32 u32 = 5 [(pxf.default) = "1"];
+  uint64 u64 = 6 [(pxf.default) = "2"];
+  float f = 7 [(pxf.default) = "1.5"];
+  double d = 8 [(pxf.default) = "2.5"];
+  bytes by = 9 [(pxf.default) = "aGk="];
+  Role r = 10 [(pxf.default) = "ROLE_VIEWER"];
+  google.protobuf.Timestamp ts = 11 [(pxf.default) = "2026-01-01T00:00:00Z"];
+  google.protobuf.Duration dur = 12 [(pxf.default) = "5s"];
+  google.protobuf.BoolValue w_bool = 13 [(pxf.default) = "true"];
+  google.protobuf.BytesValue w_bytes = 14 [(pxf.default) = "aGk="];
+  google.protobuf.DoubleValue w_double = 15 [(pxf.default) = "1.5"];
+  google.protobuf.FloatValue w_float = 16 [(pxf.default) = "2.5"];
+  google.protobuf.Int32Value w_i32 = 17 [(pxf.default) = "-1"];
+  google.protobuf.Int64Value w_i64 = 18 [(pxf.default) = "-2"];
+  google.protobuf.StringValue w_string = 19 [(pxf.default) = "hi"];
+  google.protobuf.UInt32Value w_u32 = 20 [(pxf.default) = "1"];
+  google.protobuf.UInt64Value w_u64 = 21 [(pxf.default) = "2"];
+  pxf.BigInt bi = 22 [(pxf.default) = "42"];
+  pxf.Decimal dec = 23 [(pxf.default) = "3.14"];
+  pxf.BigFloat bf = 24 [(pxf.default) = "2.718"];
+  string req = 25 [(pxf.required) = true];
+  optional string opt = 26 [(pxf.default) = "syn"];
+  oneof choice {
+    string a = 27;
+    string c = 28 [(pxf.default) = "ccc"];
+  }
+}
+
+message Item {
+  string name = 1;
+  int32 n = 2;
+}
+
+message KeyedOk {
+  repeated Item items = 1 [(pxf.key) = "name"];
+}

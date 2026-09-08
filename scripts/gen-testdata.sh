@@ -44,6 +44,60 @@ buf build --as-file-descriptor-set --exclude-source-info \
 echo "wrote crates/protowire-pxf/testdata/default-placement-test.binpb (buf)"
 
 buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/group-placement-test.proto \
+  -o crates/protowire-pxf/testdata/group-placement-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/group-placement-test.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/placement-accepted-test.proto \
+  -o crates/protowire-pxf/testdata/placement-accepted-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/placement-accepted-test.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/key-placement-test.proto \
+  -o crates/protowire-pxf/testdata/key-placement-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/key-placement-test.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/oneof-two-defaults-test.proto \
+  -o crates/protowire-pxf/testdata/oneof-two-defaults-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/oneof-two-defaults-test.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/oneof-required-test.proto \
+  -o crates/protowire-pxf/testdata/oneof-required-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/oneof-required-test.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/closure-depth/a.proto \
+  -o crates/protowire-pxf/testdata/closure-depth-a.binpb
+
+echo "wrote crates/protowire-pxf/testdata/closure-depth-a.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/closure-diamond/top.proto \
+  -o crates/protowire-pxf/testdata/closure-diamond-top.binpb
+
+echo "wrote crates/protowire-pxf/testdata/closure-diamond-top.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/closure-sort/zz_root.proto \
+  -o crates/protowire-pxf/testdata/closure-sort-zz_root.binpb
+
+echo "wrote crates/protowire-pxf/testdata/closure-sort-zz_root.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/closure-reserved/root.proto \
+  -o crates/protowire-pxf/testdata/closure-reserved-root.binpb
+
+echo "wrote crates/protowire-pxf/testdata/closure-reserved-root.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
   --path crates/protowire-pxf/testdata/hardening-test.proto \
   -o crates/protowire-pxf/testdata/hardening-test.binpb
 

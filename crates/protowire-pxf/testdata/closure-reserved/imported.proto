@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// The runtime probe in protowire-rust#25: a reserved name in an imported
+// file was findable (validate_descriptor(Inner) reported it) but never
+// reached from the descriptor a caller binds (Root).
+syntax = "proto3";
+package closure_reserved_test.imported;
+
+message Inner {
+  string null = 1;
+}
