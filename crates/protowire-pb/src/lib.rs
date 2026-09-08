@@ -17,5 +17,7 @@
 pub mod codec;
 pub mod wire;
 
-pub use codec::{marshal, read_message, unmarshal, write_message, Message};
+pub use codec::{
+    marshal, read_message, unmarshal, write_map_entry, write_message, MapEntryField, Message,
+};
 pub use wire::{Error, Reader, Result, WireType, Writer};
