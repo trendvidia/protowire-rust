@@ -55,6 +55,21 @@ format changes.
 
 ### Fixed
 
+- **Bool map keys accept exactly the spellings the grammar admits**
+  ([#31](https://github.com/trendvidia/protowire-rust/issues/31)). A
+  `map<bool, V>` key was matched against the text `true` / `false` only, so
+  the bare integers `0` / `1` — the "bool encoded as 0/1" spelling draft
+  `-01` § Entries and Keys names, which Go and Java bind — were a syntax
+  error here. A bool key is now the keyword `true` / `false` bare (decided
+  in [protowire#284](https://github.com/trendvidia/protowire/issues/284)),
+  the bare integers `0` / `1`, or the quoted literals `"true"` / `"false"`;
+  every other spelling (`t`, `TRUE`, `yes`, `"1"`, `"0"`, `"TRUE"`, …) is an
+  error naming the key. The keyword bare on a `map<string, V>` is rejected
+  too — the string is spelled quoted — and the AST parser admits a bool key
+  with the `:` tail so `format` and `validate` see the same documents the
+  decoder does. The spec repo's `testdata/map-keys/` corpus is vendored
+  under `crates/protowire-pxf/testdata/map-keys/` and driven by
+  `tests/map_keys.rs`.
 - README and CONTRIBUTING both claimed an MSRV of **1.74**, which had not
   matched `Cargo.toml` since the pin moved to 1.82. Both now state 1.85,
   and CONTRIBUTING no longer describes the workspace as depending on

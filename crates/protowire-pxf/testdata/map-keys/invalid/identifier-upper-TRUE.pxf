@@ -1,0 +1,7 @@
+@type mapkeys.v1.Flags
+
+# An identifier key on a bool K matches nothing: an identifier names a
+# field, and a map has none. "TRUE" is not a bool literal in any case.
+# MUST be rejected.
+
+by_flag = { TRUE: "v" }
