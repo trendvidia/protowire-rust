@@ -8,6 +8,11 @@
 //   dump-envelope                        canonical Envelope → pb hex
 //   dump-envelope --pb  FDS MESSAGE DOC  PXF DOC decoded against MESSAGE in FDS → pb hex
 //   dump-envelope --sbe FDS MESSAGE DOC  same → SBE hex
+//   dump-envelope --vector NAME          a named wire vector from the spec repo's
+//                                        testdata/envelope/ → pb hex (protowire#295)
+//
+// The vector mode is compared with a checked-in golden rather than with the
+// other ports, so a layout every port shares wrongly still fails.
 //
 // The fixture modes apply the PXF annotations the descriptor carries, which
 // is how the gate proves this port reads (pxf.required) = 1314,
@@ -17,11 +22,12 @@
 // must reject.
 //
 // Exit 0 with hex on stdout; 1 with "reject: <reason>" on stderr when the
-// schema rejects DOC; 2 for anything that is the harness's fault.
+// schema rejects DOC; 2 for anything that is the harness's fault; 3 with
+// "not-implemented: <name>" for a vector this port has not built.
 
 use prost::Message as _;
 use prost_reflect::DescriptorPool;
-use protowire_envelope::Envelope;
+use protowire_envelope::{AppError, Envelope};
 use protowire_pxf::{unmarshal_full, UnmarshalOptions};
 use protowire_sbe::Codec;
 
@@ -32,8 +38,34 @@ fn main() {
         [mode, fds, message, doc] if mode == "--pb" || mode == "--sbe" => {
             dump_fixture(mode, fds, message, doc)
         }
-        _ => fatal(2, "usage: dump-envelope [--pb|--sbe FDS MESSAGE DOC]"),
+        [mode, name] if mode == "--vector" => dump_vector(name),
+        _ => fatal(
+            2,
+            "usage: dump-envelope [--pb|--sbe FDS MESSAGE DOC | --vector NAME]",
+        ),
     }
+}
+
+/// Print a wire vector the gate checks against a golden. The named vectors
+/// are the spec repo's testdata/envelope/NAME.textproto; `zero-map-entry`
+/// is `error { metadata { key: "" value: "" } }`, whose golden is
+/// 22062a040a001200 — both fields of the entry written, empty or not.
+fn dump_vector(name: &str) {
+    let env = match name {
+        "zero-map-entry" => {
+            let mut err = AppError::default();
+            err.metadata.insert(String::new(), String::new());
+            Envelope {
+                error: Some(err),
+                ..Envelope::default()
+            }
+        }
+        _ => {
+            eprintln!("not-implemented: {name}");
+            std::process::exit(3)
+        }
+    };
+    println!("{}", hex(&protowire_pb::marshal(&env)));
 }
 
 fn fatal(code: i32, msg: impl std::fmt::Display) -> ! {

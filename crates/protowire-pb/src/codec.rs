@@ -17,7 +17,13 @@
 //! - `string` and `bytes`: length-delimited.
 //! - nested messages: length-delimited.
 //! - repeated fields: one tag+value per element (non-packed).
-//! - maps: each entry is a length-delimited `MapEntry { key=1; value=2 }`.
+//! - maps: each entry is a length-delimited `MapEntry { key=1; value=2 }`,
+//!   and **both fields are always written, zero-valued or not** — presence
+//!   lives in the entry, not in its fields, which is the layout
+//!   protobuf-go, protoc and C++ protobuf write (protowire#295). The
+//!   proto3 zero-skip applies to singular fields of a message, never to
+//!   the key or value of an entry; [`write_map_entry`] is the helper that
+//!   gets this right so impls stop hand-rolling the entry.
 
 use crate::wire::{Error, Reader, Result, WireType, Writer, MAX_NESTING_DEPTH};
 
@@ -66,6 +72,116 @@ pub fn write_message<M: Message>(w: &mut Writer, field_number: u32, msg: &M) {
     w.raw(&bytes);
 }
 
+/// A value that can be the key or the value of a `map<K, V>` entry: it
+/// knows its wire type and how to write itself, so [`write_map_entry`] can
+/// write it unconditionally. Signed integers write proto3 `int32` / `int64`
+/// (plain varint, sign-extended); a `sint*` key or value writes through
+/// [`Writer::zigzag32`] / [`Writer::zigzag64`] by hand — still both fields,
+/// always.
+pub trait MapEntryField {
+    const WIRE_TYPE: WireType;
+    fn write_to(&self, w: &mut Writer);
+}
+
+impl MapEntryField for str {
+    const WIRE_TYPE: WireType = WireType::LengthDelimited;
+    fn write_to(&self, w: &mut Writer) {
+        w.string(self);
+    }
+}
+
+impl MapEntryField for [u8] {
+    const WIRE_TYPE: WireType = WireType::LengthDelimited;
+    fn write_to(&self, w: &mut Writer) {
+        w.bytes(self);
+    }
+}
+
+impl MapEntryField for bool {
+    const WIRE_TYPE: WireType = WireType::Varint;
+    fn write_to(&self, w: &mut Writer) {
+        w.varint(u64::from(*self));
+    }
+}
+
+impl MapEntryField for i32 {
+    const WIRE_TYPE: WireType = WireType::Varint;
+    fn write_to(&self, w: &mut Writer) {
+        w.varint_i32(*self);
+    }
+}
+
+impl MapEntryField for i64 {
+    const WIRE_TYPE: WireType = WireType::Varint;
+    fn write_to(&self, w: &mut Writer) {
+        w.varint_i64(*self);
+    }
+}
+
+impl MapEntryField for u32 {
+    const WIRE_TYPE: WireType = WireType::Varint;
+    fn write_to(&self, w: &mut Writer) {
+        w.varint(u64::from(*self));
+    }
+}
+
+impl MapEntryField for u64 {
+    const WIRE_TYPE: WireType = WireType::Varint;
+    fn write_to(&self, w: &mut Writer) {
+        w.varint(*self);
+    }
+}
+
+impl MapEntryField for f32 {
+    const WIRE_TYPE: WireType = WireType::Fixed32;
+    fn write_to(&self, w: &mut Writer) {
+        w.float(*self);
+    }
+}
+
+impl MapEntryField for f64 {
+    const WIRE_TYPE: WireType = WireType::Fixed64;
+    fn write_to(&self, w: &mut Writer) {
+        w.double(*self);
+    }
+}
+
+impl<M: Message> MapEntryField for M {
+    const WIRE_TYPE: WireType = WireType::LengthDelimited;
+    fn write_to(&self, w: &mut Writer) {
+        let mut inner = Writer::new();
+        self.encode_to(&mut inner);
+        let bytes = inner.finish();
+        w.varint(bytes.len() as u64);
+        w.raw(&bytes);
+    }
+}
+
+/// Write one entry of a `map<K, V>` field at `field_number`: a
+/// length-delimited `MapEntry { key = 1; value = 2 }` carrying **both**
+/// fields, zero-valued or not. That is the layout protobuf-go, protoc and
+/// C++ protobuf write (STABILITY.md promise 2; protowire#295): presence
+/// lives in the entry, so an empty key or a zero value is still written.
+/// Every hand-rolled entry in this workspace had applied the proto3
+/// zero-skip inside the entry and got it wrong the same way; write through
+/// this instead.
+pub fn write_map_entry<K: MapEntryField + ?Sized, V: MapEntryField + ?Sized>(
+    w: &mut Writer,
+    field_number: u32,
+    key: &K,
+    value: &V,
+) {
+    let mut entry = Writer::new();
+    entry.tag(1, K::WIRE_TYPE);
+    key.write_to(&mut entry);
+    entry.tag(2, V::WIRE_TYPE);
+    value.write_to(&mut entry);
+    let bytes = entry.finish();
+    w.tag(field_number, WireType::LengthDelimited);
+    w.varint(bytes.len() as u64);
+    w.raw(&bytes);
+}
+
 /// Read a length-delimited nested message. The reader's tag is already consumed.
 ///
 /// Increments `r.depth` for the duration of the inner decode and rejects with
@@ -107,6 +223,45 @@ pub fn read_message<M: Message>(r: &mut Reader<'_>) -> Result<M> {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+
+    /// A map entry carries both fields, zero-valued or not (protowire#295).
+    /// The bytes are the spec repo's golden for
+    /// `testdata/envelope/zero-map-entry`, derived from `protoc --encode`
+    /// and protobuf-go's deterministic marshal — the reference's bytes,
+    /// not this codec's own decoder.
+    #[test]
+    fn map_entry_always_carries_key_and_value() {
+        let mut w = Writer::new();
+        write_map_entry(&mut w, 5, "", "");
+        assert_eq!(w.finish(), vec![0x2a, 0x04, 0x0a, 0x00, 0x12, 0x00]);
+
+        // The same shape protobuf-go's TestConformance_MapEntriesCarryZeroValues
+        // pins for map<string,int64> at field 18 and map<int32,Inner> at 19.
+        let mut w = Writer::new();
+        write_map_entry(&mut w, 18, "zero", &0i64);
+        assert_eq!(
+            w.finish(),
+            vec![0x92, 0x01, 0x08, 0x0a, 0x04, b'z', b'e', b'r', b'o', 0x10, 0x00],
+            "\"zero\" → 0 carries its value"
+        );
+        let mut w = Writer::new();
+        write_map_entry(&mut w, 18, "", &-1i64);
+        assert_eq!(
+            w.finish(),
+            vec![
+                0x92, 0x01, 0x0d, 0x0a, 0x00, 0x10, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                0xff, 0x01
+            ],
+            "\"\" → -1 carries its key"
+        );
+        let mut w = Writer::new();
+        write_map_entry(&mut w, 19, &0i32, &Inner::default());
+        assert_eq!(
+            w.finish(),
+            vec![0x9a, 0x01, 0x04, 0x08, 0x00, 0x12, 0x00],
+            "0 → {{}} carries both"
+        );
+    }
 
     // --- Test message types ---
     //

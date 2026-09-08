@@ -38,6 +38,23 @@ format changes.
   as a block (`at: { seconds = … }`) where singular and repeated positions
   and every other port write the literal (`at: 2026-01-01T00:00:00Z`).
   Both forms still read; marshal output for such maps changes.
+- **A `pb` map entry always carries both its key and its value, zero-valued
+  or not** ([#32](https://github.com/trendvidia/protowire-rust/issues/32);
+  decided family-wide in
+  [protowire#295](https://github.com/trendvidia/protowire/issues/295)).
+  The envelope codec wrote a `metadata` entry the way it writes any
+  message, with proto3 zero-skipping inside it, so `"" → ""` went out as
+  `22 02 2a 00` where protobuf-go, protoc and C++ protobuf write
+  `22 06 2a 04 0a 00 12 00`. Every reader in the family accepted all three
+  layouts measured, so the divergence was lossless and invisible until the
+  spec repo added a golden-checked wire vector. This **changes pb bytes**
+  for entries with an empty key or value (STABILITY.md promise 2; the spec
+  repo's v1.13 section records why they move); the reader still takes the
+  old omission. `protowire_pb::write_map_entry` and the `MapEntryField`
+  trait are new, so a `Message` impl no longer hand-rolls the entry — every
+  hand-rolled one had got it wrong the same way. `dump-envelope --vector
+  NAME` prints a named vector for the gate, and exits 3 with
+  `not-implemented: NAME` for one this port has not built.
 - **MSRV raised from 1.82 to 1.85.** `prost` 0.14.4 raised its own MSRV to
   rustc 1.85, and holding the workspace at 1.82 would have meant freezing
   a core decoding dependency off its upstream fix stream. Rust 1.85 shipped

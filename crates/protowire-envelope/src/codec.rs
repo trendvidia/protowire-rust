@@ -18,7 +18,7 @@
 //! the contract regardless.
 
 use protowire_pb::wire::{Reader, Result, WireType, Writer};
-use protowire_pb::{read_message, write_message, Message};
+use protowire_pb::{read_message, write_map_entry, write_message, Message};
 
 use crate::{AppError, Envelope, FieldError};
 
@@ -71,21 +71,10 @@ impl Message for AppError {
         for fe in &self.details {
             write_message(w, 4, fe);
         }
-        // map<string,string> entry: { key=1 string, value=2 string }
+        // map<string,string> entry: { key=1 string, value=2 string }, both
+        // always written, zero-valued or not (protowire#295).
         for (k, v) in &self.metadata {
-            let mut inner = Writer::new();
-            if !k.is_empty() {
-                inner.tag(1, WireType::LengthDelimited);
-                inner.string(k);
-            }
-            if !v.is_empty() {
-                inner.tag(2, WireType::LengthDelimited);
-                inner.string(v);
-            }
-            let bytes = inner.finish();
-            w.tag(5, WireType::LengthDelimited);
-            w.varint(bytes.len() as u64);
-            w.raw(&bytes);
+            write_map_entry(w, 5, k.as_str(), v.as_str());
         }
     }
 
@@ -317,6 +306,33 @@ mod tests {
             .step_by(2)
             .map(|i| u8::from_str_radix(&cleaned[i..i + 2], 16).unwrap())
             .collect()
+    }
+
+    /// The family's `zero-map-entry` wire vector (protowire#295): an
+    /// entry with an empty key and an empty value carries both fields. The
+    /// golden is the spec repo's `testdata/envelope/zero-map-entry
+    /// .expected.hex`, produced by `protoc --encode` and protobuf-go's
+    /// deterministic marshal — the reference's bytes, not this port's own
+    /// decoder. Before this pin the entry went out as `22 02 2a 00`.
+    #[test]
+    fn zero_map_entry_matches_golden() {
+        let mut env = Envelope::default();
+        let mut err = AppError::default();
+        err.metadata.insert(String::new(), String::new());
+        env.error = Some(err);
+        assert_eq!(marshal(&env), hex_decode("22062a040a001200"));
+    }
+
+    /// The reader takes both the golden layout and the omission a payload
+    /// written before protowire#295 may carry.
+    #[test]
+    fn zero_map_entry_reads_both_layouts() {
+        for hex in ["22062a040a001200", "22022a00", "22042a021200"] {
+            let got: Envelope = unmarshal(&hex_decode(hex)).unwrap();
+            let meta = &got.error.as_ref().unwrap().metadata;
+            assert_eq!(meta.len(), 1, "{hex}");
+            assert_eq!(meta.get(""), Some(&String::new()), "{hex}");
+        }
     }
 
     #[test]
