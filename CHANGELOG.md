@@ -11,25 +11,6 @@ format changes.
 
 ## [Unreleased]
 
-### Fixed
-
-- **`format` keeps the spelling of a map key where changing it would
-  change what the key denotes**
-  ([protowire#306](https://github.com/trendvidia/protowire/issues/306),
-  option 2). Since #36 a bare `true` / `false` is a bool key, so
-  `"true": "v"` on a `map<string, V>` and `true: "v"` are different
-  documents — and the formatter wrote the second for the first, turning a
-  document that binds into one that does not (`"null"` → `null`, no key at
-  all, likewise). `ast::MapEntry` gains `quoted`, the parser records it,
-  and the formatter reproduces it: a bare key stays bare; a quoted key is
-  unquoted only when it is identifier-safe and not a value keyword. One
-  existing output moves: a bare integer key was written quoted
-  (`404:` → `"404":`) and stays bare now, as the marshaller has always
-  written it. The spec repo's `fmt-keyword-keys` and `fmt-bare-keys`
-  pairs are vendored under `testdata/map-keys/` and pinned as fixed
-  points. `MapEntry` gains a public field, which is breaking for
-  struct-literal construction.
-
 ### Added
 
 - **The v1.11 bind-time placement checks, over the import closure**
@@ -164,6 +145,22 @@ format changes.
 
 ### Fixed
 
+- **`format` keeps the spelling of a map key where changing it would
+  change what the key denotes**
+  ([protowire#306](https://github.com/trendvidia/protowire/issues/306),
+  option 2). Since #36 a bare `true` / `false` is a bool key, so
+  `"true": "v"` on a `map<string, V>` and `true: "v"` are different
+  documents — and the formatter wrote the second for the first, turning a
+  document that binds into one that does not (`"null"` → `null`, no key at
+  all, likewise). `ast::MapEntry` gains `quoted`, the parser records it,
+  and the formatter reproduces it: a bare key stays bare; a quoted key is
+  unquoted only when it is identifier-safe and not a value keyword. One
+  existing output moves: a bare integer key was written quoted
+  (`404:` → `"404":`) and stays bare now, as the marshaller has always
+  written it. The spec repo's `fmt-keyword-keys` and `fmt-bare-keys`
+  pairs are vendored under `testdata/map-keys/` and pinned as fixed
+  points. `MapEntry` gains a public field, which is breaking for
+  struct-literal construction.
 - **The lexer reads fractional and `µs` duration literals** (`1.5ms`,
   `312.5µs`, `1h30m0.5s`, `2µs`)
   ([#26](https://github.com/trendvidia/protowire-rust/issues/26)). Draft
