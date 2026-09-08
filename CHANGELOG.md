@@ -11,8 +11,33 @@ format changes.
 
 ## [Unreleased]
 
+### Added
+
+- **`pxf.BigInt` and `pxf.Decimal` take their literal forms**
+  ([#34](https://github.com/trendvidia/protowire-rust/issues/34)). A bare
+  integer on a `pxf.BigInt` field and an integer or decimal literal on a
+  `pxf.Decimal` field decode to the wire messages of `pxf/bignum.proto`
+  (big-endian magnitude, sign flag, and for `Decimal` the scale exactly as
+  written: `1.00` has scale 2), in singular, repeated and map-value
+  positions and as a `(pxf.default)`; the encoder writes them back as
+  literals. The conversions are hand-rolled in `src/bignum.rs` — no
+  bignum dependency — and **`MaxNumericLiteralDigits` (4096) is enforced
+  before they run**: a literal of exactly 4096 digits decodes, one more
+  is rejected naming the limit. Before this a `pxf.BigInt` field rejected
+  every literal with `expected '{'`, which passed the corpus's reject
+  rows by accident and failed the accept row protowire#279 added.
+  `pxf.BigFloat`'s literal form is still open
+  ([#39](https://github.com/trendvidia/protowire-rust/issues/39);
+  its block form is unchanged). `check-decode` links `adversarial.v1.BigNumHolder` and
+  bounds `pxf.Decimal.scale` on the PB wire on both signs.
+
 ### Changed
 
+- **The encoder writes message shorthand for map values** — a
+  `Timestamp`, `Duration` or `*Value` wrapper as a map value was written
+  as a block (`at: { seconds = … }`) where singular and repeated positions
+  and every other port write the literal (`at: 2026-01-01T00:00:00Z`).
+  Both forms still read; marshal output for such maps changes.
 - **MSRV raised from 1.82 to 1.85.** `prost` 0.14.4 raised its own MSRV to
   rustc 1.85, and holding the workspace at 1.82 would have meant freezing
   a core decoding dependency off its upstream fix stream. Rust 1.85 shipped

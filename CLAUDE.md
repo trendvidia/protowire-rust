@@ -94,8 +94,10 @@ one TS view test was inlined into another). `cargo clippy --workspace
 
 ## Explicitly deferred
 
-- pxf `BigInt` / `Decimal` / `BigFloat` (`bignum_test.go`) — not in any
-  port yet.
+- pxf `BigFloat` literal form — `BigInt` and `Decimal` literals landed
+  (`src/bignum.rs`, hand-rolled decimal ↔ big-endian conversion, no bignum
+  dependency); `BigFloat` needs `big.Float`-compatible 256-bit rounding to
+  produce the reference's bytes and is still block-form only.
 - SBE XML round-trip via in-process protoc — Go has it (protocompile),
   TS doesn't, Rust likely won't unless we bind libprotoc.
 

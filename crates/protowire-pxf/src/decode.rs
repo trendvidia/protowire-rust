@@ -26,6 +26,9 @@ use crate::ast::{
     IntVal as AstIntVal, NullVal as AstNullVal, ProtoDirective, ProtoShape,
     StringVal as AstStringVal, TimestampVal as AstTimestampVal, Value as AstValue,
 };
+use crate::bignum::{
+    parse_big_int, parse_decimal, BigIntLit, DecimalLit, MAX_NUMERIC_LITERAL_DIGITS,
+};
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
 use crate::parser::MAX_NESTING_DEPTH;
@@ -165,6 +168,11 @@ struct Decoder<'a> {
     /// `decode_any_inner` so adversarial deep input rejects before the
     /// recursive descent overflows the native stack.
     depth: usize,
+    /// This call's `MaxNumericLiteralDigits`, applied to the document's
+    /// `pxf.BigInt` / `pxf.Decimal` literals before they are converted.
+    /// Schema literals — a `(pxf.default)` — stay under the constant: they
+    /// are the schema author's, not the document's.
+    max_digits: usize,
 }
 
 impl<'a> Decoder<'a> {
@@ -186,6 +194,7 @@ impl<'a> Decoder<'a> {
             },
             path_prefix: String::new(),
             depth: 0,
+            max_digits: MAX_NUMERIC_LITERAL_DIGITS,
         }
     }
 
@@ -1066,6 +1075,27 @@ impl<'a> Decoder<'a> {
             target.set_field(&value_fd, v);
             return Ok(true);
         }
+        // Arbitrary-precision literal forms (protowire-rust#34): a bare
+        // integer on a pxf.BigInt field, an integer or decimal literal on a
+        // pxf.Decimal field. Any other token — a `{` in particular — falls
+        // through to the block form, as for every message type. The digit
+        // cap runs before the quadratic conversion.
+        if full == "pxf.BigInt" && matches!(self.current.kind, TokenKind::Int) {
+            let pos = self.current.pos;
+            let lit = parse_big_int(&self.current.value, self.max_digits)
+                .map_err(|e| PxfError::new(pos, e))?;
+            set_big_int_fields(target, &lit);
+            self.advance();
+            return Ok(true);
+        }
+        if full == "pxf.Decimal" && matches!(self.current.kind, TokenKind::Int | TokenKind::Float) {
+            let pos = self.current.pos;
+            let lit = parse_decimal(&self.current.value, self.max_digits)
+                .map_err(|e| PxfError::new(pos, e))?;
+            set_decimal_fields(target, &lit);
+            self.advance();
+            return Ok(true);
+        }
         Ok(false)
     }
 
@@ -1331,7 +1361,49 @@ fn is_wkt_skip_recursion(full: &str) -> bool {
     full == "google.protobuf.Timestamp"
         || full == "google.protobuf.Duration"
         || full == "google.protobuf.Any"
+        || full == "pxf.BigInt"
+        || full == "pxf.Decimal"
+        || full == "pxf.BigFloat"
         || is_wrapper_full_name(full)
+}
+
+/// Write a parsed `pxf.BigInt` literal into its message: `abs` only when
+/// non-zero, `negative` only when set — the same fields the reference's
+/// `setBigIntFields` writes, so the pb bytes match.
+fn set_big_int_fields(target: &mut DynamicMessage, lit: &BigIntLit) {
+    let desc = target.descriptor();
+    if !lit.abs.is_empty() {
+        if let Some(fd) = desc.get_field_by_name("abs") {
+            target.set_field(&fd, Value::Bytes(lit.abs.clone().into()));
+        }
+    }
+    if lit.negative {
+        if let Some(fd) = desc.get_field_by_name("negative") {
+            target.set_field(&fd, Value::Bool(true));
+        }
+    }
+}
+
+/// Write a parsed `pxf.Decimal` literal into its message, mirroring the
+/// reference's `setDecimalFields`: `unscaled` only when non-zero, `scale`
+/// only when non-zero, `negative` only when set.
+fn set_decimal_fields(target: &mut DynamicMessage, lit: &DecimalLit) {
+    let desc = target.descriptor();
+    if !lit.unscaled.is_empty() {
+        if let Some(fd) = desc.get_field_by_name("unscaled") {
+            target.set_field(&fd, Value::Bytes(lit.unscaled.clone().into()));
+        }
+    }
+    if lit.scale != 0 {
+        if let Some(fd) = desc.get_field_by_name("scale") {
+            target.set_field(&fd, Value::I32(lit.scale));
+        }
+    }
+    if lit.negative {
+        if let Some(fd) = desc.get_field_by_name("negative") {
+            target.set_field(&fd, Value::Bool(true));
+        }
+    }
 }
 
 fn apply_default(
@@ -1458,6 +1530,30 @@ fn apply_message_default(
         })?;
         let v = parse_scalar_default(&value_fd, def, pos)?;
         sub.set_field(&value_fd, v);
+        parent.set_field(fd, Value::Message(sub));
+        return Ok(());
+    }
+    // Schema literals stay under the constant cap, not the call's: a
+    // (pxf.default) is the schema author's, not the document's.
+    if full == "pxf.BigInt" {
+        let lit = parse_big_int(def, MAX_NUMERIC_LITERAL_DIGITS).map_err(|e| {
+            PxfError::new(
+                pos,
+                format!("invalid default for field {:?}: {}", fd.name(), e),
+            )
+        })?;
+        set_big_int_fields(&mut sub, &lit);
+        parent.set_field(fd, Value::Message(sub));
+        return Ok(());
+    }
+    if full == "pxf.Decimal" {
+        let lit = parse_decimal(def, MAX_NUMERIC_LITERAL_DIGITS).map_err(|e| {
+            PxfError::new(
+                pos,
+                format!("invalid default for field {:?}: {}", fd.name(), e),
+            )
+        })?;
+        set_decimal_fields(&mut sub, &lit);
         parent.set_field(fd, Value::Message(sub));
         return Ok(());
     }
