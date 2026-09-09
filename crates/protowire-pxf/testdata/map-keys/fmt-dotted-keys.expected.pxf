@@ -1,0 +1,8 @@
+@type mapkeys.v1.Labels
+
+by_label = {
+  a.b: "quoted dotted"
+  c.d: "bare dotted"
+  ".e": "leading dot"
+  "1.5": "float-shaped"
+}

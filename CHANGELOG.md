@@ -11,6 +11,23 @@ format changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **A dotted string map key is written bare** (draft `-01` § Entries and
+  Keys, the Rust leg of
+  [protowire#313](https://github.com/trendvidia/protowire/issues/313)).
+  `is_valid_ident` (the marshaller) and `needs_quoting` (`format`)
+  stopped at `[A-Za-z0-9_]`, while the grammar's *ident-part* — and
+  `ident_safe_entry_name`, the test keyed entry names use — admits `.`;
+  so a key `a.b` was marshalled `"a.b":` and a quoted `"a.b"` kept its
+  quotes through `fmt`, where the text says bare. The decoder always read
+  `a.b:` as one identifier token, so only the writers move: both now
+  delegate to `ident_safe_entry_name`, one identifier-safe rule for the
+  document. `".e"` and `"1.5"` still fail *ident-start* and stay quoted.
+  The spec's third fmt pair, `fmt-dotted-keys`, is vendored and pinned.
+  A canonical-text change for dotted string keys; no binding or wire
+  change.
+
 ### Added
 
 - **Keyed repeated fields** (draft `-01` §3.13; [#20](https://github.com/trendvidia/protowire-rust/issues/20),
