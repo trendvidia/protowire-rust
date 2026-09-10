@@ -13,6 +13,7 @@
 //!    binary data.
 
 use crate::ast::{Document, Entry, Value};
+use crate::keyed::ident_safe_entry_name;
 
 #[derive(Debug, Clone)]
 pub struct FormatOptions {
@@ -189,31 +190,16 @@ fn quote_string(s: &str) -> String {
 }
 
 /// A quoted map key keeps its quotes unless it is identifier-safe: it
-/// matches the identifier production and is not one of the value keywords
-/// `null` / `true` / `false`. Bare, those keywords are a bool key or no
-/// key at all, and a key starting with a digit is an integer key, so
-/// unquoting such a key would change what it denotes — the same test the
-/// marshaller's `is_valid_ident` applies. First char must
-/// be `[A-Za-z_]`, subsequent chars must be `[A-Za-z0-9_]`. Numeric keys
-/// (e.g. `404`) end up quoted because the first char isn't ident-start.
+/// matches the identifier production (ident-start followed by ident-part
+/// bytes, dots included) and is not one of the value keywords `null` /
+/// `true` / `false`. Bare, those keywords are a bool key or no key at
+/// all, and a key starting with a digit is an integer key, so unquoting
+/// such a key would change what it denotes — the same test the
+/// marshaller's `is_valid_ident` applies, and the one keyed entry names
+/// use (protowire#306, #313). Numeric keys (e.g. `404`, `1.5`) and a
+/// leading-dot key stay quoted because the first char isn't ident-start.
 fn needs_quoting(s: &str) -> bool {
-    if s.is_empty() || s == "null" || s == "true" || s == "false" {
-        return true;
-    }
-    for (i, ch) in s.chars().enumerate() {
-        if i == 0 {
-            if !is_ident_start_char(ch) {
-                return true;
-            }
-        } else if !is_ident_start_char(ch) && !ch.is_ascii_digit() {
-            return true;
-        }
-    }
-    false
-}
-
-fn is_ident_start_char(ch: char) -> bool {
-    ch.is_ascii_alphabetic() || ch == '_'
+    !ident_safe_entry_name(s)
 }
 
 /// Standard base64 encode with `=` padding (Go's `base64.StdEncoding`).

@@ -324,7 +324,11 @@ fn bool_keyword_key_in_parser() {
 /// an integer key — the quoted identifier-safe `"plain"` canonicalizes to
 /// bare, `bare` stays bare. `fmt-bare-keys` (bool-keyed): a bare `true`
 /// and a bare `0` stay bare — the formatter does not add quotes the
-/// author did not write.
+/// author did not write. `fmt-dotted-keys` (string-keyed; protowire#313):
+/// the identifier production admits `.`, so the quoted `"a.b"`
+/// canonicalizes to bare and a bare `c.d` stays bare, as keyed entry
+/// names already did, while `".e"` and `"1.5"` fail ident-start and stay
+/// quoted.
 #[test]
 fn fmt_pairs_are_fixed_points_and_bind() {
     let dir = fixture_dir();
@@ -346,6 +350,16 @@ fn fmt_pairs_are_fixed_points_and_bind() {
             "fmt-bare-keys",
             "mapkeys.v1.Flags",
             vec![MapKey::Bool(false), MapKey::Bool(true)],
+        ),
+        (
+            "fmt-dotted-keys",
+            "mapkeys.v1.Labels",
+            vec![
+                MapKey::String(".e".into()),
+                MapKey::String("1.5".into()),
+                MapKey::String("a.b".into()),
+                MapKey::String("c.d".into()),
+            ],
         ),
     ] {
         let input = std::fs::read_to_string(dir.join(format!("{pair}.pxf"))).unwrap();

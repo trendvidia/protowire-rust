@@ -672,23 +672,18 @@ fn keyed_form_eligible(list: &[Value], key_fd: &FieldDescriptor) -> bool {
     true
 }
 
+/// Whether a string map key is identifier-safe: it matches the identifier
+/// production (ident-start followed by ident-part bytes, dots included)
+/// and is not one of the value keywords `null` / `true` / `false`, which
+/// bare are no key at all or a bool key. The marshaller writes a string
+/// map key bare exactly when this holds, and the formatter unquotes a
+/// quoted one under the same test, so the two agree on every key both can
+/// produce (protowire#306). It is the test keyed entry names use — one
+/// identifier-safe rule for the document, as draft -01 § Entries and Keys
+/// defines it (protowire#313; the alphabet used to stop at `[A-Za-z0-9_]`,
+/// so `"a.b"` was written quoted).
 fn is_valid_ident(s: &str) -> bool {
-    if s.is_empty() || s == "true" || s == "false" || s == "null" {
-        return false;
-    }
-    let bytes = s.as_bytes();
-    for (i, &b) in bytes.iter().enumerate() {
-        let is_letter = b.is_ascii_alphabetic() || b == b'_';
-        let is_digit = b.is_ascii_digit();
-        if i == 0 {
-            if !is_letter {
-                return false;
-            }
-        } else if !(is_letter || is_digit) {
-            return false;
-        }
-    }
-    true
+    ident_safe_entry_name(s)
 }
 
 fn format_map_key(k: &MapKey) -> String {
