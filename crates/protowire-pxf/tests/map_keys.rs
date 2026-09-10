@@ -5,7 +5,8 @@
 //!
 //! The fixture corpus under `testdata/map-keys/` is vendored verbatim from
 //! the spec repository (trendvidia/protowire `testdata/map-keys/`, commit
-//! fb3bff7 plus the two fmt pairs of trendvidia/protowire#311) and is
+//! 4519ff3: the bool-key documents, the two fmt pairs of
+//! trendvidia/protowire#311 and the dotted pair of #318) and is
 //! shared by every port; keep the two in sync when the spec repo adds
 //! fixtures. Its README states each document's verdict: the three
 //! at the top MUST bind to the keys true and false, and every document
