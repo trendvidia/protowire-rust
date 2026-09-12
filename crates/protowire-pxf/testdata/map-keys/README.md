@@ -60,6 +60,7 @@ keyed entry names. Decided as option 2 on #306.
 |---|---|
 | [`fmt-keyword-keys`](fmt-keyword-keys.pxf) | On a string-keyed map: `"true"`, `"false"`, `"null"` and `"123"` stay quoted; the quoted identifier-safe `"plain"` canonicalizes to bare; `bare` stays bare. The input also MUST bind, to six string keys. |
 | [`fmt-bare-keys`](fmt-bare-keys.pxf) | On a bool-keyed map: a bare `true` and a bare `0` stay bare — a formatter does not add quotes the author did not write. A fixed point; the input also MUST bind, to the keys true and false. |
+| [`fmt-dotted-keys`](fmt-dotted-keys.pxf) | On a string-keyed map: the *identifier* production admits `.`, so the quoted `"a.b"` canonicalizes to bare and a bare `c.d` stays bare — the same identifier-safe test keyed entry names already use (`user.name { }` is a legal unquoted entry name). `".e"` and `"1.5"` fail *ident-start* and stay quoted, so nothing float-shaped or leading-dot becomes bare. The marshaller writes `a.b:` bare under the same test. Both documents MUST bind, to four string keys. Issue #313, decided as (a): the ports' marshallers and formatters stopped at `[A-Za-z0-9_]` and wrote `"a.b":` where the text says bare. |
 
 Both pairs are comment-free apart from `@type`, as in
 [`testdata/keyed/`](../keyed/), so the byte-level expectation pins the
@@ -69,7 +70,10 @@ key was quoted on the way through `fmt` (`404:` → `"404":`); it stays
 bare now, as the marshaller has always written it.
 
 The formatter-side wiring is per port (the reference's is
-protowire-go#123); the marshaller side needs no change.
+protowire-go#123); the marshaller side needs no change for the first two
+pairs. The dotted pair moves both the formatter and the marshaller in
+every port, sequenced after that port's #306 change so the two spelling
+moves do not interleave (the reference's is protowire-go#125).
 
 ## Diagnostic
 
