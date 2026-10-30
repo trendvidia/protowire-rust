@@ -6,6 +6,19 @@ package sbe;
 
 import "google/protobuf/descriptor.proto";
 
+option csharp_namespace = "Protowire.Sbe";
+option go_package = "github.com/trendvidia/protos/sbe;sbe";
+option java_multiple_files = true;
+option java_package = "org.protowire.proto.sbe";
+
+// Extension numbers live in protowire's block in the global extension
+// registry, 1314–1363, granted by protocolbuffers/protobuf#28919; the SBE
+// sub-range is 1319–1326 (STABILITY.md promise 3). Before the block existed
+// these sat at 50100, 50101, 50200, 50300 and 50301, inside an unregistered
+// 50000–59999 squat. That range is retired and must never be reused: a
+// descriptor carrying it predates v1.12 and should be diagnosed as stale
+// rather than read.
+
 extend google.protobuf.FileOptions {
   // SBE schema identifier. Required on files containing SBE messages.
   uint32 schema_id = 1319;
