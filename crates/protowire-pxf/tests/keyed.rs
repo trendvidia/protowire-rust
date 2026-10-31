@@ -67,6 +67,7 @@ fn marshal_with_type(msg: &DynamicMessage, desc: &MessageDescriptor, type_url: &
             ..Default::default()
         },
     )
+    .unwrap()
 }
 
 fn children(msg: &DynamicMessage) -> Vec<DynamicMessage> {
@@ -150,7 +151,7 @@ fn redundant_agreeing_key_is_legal_and_dropped_by_fmt() {
     assert_eq!(kids.len(), 1);
     assert_eq!(string_field(&kids[0], "id"), "greeting");
     // The encoder writes the key once, as the entry name.
-    let out = marshal(&msg, &desc, MarshalOptions::default());
+    let out = marshal(&msg, &desc, MarshalOptions::default()).unwrap();
     assert_eq!(out.matches("id = ").count(), 1, "{out}");
     // fmt drops the redundant assignment.
     let mut doc = parse(&data).unwrap();
@@ -167,7 +168,7 @@ fn anonymous_duplicate_keys_stay_anonymous() {
     let kids = children(&msg);
     assert_eq!(kids.len(), 2);
     assert!(kids.iter().all(|k| string_field(k, "id") == "dup"));
-    let out = marshal(&msg, &desc, MarshalOptions::default());
+    let out = marshal(&msg, &desc, MarshalOptions::default()).unwrap();
     assert!(
         out.contains("children = ["),
         "duplicate keys must stay anonymous:\n{out}"
@@ -317,7 +318,7 @@ fn nested_keyed_blocks_encode_without_repeating_keys() {
     assert_eq!(string_field(outer, "id"), "outer");
     let inner = &children(outer)[0];
     assert_eq!(string_field(inner, "id"), "inner");
-    let out = marshal(&msg, &desc, MarshalOptions::default());
+    let out = marshal(&msg, &desc, MarshalOptions::default()).unwrap();
     assert!(!out.contains("id = \"outer\""), "{out}");
     assert!(!out.contains("id = \"inner\""), "{out}");
     assert!(out.contains("inner {"), "{out}");
@@ -339,13 +340,13 @@ fn encoder_falls_back_to_anonymous_form_when_ineligible() {
     };
     let mut root = DynamicMessage::new(desc.clone());
     root.set_field_by_name("children", Value::List(vec![mk("a"), mk("")]));
-    let out = marshal(&root, &desc, MarshalOptions::default());
+    let out = marshal(&root, &desc, MarshalOptions::default()).unwrap();
     assert!(out.contains("children = ["), "absent key:\n{out}");
     root.set_field_by_name("children", Value::List(vec![mk("a"), mk("a")]));
-    let out = marshal(&root, &desc, MarshalOptions::default());
+    let out = marshal(&root, &desc, MarshalOptions::default()).unwrap();
     assert!(out.contains("children = ["), "duplicate key:\n{out}");
     root.set_field_by_name("children", Value::List(vec![mk("a"), mk("b")]));
-    let out = marshal(&root, &desc, MarshalOptions::default());
+    let out = marshal(&root, &desc, MarshalOptions::default()).unwrap();
     assert_eq!(
         out,
         "children {\n  a {\n    type = \"T\"\n  }\n  b {\n    type = \"T\"\n  }\n}\n"

@@ -13,6 +13,15 @@ format changes.
 
 ### Fixed
 
+- **`marshal` refuses a `pxf.Decimal` past the bounds, and no longer hangs** (protowire#448). A scale near `i32::MAX` padded one digit at a time, and a negative one wrote up to 2^31 zeros. A scale past `MaxNumericLiteralDigits` on either sign now fails before any work, as does a `BigInt` or `Decimal` literal past the digit cap.
+- **A `pxf.BigFloat` with no literal fails instead of falling back to the block form**, as the reference does.
+
+### Changed
+
+- **`marshal` returns `Result<String, PxfError>`,** and `format_big_int` and `format_decimal` return `Result<String, String>`, so they can refuse a value.
+
+### Fixed
+
 - **`(pxf.required)` with `(pxf.default)` on one field is a bind-time
   violation** (draft `-01` § Required and Default;
   [#62](https://github.com/trendvidia/protowire-rust/issues/62)). Such a

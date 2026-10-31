@@ -108,13 +108,14 @@ pub fn parse_decimal(s: &str, max_digits: usize) -> Result<DecimalLit, String> {
 
 /// Render a `pxf.BigInt` as its literal: the magnitude in decimal with a
 /// leading `-` when negative. An empty magnitude is `0`, and never signed.
-pub fn format_big_int(abs: &[u8], negative: bool) -> String {
+pub fn format_big_int(abs: &[u8], negative: bool) -> Result<String, String> {
     let digits = be_bytes_to_decimal(abs);
-    if negative && digits != "0" {
+    let out = if negative && digits != "0" {
         format!("-{}", digits)
     } else {
         digits
-    }
+    };
+    bound_literal("pxf.BigInt", out)
 }
 
 /// Render a `pxf.Decimal` as its literal, preserving the scale: unscaled
@@ -122,30 +123,62 @@ pub fn format_big_int(abs: &[u8], negative: bool) -> String {
 /// negative scale means trailing zeros (value = unscaled × 10^(−scale)),
 /// so they are written out; the reference's formatter drops them, which
 /// loses the value, and is tracked against it.
-pub fn format_decimal(unscaled: &[u8], scale: i32, negative: bool) -> String {
+pub fn format_decimal(unscaled: &[u8], scale: i32, negative: bool) -> Result<String, String> {
+    // The scale is four bytes whoever wrote the message chose, so it is
+    // bounded before any work, on both signs.
+    let limit = MAX_NUMERIC_LITERAL_DIGITS;
+    if scale.unsigned_abs() as usize > limit {
+        return Err(format!(
+            "pxf.Decimal scale {} exceeds MaxNumericLiteralDigits={}",
+            scale, limit
+        ));
+    }
     let mut digits = be_bytes_to_decimal(unscaled);
-    let mut out = String::with_capacity(digits.len() + 2);
+    let mut out =
+        String::with_capacity(digits.len() + limit.min(scale.unsigned_abs() as usize) + 3);
     if negative {
         out.push('-');
     }
     if scale <= 0 {
         out.push_str(&digits);
-        for _ in 0..scale.unsigned_abs() {
-            out.push('0');
+        // Zero stays "0": nothing to shift.
+        if digits != "0" {
+            out.push_str(&"0".repeat(scale.unsigned_abs() as usize));
         }
-        return out;
+        return bound_literal("pxf.Decimal", out);
     }
     let scale = scale as usize;
     // Pad with leading zeros so there is at least one digit before the
     // point (unscaled 5, scale 2 → "0.05").
-    while digits.len() <= scale {
-        digits.insert(0, '0');
+    if digits.len() <= scale {
+        digits.insert_str(0, &"0".repeat(scale + 1 - digits.len()));
     }
     let (int_part, frac_part) = digits.split_at(digits.len() - scale);
     out.push_str(int_part);
     out.push('.');
     out.push_str(frac_part);
-    out
+    bound_literal("pxf.Decimal", out)
+}
+
+/// Refuses a literal past [`MAX_NUMERIC_LITERAL_DIGITS`]. Leading zeros are
+/// not significant, so `0.000…5` at the largest scale counts one digit.
+fn bound_literal(kind: &str, literal: String) -> Result<String, String> {
+    let limit = MAX_NUMERIC_LITERAL_DIGITS;
+    if literal.len() <= limit {
+        return Ok(literal);
+    }
+    let n = literal
+        .bytes()
+        .filter(u8::is_ascii_digit)
+        .skip_while(|&c| c == b'0')
+        .count();
+    if n > limit {
+        return Err(format!(
+            "{} renders to {} digits; MaxNumericLiteralDigits={}",
+            kind, n, limit
+        ));
+    }
+    Ok(literal)
 }
 
 /// Convert ASCII decimal digits to a big-endian magnitude with no leading
@@ -200,6 +233,29 @@ pub fn be_bytes_to_decimal(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_decimal_refuses_a_scale_past_the_bound_on_both_signs() {
+        for scale in [4097, -4097, i32::MAX, i32::MIN] {
+            let err = format_decimal(&[25], scale, false).unwrap_err();
+            assert!(err.contains("exceeds MaxNumericLiteralDigits"), "{err}");
+        }
+    }
+
+    #[test]
+    fn format_decimal_at_the_bound_renders_and_leading_zeros_do_not_count() {
+        let s = format_decimal(&[5], 4096, false).unwrap();
+        assert_eq!(s, format!("0.{}5", "0".repeat(4095)));
+        assert_eq!(format_decimal(&[], -4096, false).unwrap(), "0");
+    }
+
+    #[test]
+    fn a_literal_past_the_cap_is_refused() {
+        let err = format_decimal(&[10], -4096, false).unwrap_err();
+        assert!(err.contains("renders to 4098 digits"), "{err}");
+        let err = format_big_int(&vec![0xff; 2000], false).unwrap_err();
+        assert!(err.contains("pxf.BigInt renders to"), "{err}");
+    }
 
     #[test]
     fn digits_to_bytes_known_values() {
@@ -283,8 +339,8 @@ mod tests {
             parse_big_int("", 4096).unwrap_err(),
             "invalid big integer: "
         );
-        assert_eq!(format_big_int(&[42], true), "-42");
-        assert_eq!(format_big_int(&[], true), "0");
+        assert_eq!(format_big_int(&[42], true).unwrap(), "-42");
+        assert_eq!(format_big_int(&[], true).unwrap(), "0");
     }
 
     #[test]
@@ -326,12 +382,12 @@ mod tests {
             parse_decimal("1.5.2", 4096).unwrap_err(),
             "invalid decimal: 1.5.2"
         );
-        assert_eq!(format_decimal(&[5], 2, false), "0.05");
-        assert_eq!(format_decimal(&[100], 2, false), "1.00");
-        assert_eq!(format_decimal(&[0x30, 0x39], 2, true), "-123.45");
-        assert_eq!(format_decimal(&[42], 0, false), "42");
-        assert_eq!(format_decimal(&[5], -2, false), "500");
-        assert_eq!(format_decimal(&[], 1, true), "-0.0");
+        assert_eq!(format_decimal(&[5], 2, false).unwrap(), "0.05");
+        assert_eq!(format_decimal(&[100], 2, false).unwrap(), "1.00");
+        assert_eq!(format_decimal(&[0x30, 0x39], 2, true).unwrap(), "-123.45");
+        assert_eq!(format_decimal(&[42], 0, false).unwrap(), "42");
+        assert_eq!(format_decimal(&[5], -2, false).unwrap(), "500");
+        assert_eq!(format_decimal(&[], 1, true).unwrap(), "-0.0");
     }
 
     #[test]

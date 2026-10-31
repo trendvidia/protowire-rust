@@ -77,7 +77,7 @@ fn every_oracle_row_matches_the_reference() {
         assert_eq!(prec.to_string(), cols[3], "{lit}: prec");
         assert_eq!(neg.to_string(), cols[4], "{lit}: negative");
         // The marshalled line, exactly.
-        let out = marshal(&m, &desc, MarshalOptions::default());
+        let out = marshal(&m, &desc, MarshalOptions::default()).unwrap();
         assert_eq!(
             out,
             format!("big_float_field = {}\n", cols[5].trim_start_matches("f = ")),
