@@ -22,8 +22,10 @@ use crate::annotations::find_null_mask_field;
 use crate::bigfloat::format_big_float;
 use crate::bignum::{format_big_int, format_decimal};
 use crate::decode::TypeResolver;
+use crate::errors::PxfError;
 use crate::keyed::{ident_safe_entry_name, key_field};
 use crate::result::Presence;
+use crate::token::Position;
 
 #[derive(Clone, Copy)]
 pub struct MarshalOptions<'a> {
@@ -58,7 +60,7 @@ pub fn marshal(
     message: &DynamicMessage,
     desc: &MessageDescriptor,
     options: MarshalOptions<'_>,
-) -> String {
+) -> Result<String, PxfError> {
     let mut enc = Encoder::new(options);
     enc.prime_null_set(message, desc, options.null_fields);
     if let Some(url) = options.type_url {
@@ -67,7 +69,10 @@ pub fn marshal(
         enc.buf.push_str("\n\n");
     }
     enc.encode_message(message, 0);
-    enc.buf
+    match enc.error {
+        Some(msg) => Err(PxfError::new(Position::default(), msg)),
+        None => Ok(enc.buf),
+    }
 }
 
 struct Encoder<'a> {
@@ -82,6 +87,9 @@ struct Encoder<'a> {
     /// a keyed-block entry already carries the key as its entry name
     /// (draft -01 §3.13).
     skip_key_fd: Option<FieldDescriptor>,
+    /// The first value that has no literal. Encoding carries on, writing
+    /// nothing for it, and `marshal` returns this instead of the text.
+    error: Option<String>,
 }
 
 impl<'a> Encoder<'a> {
@@ -95,6 +103,18 @@ impl<'a> Encoder<'a> {
             null_mask_fd: None,
             path_prefix: String::new(),
             skip_key_fd: None,
+            error: None,
+        }
+    }
+
+    /// `message_shorthand`, recording a value that has no literal.
+    fn shorthand(&mut self, mdesc: &MessageDescriptor, sub: &DynamicMessage) -> Option<String> {
+        match message_shorthand(mdesc, sub)? {
+            Ok(text) => Some(text),
+            Err(msg) => {
+                self.error.get_or_insert(msg);
+                Some(String::new())
+            }
         }
     }
 
@@ -204,7 +224,7 @@ impl<'a> Encoder<'a> {
         };
         let full = mdesc.full_name();
 
-        if let Some(text) = message_shorthand(&mdesc, sub) {
+        if let Some(text) = self.shorthand(&mdesc, sub) {
             self.write_field_prefix(level, fd.name());
             self.buf.push_str(&text);
             self.buf.push('\n');
@@ -256,7 +276,7 @@ impl<'a> Encoder<'a> {
             self.write_indent(level + 1);
             match (&element_kind, elem) {
                 (Kind::Message(mdesc), Value::Message(sub)) => {
-                    if let Some(text) = message_shorthand(mdesc, sub) {
+                    if let Some(text) = self.shorthand(mdesc, sub) {
                         self.buf.push_str(&text);
                     } else {
                         self.buf.push_str("{\n");
@@ -351,7 +371,7 @@ impl<'a> Encoder<'a> {
                     // A message value takes the same shorthand it takes in
                     // singular and list positions, as the reference writes
                     // it (`alpha: 100`, `at: 2026-01-01T00:00:00Z`).
-                    if let Some(text) = message_shorthand(mdesc, sub) {
+                    if let Some(text) = self.shorthand(mdesc, sub) {
                         self.buf.push_str(&text);
                         self.buf.push('\n');
                     } else {
@@ -436,20 +456,23 @@ fn scalar_text(kind: &Kind, v: &Value) -> String {
 /// preserved) and `pxf.BigFloat` (the reference's `%g` rendering). `None`
 /// for every other message, which is written as a block. Used in singular, list and map-value positions alike, so the
 /// three agree with each other and with the reference.
-fn message_shorthand(mdesc: &MessageDescriptor, sub: &DynamicMessage) -> Option<String> {
+fn message_shorthand(
+    mdesc: &MessageDescriptor,
+    sub: &DynamicMessage,
+) -> Option<Result<String, String>> {
     let full = mdesc.full_name();
     if full == "google.protobuf.Timestamp" {
-        return Some(format_rfc3339_nano(sub));
+        return Some(Ok(format_rfc3339_nano(sub)));
     }
     if full == "google.protobuf.Duration" {
-        return Some(format_go_duration(sub));
+        return Some(Ok(format_go_duration(sub)));
     }
     if is_wrapper_full_name(full) {
         let inner_fd = mdesc
             .get_field_by_name("value")
             .expect("wrapper missing 'value'");
         let v = sub.get_field(&inner_fd).into_owned();
-        return Some(scalar_text(&inner_fd.kind(), &v));
+        return Some(Ok(scalar_text(&inner_fd.kind(), &v)));
     }
     if full == "pxf.BigInt" {
         let abs = bytes_field(sub, "abs");
@@ -488,10 +511,9 @@ fn message_shorthand(mdesc: &MessageDescriptor, sub: &DynamicMessage) -> Option<
             _ => 0,
         };
         let negative = bool_field(sub, "negative");
-        // A message the literal form cannot render — a `prec` past the digit
-        // cap — falls back to the block form, which is lossless; the
-        // reference errors instead, but a marshal here is infallible.
-        return format_big_float(&mantissa, exponent, prec, negative).ok();
+        // A message the literal form cannot render fails, as the reference
+        // does: a producer never writes a value past a bound.
+        return Some(format_big_float(&mantissa, exponent, prec, negative));
     }
     None
 }

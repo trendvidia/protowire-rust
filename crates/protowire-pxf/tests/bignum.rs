@@ -271,7 +271,7 @@ fn map_values_take_the_literal_form_both_ways() {
     assert_eq!(read("beta"), (vec![7], true));
 
     // Marshal writes the shorthand back, not a block.
-    let out = marshal(&m, &d, MarshalOptions::default());
+    let out = marshal(&m, &d, MarshalOptions::default()).unwrap();
     assert!(out.contains("alpha: 100\n"), "{out}");
     assert!(out.contains("beta: -7\n"), "{out}");
     assert!(out.contains("x: 0.25\n"), "{out}");
@@ -320,7 +320,7 @@ fn big_int_and_decimal_round_trip_through_marshal() {
         ),
     ] {
         let m = decode(&doc, &d);
-        let out = marshal(&m, &d, MarshalOptions::default());
+        let out = marshal(&m, &d, MarshalOptions::default()).unwrap();
         assert_eq!(out, want, "{doc}");
         let back = decode(&out, &d);
         assert_eq!(
@@ -346,7 +346,7 @@ fn digit_cap_is_inclusive() {
     let m = decode(&format!("big_int_field = {at}"), &d);
     // Decodes to that value: it reads back as the same digits.
     assert_eq!(
-        marshal(&m, &d, MarshalOptions::default()),
+        marshal(&m, &d, MarshalOptions::default()).unwrap(),
         format!("big_int_field = {at}\n")
     );
     // The sign and the point do not count.
@@ -427,7 +427,7 @@ fn big_float_basic_and_integer() {
 fn big_float_round_trips_through_marshal() {
     let d = demo();
     let m = decode("big_float_field = 3.14159265358979323846", &d);
-    let out = marshal(&m, &d, MarshalOptions::default());
+    let out = marshal(&m, &d, MarshalOptions::default()).unwrap();
     assert!(
         out.contains("big_float_field = 3.14159265358979323846"),
         "{out}"
@@ -459,7 +459,7 @@ fn repeated_big_float() {
         panic!()
     };
     assert_eq!((big_float(second).1, big_float(second).3), (-254, true));
-    let out = marshal(&m, &demo(), MarshalOptions::default());
+    let out = marshal(&m, &demo(), MarshalOptions::default()).unwrap();
     assert!(out.contains("1e+100"), "{out}");
     assert!(
         out.contains(
@@ -489,4 +489,28 @@ fn big_float_block_form_still_reads() {
         s.get_field_by_name("exponent").unwrap().into_owned(),
         Value::I32(3)
     );
+}
+
+// A producer of PXF text fails on a value past a bound (HARDENING.md §
+// Arbitrary-precision magnitudes). The block form carries the fields without
+// computing the value, so it reaches the encoder with any scale.
+#[test]
+fn marshal_refuses_a_decimal_past_the_bound() {
+    let d = demo();
+    for scale in [4097, -4097, i32::MAX, i32::MIN] {
+        let m = decode(
+            &format!("decimal_field {{ unscaled = b\"BQ==\" scale = {scale} }}"),
+            &d,
+        );
+        let err = marshal(&m, &d, MarshalOptions::default()).unwrap_err();
+        assert!(err.msg.contains("exceeds MaxNumericLiteralDigits"), "{err}");
+    }
+}
+
+#[test]
+fn marshal_keeps_a_negative_scale() {
+    let d = demo();
+    let m = decode("decimal_field { unscaled = b\"BQ==\" scale = -2 }", &d);
+    let out = marshal(&m, &d, MarshalOptions::default()).unwrap();
+    assert!(out.contains("decimal_field = 500"), "{out}");
 }

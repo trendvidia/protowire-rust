@@ -73,7 +73,7 @@ fn marshal_duration_reads_back() {
         let mut msg = DynamicMessage::new(desc.clone());
         msg.set_field(&dur_fd, Value::Message(sub));
 
-        let text = marshal(&msg, &desc, MarshalOptions::default());
+        let text = marshal(&msg, &desc, MarshalOptions::default()).unwrap();
         assert!(
             text.contains(&format!("dur_field = {want_text}\n")),
             "{total}: encoder wrote {text:?}, want {want_text:?}"

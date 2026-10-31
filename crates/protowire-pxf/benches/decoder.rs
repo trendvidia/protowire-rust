@@ -81,7 +81,7 @@ fn bench_marshal(c: &mut Criterion) {
     let mut group = c.benchmark_group("pxf");
     group.bench_function("marshal", |b| {
         b.iter(|| {
-            let s = marshal(black_box(&msg), &desc, MarshalOptions::default());
+            let s = marshal(black_box(&msg), &desc, MarshalOptions::default()).unwrap();
             black_box(s);
         });
     });

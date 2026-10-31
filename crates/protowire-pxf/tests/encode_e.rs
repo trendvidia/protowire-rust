@@ -32,7 +32,7 @@ fn decode_to_all_types(input: &str) -> DynamicMessage {
 }
 
 fn encode_default(m: &DynamicMessage, desc: &MessageDescriptor) -> String {
-    marshal(m, desc, MarshalOptions::default())
+    marshal(m, desc, MarshalOptions::default()).unwrap()
 }
 
 // ---------------- scalars ----------------
@@ -56,7 +56,8 @@ fn scalars_emit_zero_when_emit_defaults() {
             emit_defaults: true,
             ..Default::default()
         },
-    );
+    )
+    .unwrap();
     assert!(out.contains("string_field = \"\""), "{out}");
     assert!(out.contains("int32_field = 0"), "{out}");
     assert!(out.contains("bool_field = false"), "{out}");
@@ -267,7 +268,8 @@ fn any_emits_at_type_plus_inline_when_resolver_finds_url() {
             type_resolver: Some(&resolver),
             ..Default::default()
         },
-    );
+    )
+    .unwrap();
     assert!(out.contains("payload {"), "{out}");
     assert!(out.contains(r#"@type = "any_test.v1.Detail""#), "{out}");
     assert!(out.contains("code = 42"), "{out}");
@@ -292,7 +294,7 @@ fn any_falls_back_to_plain_block_when_no_resolver() {
     let mut c = DynamicMessage::new(container.clone());
     c.set_field(&payload_fd, Value::Message(any_msg));
 
-    let out = marshal(&c, &container, MarshalOptions::default());
+    let out = marshal(&c, &container, MarshalOptions::default()).unwrap();
     assert!(out.contains(r#"type_url = "any_test.v1.Detail""#), "{out}");
     assert!(out.contains("value = b\""), "{out}");
 }
@@ -308,7 +310,7 @@ fn null_reads_paths_from_in_message_null_mask() {
         UnmarshalOptions::default(),
     )
     .expect("ok");
-    let out = marshal(&m, &with_null_mask, MarshalOptions::default());
+    let out = marshal(&m, &with_null_mask, MarshalOptions::default()).unwrap();
     assert!(out.contains("value = null"), "{out}");
     assert!(!out.contains("_null"), "{out}");
 }
@@ -325,7 +327,8 @@ fn null_uses_marshal_options_null_fields_when_no_mask() {
             null_fields: Some(&presence),
             ..Default::default()
         },
-    );
+    )
+    .unwrap();
     assert!(out.contains("nullable_string = null"), "{out}");
 }
 
@@ -341,7 +344,8 @@ fn type_url_prepends_at_type_plus_blank_line() {
             type_url: Some("test.v1.AllTypes"),
             ..Default::default()
         },
-    );
+    )
+    .unwrap();
     assert!(
         out.starts_with("@type test.v1.AllTypes\n\n"),
         "out: {out:?}"
@@ -369,7 +373,7 @@ fn round_trip_decode_encode_decode_preserves_message() {
                  text_choice = \"pick\"\n";
     let desc = all_types();
     let m1 = unmarshal(input, &desc, UnmarshalOptions::default()).expect("decode 1");
-    let text = marshal(&m1, &desc, MarshalOptions::default());
+    let text = marshal(&m1, &desc, MarshalOptions::default()).unwrap();
     let m2 = unmarshal(&text, &desc, UnmarshalOptions::default()).expect("decode 2");
     assert_eq!(
         m1.encode_to_vec(),

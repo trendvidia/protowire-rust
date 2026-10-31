@@ -69,7 +69,7 @@ fn main() {
     let msg = unmarshal(&pxf_text, &desc, UnmarshalOptions::default())
         .expect("seed unmarshal for marshal");
     let (iters2, elapsed2) = time_loop(target, || {
-        let _ = marshal(&msg, &desc, MarshalOptions::default());
+        let _ = marshal(&msg, &desc, MarshalOptions::default()).unwrap();
     });
     emit_marshal(iters2, elapsed2);
 }
