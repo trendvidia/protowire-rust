@@ -17,7 +17,10 @@ syntax = "proto3";
 
 package envelope.v1;
 
-option go_package = "github.com/trendvidia/protowire/envelope/v1;envelope";
+option csharp_namespace = "Protowire.Envelopes.V1";
+option go_package = "github.com/trendvidia/protos/envelope/v1;envelopev1";
+option java_multiple_files = true;
+option java_package = "org.protowire.envelope.v1";
 
 // Envelope wraps every API response with transport metadata,
 // application-level error handling, and the success payload.
