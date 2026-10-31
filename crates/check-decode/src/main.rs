@@ -555,6 +555,10 @@ fn run(
             pxf_decode(input, schema, proto, limits)
         }
         "pb" => pb_decode(input, schema, limits),
+        "pb-render" => {
+            let proto = proto.ok_or_else(|| "--proto required for format=pb-render".to_string())?;
+            pb_render(input, schema, proto)
+        }
         "envelope" => Err("envelope decode not yet implemented in this reference".to_string()),
         "sbe" => {
             let proto = proto.ok_or_else(|| "--proto required for format=sbe".to_string())?;
@@ -562,6 +566,21 @@ fn run(
         }
         other => Err(format!("unsupported format: {other}")),
     }
+}
+
+/// The producer's side of the bounds (HARDENING.md § Arbitrary-precision
+/// magnitudes): prost reads the bytes, storing the fields and bounding
+/// nothing, and they are then written as PXF. The hardened decoders are
+/// bypassed on purpose, or the row would be refused before the encoder ran
+/// (protowire#448).
+fn pb_render(input: &Path, schema: &str, proto: &Path) -> Result<(), String> {
+    let bytes = std::fs::read(input).map_err(|e| format!("read input: {e}"))?;
+    let desc = load_descriptor(proto, schema)?;
+    let msg = DynamicMessage::decode(desc.clone(), bytes.as_slice())
+        .map_err(|e| format!("protobuf runtime: {e}"))?;
+    protowire_pxf::marshal(&msg, &desc, protowire_pxf::MarshalOptions::default())
+        .map(|_| ())
+        .map_err(|e| format!("pxf: {e}"))
 }
 
 fn pxf_decode(input: &Path, schema: &str, proto: &Path, limits: &LimitFlags) -> Result<(), String> {
