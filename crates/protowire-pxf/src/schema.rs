@@ -107,9 +107,9 @@ pub struct Violation {
     /// the reserved-name kinds; the `(pxf.key)` annotation value for
     /// [`ViolationKind::KeyOption`]; the `(pxf.default)` literal for
     /// [`ViolationKind::DefaultOption`]; the containing oneof's bare name
-    /// for [`ViolationKind::RequiredOption`] on a oneof member, empty for
-    /// the same kind beside a default (not rendered by `Display`, since
-    /// `detail` says what is wrong).
+    /// for [`ViolationKind::RequiredOption`] on a oneof member, the
+    /// `(pxf.default)` literal for the same kind beside a default (not
+    /// rendered by `Display`, since `detail` says what is wrong).
     pub name: String,
     pub kind: ViolationKind,
     /// A human-readable explanation; set for the three annotation kinds,
@@ -370,11 +370,11 @@ fn walk_message(path: &str, md: &MessageDescriptor, out: &mut Vec<Violation>) {
         if let Some(def) = &def {
             check_default_option(path, &f, def, out);
         }
-        if def.is_some() && is_required(&f) {
+        if let Some(def) = def.as_ref().filter(|_| is_required(&f)) {
             out.push(Violation {
                 file: path.to_string(),
                 element: f.full_name().to_string(),
-                name: String::new(),
+                name: def.to_string(),
                 kind: ViolationKind::RequiredOption,
                 detail: "(pxf.required) and (pxf.default) are exclusive on one field: the first rejects a document where the field is absent, and the second treats it as supplied".to_string(),
             });
