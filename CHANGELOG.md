@@ -11,6 +11,8 @@ format changes.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-10-31
+
 ### Fixed
 
 - **`marshal` refuses a `pxf.Decimal` past the bounds, and no longer hangs** (protowire#448). A scale near `i32::MAX` padded one digit at a time, and a negative one wrote up to 2^31 zeros. A scale past `MaxNumericLiteralDigits` on either sign now fails before any work, as does a `BigInt` or `Decimal` literal past the digit cap.
