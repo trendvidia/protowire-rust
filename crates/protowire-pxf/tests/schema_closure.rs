@@ -20,6 +20,7 @@ fn msg(fds: &[u8], name: &str) -> MessageDescriptor {
 const RESERVED: &[u8] = include_bytes!("../testdata/closure-reserved-root.binpb");
 const DEPTH: &[u8] = include_bytes!("../testdata/closure-depth-a.binpb");
 const DIAMOND: &[u8] = include_bytes!("../testdata/closure-diamond-top.binpb");
+const REQUIRED_DEFAULT: &[u8] = include_bytes!("../testdata/closure-required-default-root.binpb");
 const SORT: &[u8] = include_bytes!("../testdata/closure-sort-zz_root.binpb");
 const ACCEPTED: &[u8] = include_bytes!("../testdata/placement-accepted-test.binpb");
 const DEFAULTS: &[u8] = include_bytes!("../testdata/default-placement-test.binpb");
@@ -50,6 +51,23 @@ fn transitive_import_depth() {
         vs[0].detail.contains("not valid on map fields"),
         "{}",
         vs[0].detail
+    );
+}
+
+/// The required-with-default check has the closure's scope too: the pair
+/// sits on a message no field of Root refers to, in an imported file.
+#[test]
+fn required_with_default_in_imported_file_is_reported() {
+    let vs = validate_descriptor(&msg(
+        REQUIRED_DEFAULT,
+        "closure_required_default_test.root.Root",
+    ));
+    assert_eq!(vs.len(), 1, "{vs:?}");
+    assert_eq!(vs[0].kind, ViolationKind::RequiredOption);
+    assert_eq!(vs[0].file, "closure-required-default/imported.proto");
+    assert_eq!(
+        vs[0].element,
+        "closure_required_default_test.imported.Inner.f"
     );
 }
 

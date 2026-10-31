@@ -14,8 +14,9 @@
 //!   "Default Placement"), see [`check_default_option`]; plus the cap of
 //!   one `(pxf.default)` per oneof (same section, "Oneof Members"), see
 //!   [`check_oneof_default_cap`].
-//! - `(pxf.required)` placement ("Oneof Members"): not valid on a member
-//!   of a oneof at all.
+//! - `(pxf.required)` placement: not valid on a member of a oneof at all
+//!   ("Oneof Members"), and not valid beside `(pxf.default)` on one field
+//!   ("Required and Default").
 //!
 //! Enforcement runs at descriptor-bind time inside [`crate::unmarshal`]
 //! and [`crate::unmarshal_full`]. Callers that have already validated
@@ -68,7 +69,8 @@ pub enum ViolationKind {
     /// A `(pxf.required)` annotation on a member of a oneof, which draft
     /// -01 "Oneof Members" forbids: read per field it demands that one
     /// specific arm always be chosen, which makes every other arm of the
-    /// oneof undecodable.
+    /// oneof undecodable. Also a true `(pxf.required)` beside
+    /// `(pxf.default)` on one field, which "Required and Default" forbids.
     RequiredOption,
 }
 
@@ -105,8 +107,9 @@ pub struct Violation {
     /// the reserved-name kinds; the `(pxf.key)` annotation value for
     /// [`ViolationKind::KeyOption`]; the `(pxf.default)` literal for
     /// [`ViolationKind::DefaultOption`]; the containing oneof's bare name
-    /// for [`ViolationKind::RequiredOption`] (not rendered by `Display`,
-    /// since `detail` already names the oneof).
+    /// for [`ViolationKind::RequiredOption`] on a oneof member, empty for
+    /// the same kind beside a default (not rendered by `Display`, since
+    /// `detail` says what is wrong).
     pub name: String,
     pub kind: ViolationKind,
     /// A human-readable explanation; set for the three annotation kinds,
@@ -145,10 +148,11 @@ impl fmt::Display for Violation {
 /// imports**, and returns every bind-time violation in that closure:
 /// reserved-name collisions among messages, oneofs and enum values;
 /// invalid `(pxf.key)` placements (draft -01 §3.13.1); invalid
-/// `(pxf.default)` placements ("Default Placement"); and the two oneof
-/// rules of "Oneof Members" — at most one member of any one oneof may
-/// carry `(pxf.default)`, and `(pxf.required)` is not valid on a oneof
-/// member at all. Sorted by declaring file path and then by element
+/// `(pxf.default)` placements ("Default Placement"); the two oneof rules
+/// of "Oneof Members" — at most one member of any one oneof may carry
+/// `(pxf.default)`, and `(pxf.required)` is not valid on a oneof member at
+/// all; and `(pxf.required)` with `(pxf.default)` on one field ("Required
+/// and Default"). Sorted by declaring file path and then by element
 /// fully-qualified name, for stable output. Empty means conformant.
 ///
 /// The reserved-name check is case-sensitive: identifiers such as `NULL`
@@ -187,11 +191,11 @@ pub fn validate_file(fd: &FileDescriptor) -> Vec<Violation> {
     let mut walk = ClosureWalk::default();
     walk.walk(fd);
     let mut out = walk.out;
-    // Stable, not unstable: one field can yield up to four violations
-    // sharing an element (reserved name, key, default placement, and one
-    // of the two oneof rules), and only a stable sort keeps "sorted for
-    // stable output" true for those ties. File first, so a multi-file
-    // closure reports one file's violations together.
+    // Stable, not unstable: one field can yield several violations
+    // sharing an element (reserved name, key, default placement, required
+    // with default, and the oneof rules), and only a stable sort keeps
+    // "sorted for stable output" true for those ties. File first, so a
+    // multi-file closure reports one file's violations together.
     out.sort_by(|a, b| a.file.cmp(&b.file).then_with(|| a.element.cmp(&b.element)));
     let shared: Arc<[Violation]> = out.into();
     CLOSURE_CACHE.insert(fd, shared.clone());
@@ -365,6 +369,15 @@ fn walk_message(path: &str, md: &MessageDescriptor, out: &mut Vec<Violation>) {
         let def = get_default(&f);
         if let Some(def) = &def {
             check_default_option(path, &f, def, out);
+        }
+        if def.is_some() && is_required(&f) {
+            out.push(Violation {
+                file: path.to_string(),
+                element: f.full_name().to_string(),
+                name: String::new(),
+                kind: ViolationKind::RequiredOption,
+                detail: "(pxf.required) and (pxf.default) are exclusive on one field: the first rejects a document where the field is absent, and the second treats it as supplied".to_string(),
+            });
         }
         if let Some(oo) = real_oneof(&f) {
             if is_required(&f) {

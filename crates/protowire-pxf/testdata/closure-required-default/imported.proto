@@ -1,0 +1,12 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Imported by root.proto, and no field of Root is typed by this file
+// (draft -01 "Scope of Bind-Time Checks"; protowire-rust#62).
+syntax = "proto3";
+package closure_required_default_test.imported;
+
+import "pxf/annotations.proto";
+
+message Inner {
+  string f = 1 [(pxf.required) = true, (pxf.default) = "x"];
+}

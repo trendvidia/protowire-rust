@@ -13,6 +13,15 @@ format changes.
 
 ### Fixed
 
+- **`(pxf.required)` with `(pxf.default)` on one field is a bind-time
+  violation** (draft `-01` § Required and Default;
+  [#62](https://github.com/trendvidia/protowire-rust/issues/62)). Such a
+  schema used to bind, with a meaning that could differ between engines.
+  It now fails at bind time as `ViolationKind::RequiredOption`, over the
+  import closure like the other bind-time checks, whatever the document
+  contains.
+  `(pxf.required) = false` beside a default stays accepted.
+  
 - **A `metadata` map entry on `AppError` counts toward `MaxNestingDepth`**
   ([protowire#449](https://github.com/trendvidia/protowire/issues/449)).
   HARDENING counts every PB map entry as a descent, whatever its value's

@@ -46,6 +46,9 @@ message EveryAcceptedPlacement {
   pxf.BigFloat bf = 24 [(pxf.default) = "2.718"];
   string req = 25 [(pxf.required) = true];
   optional string opt = 26 [(pxf.default) = "syn"];
+  // "pxf.required = false" requires nothing, so it does not conflict with
+  // the default beside it (draft -01 "Required and Default").
+  string not_required = 29 [(pxf.required) = false, (pxf.default) = "kept"];
   oneof choice {
     string a = 27;
     string c = 28 [(pxf.default) = "ccc"];
