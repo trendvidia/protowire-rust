@@ -9,7 +9,7 @@
 //! `PxfError`, not crash the process.
 
 use prost_reflect::{DescriptorPool, MessageDescriptor};
-use protowire_pxf::{unmarshal, PxfError, UnmarshalOptions};
+use protowire_pxf::{parse, unmarshal, PxfError, UnmarshalOptions};
 
 const TEST_FDS: &[u8] = include_bytes!("../testdata/hardening-test.binpb");
 
@@ -51,6 +51,48 @@ fn deep_nesting_past_limit_is_rejected() {
         "expected depth error, got: {}",
         err.msg
     );
+}
+
+/// A map's own `{` is a descent, as it is to the parser (HARDENING.md
+/// § Recursion; protowire#449), so decoder and parser agree on where a
+/// document stops.
+#[test]
+fn map_brace_is_a_descent_at_the_bound() {
+    // Pairs of `branches = { k: { … } }`, plus blocks at the deepest point.
+    let maps = |pairs: usize, blocks: usize| {
+        format!(
+            "{}{}label = \"leaf\"{}{}",
+            "branches = { k: { ".repeat(pairs),
+            "child { ".repeat(blocks),
+            " }".repeat(blocks),
+            " } }".repeat(pairs),
+        )
+    };
+    // A scalar-valued map: no message under it, and its `{` still counts.
+    let tags = |blocks: usize| {
+        format!(
+            "{}tags = {{ k: \"v\" }}{}",
+            "child { ".repeat(blocks),
+            " }".repeat(blocks),
+        )
+    };
+    for (name, src, ok) in [
+        ("maps at the bound", maps(50, 0), true),
+        ("maps one past", maps(50, 1), false),
+        ("scalar map at the bound", tags(99), true),
+        ("scalar map one past", tags(100), false),
+    ] {
+        let decoded = unmarshal(&src, &tree(), UnmarshalOptions::default());
+        let parsed = parse(&src);
+        assert_eq!(decoded.is_ok(), ok, "decode, {name}: {:?}", decoded.err());
+        assert_eq!(parsed.is_ok(), ok, "parse, {name}");
+        if !ok {
+            assert!(
+                decoded.unwrap_err().msg.contains("MaxNestingDepth=100"),
+                "{name}"
+            );
+        }
+    }
 }
 
 #[test]

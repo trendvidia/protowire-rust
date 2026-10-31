@@ -8,4 +8,6 @@ package hardening_test.v1;
 message Tree {
   Tree child = 1;
   string label = 2;
+  map<string, Tree> branches = 4;
+  map<string, string> tags = 5;
 }

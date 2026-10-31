@@ -57,6 +57,33 @@ impl Message for FieldError {
     }
 }
 
+/// One entry of `AppError.metadata`, read through [`read_message`] so that
+/// it is one descent and its length is checked, as for any nested message
+/// (HARDENING.md § Recursion; protowire#449).
+#[derive(Default)]
+struct MetadataEntry {
+    key: String,
+    value: String,
+}
+
+impl Message for MetadataEntry {
+    fn encode_to(&self, w: &mut Writer) {
+        w.tag(1, WireType::LengthDelimited);
+        w.string(&self.key);
+        w.tag(2, WireType::LengthDelimited);
+        w.string(&self.value);
+    }
+
+    fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
+        match num {
+            1 => self.key = r.string()?,
+            2 => self.value = r.string()?,
+            _ => r.skip(wt)?,
+        }
+        Ok(())
+    }
+}
+
 impl Message for AppError {
     fn encode_to(&self, w: &mut Writer) {
         if !self.code.is_empty() {
@@ -94,22 +121,11 @@ impl Message for AppError {
                 r.push_element(&mut self.details, detail)?;
             }
             5 => {
-                let len = r.varint()? as usize;
-                let end = r.pos + len;
-                let mut k = String::new();
-                let mut v = String::new();
-                while r.pos < end {
-                    let (n, ewt) = r.tag()?;
-                    match n {
-                        1 => k = r.string()?,
-                        2 => v = r.string()?,
-                        _ => r.skip(ewt)?,
-                    }
-                }
-                if !self.metadata.contains_key(&k) {
+                let e: MetadataEntry = read_message(r)?;
+                if !self.metadata.contains_key(&e.key) {
                     r.check_repeated(self.metadata.len())?;
                 }
-                self.metadata.insert(k, v);
+                self.metadata.insert(e.key, e.value);
             }
             _ => r.skip(wt)?,
         }
@@ -152,7 +168,7 @@ impl Message for Envelope {
 mod tests {
     use super::*;
     use crate::new_app_error;
-    use protowire_pb::{marshal, unmarshal};
+    use protowire_pb::{marshal, unmarshal, unmarshal_with, Error, Limits};
 
     fn s(v: &str) -> String {
         v.to_string()
@@ -393,5 +409,51 @@ mod tests {
         assert_eq!(g_err.args, w_err.args);
         assert_eq!(g_err.details, w_err.details);
         assert_eq!(g_err.metadata, w_err.metadata);
+    }
+
+    /// A map entry is a descent whatever its value's type (HARDENING.md
+    /// § Recursion; protowire#449): under an envelope, `error` is the first
+    /// and a `metadata` entry the second.
+    #[test]
+    fn metadata_entry_is_a_descent() {
+        let mut err = AppError::default();
+        err.metadata.insert("k".into(), "v".into());
+        let env = Envelope {
+            error: Some(err),
+            ..Default::default()
+        };
+        let bytes = marshal(&env);
+        let limit = |max_nesting_depth| Limits {
+            max_nesting_depth,
+            ..Limits::default()
+        };
+        let got: Envelope = unmarshal_with(&bytes, limit(2)).expect("two descents at the bound");
+        assert_eq!(got.error.unwrap().metadata.get("k").unwrap(), "v");
+        assert_eq!(
+            unmarshal_with::<Envelope>(&bytes, limit(1))
+                .unwrap_err()
+                .to_string(),
+            "nesting depth exceeds MaxNestingDepth=1"
+        );
+    }
+
+    /// An entry's length is checked against the buffer and its contents
+    /// against its length, as for any nested message.
+    #[test]
+    fn metadata_entry_length_is_bounded() {
+        // Length 2^64 - 1.
+        let mut huge = vec![0x2a];
+        huge.extend_from_slice(&[0xff; 9]);
+        huge.push(0x01);
+        assert!(matches!(
+            unmarshal::<AppError>(&huge),
+            Err(Error::NestedExceedsBuffer)
+        ));
+        // Length 1, but the entry's field runs on to 3 bytes.
+        let overrun = [0x2a, 0x01, 0x0a, 0x01, b'k'];
+        assert!(matches!(
+            unmarshal::<AppError>(&overrun),
+            Err(Error::Overrun { .. })
+        ));
     }
 }
