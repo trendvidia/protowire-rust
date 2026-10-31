@@ -74,6 +74,12 @@ buf build --as-file-descriptor-set --exclude-source-info \
 echo "wrote crates/protowire-pxf/testdata/oneof-required-test.binpb (buf)"
 
 buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/required-default-test.proto \
+  -o crates/protowire-pxf/testdata/required-default-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/required-default-test.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
   --path crates/protowire-pxf/testdata/closure-depth/a.proto \
   -o crates/protowire-pxf/testdata/closure-depth-a.binpb
 
@@ -96,6 +102,12 @@ buf build --as-file-descriptor-set --exclude-source-info \
   -o crates/protowire-pxf/testdata/closure-reserved-root.binpb
 
 echo "wrote crates/protowire-pxf/testdata/closure-reserved-root.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/closure-required-default/root.proto \
+  -o crates/protowire-pxf/testdata/closure-required-default-root.binpb
+
+echo "wrote crates/protowire-pxf/testdata/closure-required-default-root.binpb (buf)"
 
 buf build --as-file-descriptor-set --exclude-source-info \
   --path crates/protowire-pxf/testdata/hardening-test.proto \

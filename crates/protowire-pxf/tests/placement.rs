@@ -30,6 +30,7 @@ const ACCEPTED: &[u8] = include_bytes!("../testdata/placement-accepted-test.binp
 const KEYS: &[u8] = include_bytes!("../testdata/key-placement-test.binpb");
 const TWO_DEFAULTS: &[u8] = include_bytes!("../testdata/oneof-two-defaults-test.binpb");
 const REQUIRED: &[u8] = include_bytes!("../testdata/oneof-required-test.binpb");
+const REQUIRED_DEFAULT: &[u8] = include_bytes!("../testdata/required-default-test.binpb");
 
 fn only(vs: &[Violation], element: &str) -> Violation {
     let hits: Vec<&Violation> = vs.iter().filter(|v| v.element == element).collect();
@@ -149,6 +150,7 @@ fn accepted_placements_are_clean_and_apply() {
     assert_eq!(get("r"), Value::EnumNumber(1));
     assert_eq!(get("c"), Value::String("ccc".into()));
     assert_eq!(get("opt"), Value::String("syn".into()));
+    assert_eq!(get("not_required"), Value::String("kept".into()));
     let Value::Message(bi) = get("bi") else {
         panic!("bi")
     };
@@ -254,6 +256,37 @@ fn required_on_oneof_member_is_rejected() {
     )
     .expect_err("schema must not bind");
     assert!(err.msg.contains("invalid (pxf.required)"), "{}", err.msg);
+}
+
+// ---------------- "Required and Default" ----------------
+
+/// The pair is refused when the schema is bound, not when a document
+/// happens to omit the field: the document here supplies it.
+/// `(pxf.required) = false` beside a default stays accepted, on
+/// `not_required` in `accepted_placements_are_clean_and_apply`.
+#[test]
+fn required_with_default_is_rejected() {
+    let desc = msg(
+        REQUIRED_DEFAULT,
+        "required_default_test.v1.RequiredWithDefault",
+    );
+    let vs = validate_descriptor(&desc);
+    assert_eq!(vs.len(), 1, "{vs:?}");
+    assert_eq!(vs[0].kind, ViolationKind::RequiredOption);
+    assert_eq!(
+        vs[0].element,
+        "required_default_test.v1.RequiredWithDefault.f"
+    );
+    assert_eq!(
+        vs[0].to_string(),
+        "required-default-test.proto: field \"required_default_test.v1.RequiredWithDefault.f\": invalid (pxf.required): (pxf.required) and (pxf.default) are exclusive on one field: the first rejects a document where the field is absent, and the second treats it as supplied (draft -01 §annotation-extensions)"
+    );
+
+    let want = "(pxf.required) and (pxf.default) are exclusive on one field";
+    let err = unmarshal("f = \"y\"", &desc, UnmarshalOptions::default()).expect_err("unmarshal");
+    assert!(err.msg.contains(want), "unmarshal: {}", err.msg);
+    let err = unmarshal_full("", &desc, UnmarshalOptions::default()).expect_err("unmarshal_full");
+    assert!(err.msg.contains(want), "unmarshal_full: {}", err.msg);
 }
 
 // ---------------- Enforcement at every entry point ----------------

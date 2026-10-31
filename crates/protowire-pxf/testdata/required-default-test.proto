@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// (pxf.required) and (pxf.default) on one field: the first says an absent
+// field is an error and the second that it takes a value, so a document
+// omitting it has no single meaning (draft -01 "Required and Default").
+// Non-conformant; own file (protowire-rust#62).
+syntax = "proto3";
+package required_default_test.v1;
+
+import "pxf/annotations.proto";
+
+message RequiredWithDefault {
+  string f = 1 [(pxf.required) = true, (pxf.default) = "x"];
+}
