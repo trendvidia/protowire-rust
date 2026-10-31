@@ -35,12 +35,15 @@
 //! together; if `<stem>.binpb` is missing, decode falls back to a
 //! schema-name-only error.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor};
 use protowire_pb::wire::{Reader, Result as PbResult, WireType, Writer};
-use protowire_pb::{read_message, unmarshal_with as pb_unmarshal, write_message, Message};
+use protowire_pb::{
+    read_message, unmarshal_with as pb_unmarshal, write_map_entry, write_message, Message,
+};
 use protowire_pxf::{unmarshal as pxf_unmarshal, UnmarshalOptions};
 
 // --- Hand-mirrored Go-style message impls for adversarial.proto -------------
@@ -54,6 +57,8 @@ use protowire_pxf::{unmarshal as pxf_unmarshal, UnmarshalOptions};
 struct Tree {
     child: Option<Box<Tree>>,
     label: String,
+    branches: BTreeMap<String, Tree>,
+    tags: BTreeMap<String, String>,
 }
 
 impl Message for Tree {
@@ -65,11 +70,77 @@ impl Message for Tree {
             w.tag(2, WireType::LengthDelimited);
             w.string(&self.label);
         }
+        for (k, v) in &self.branches {
+            write_map_entry(w, 4, k.as_str(), v);
+        }
+        for (k, v) in &self.tags {
+            write_map_entry(w, 5, k.as_str(), v.as_str());
+        }
     }
     fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> PbResult<()> {
         match num {
             1 => self.child = Some(Box::new(read_message(r)?)),
             2 => self.label = r.string()?,
+            4 => {
+                let e: BranchEntry = read_message(r)?;
+                if !self.branches.contains_key(&e.key) {
+                    r.check_repeated(self.branches.len())?;
+                }
+                self.branches.insert(e.key, e.value);
+            }
+            5 => {
+                let e: TagEntry = read_message(r)?;
+                if !self.tags.contains_key(&e.key) {
+                    r.check_repeated(self.tags.len())?;
+                }
+                self.tags.insert(e.key, e.value);
+            }
+            _ => r.skip(wt)?,
+        }
+        Ok(())
+    }
+}
+
+/// An entry of `Tree.branches`. Map entries go through `read_message`, the
+/// way `AppError.metadata` does, so each is one descent (protowire#449).
+#[derive(Default, Debug)]
+struct BranchEntry {
+    key: String,
+    value: Tree,
+}
+impl Message for BranchEntry {
+    fn encode_to(&self, w: &mut Writer) {
+        w.tag(1, WireType::LengthDelimited);
+        w.string(&self.key);
+        write_message(w, 2, &self.value);
+    }
+    fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> PbResult<()> {
+        match num {
+            1 => self.key = r.string()?,
+            2 => self.value = read_message(r)?,
+            _ => r.skip(wt)?,
+        }
+        Ok(())
+    }
+}
+
+/// An entry of `Tree.tags`: a descent though no message sits under it.
+#[derive(Default, Debug)]
+struct TagEntry {
+    key: String,
+    value: String,
+}
+impl Message for TagEntry {
+    fn encode_to(&self, w: &mut Writer) {
+        w.tag(1, WireType::LengthDelimited);
+        w.string(&self.key);
+        w.tag(2, WireType::LengthDelimited);
+        w.string(&self.value);
+    }
+    fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> PbResult<()> {
+        match num {
+            1 => self.key = r.string()?,
+            2 => self.value = r.string()?,
             _ => r.skip(wt)?,
         }
         Ok(())

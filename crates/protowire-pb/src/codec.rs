@@ -23,7 +23,9 @@
 //!   protobuf-go, protoc and C++ protobuf write (protowire#295). The
 //!   proto3 zero-skip applies to singular fields of a message, never to
 //!   the key or value of an entry; [`write_map_entry`] is the helper that
-//!   gets this right so impls stop hand-rolling the entry.
+//!   gets this right so impls stop hand-rolling the entry. Read an entry
+//!   with [`read_message`], whatever its value's type: the entry is one
+//!   nesting descent (HARDENING.md § Recursion; protowire#449).
 
 use crate::wire::{Error, Limits, Reader, Result, WireType, Writer};
 

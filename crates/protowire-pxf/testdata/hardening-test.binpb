@@ -1,6 +1,14 @@
 
-~
-hardening-test.protohardening_test.v1"K
+ˆ
+hardening-test.protohardening_test.v1"Ô
 Tree-
 child (2.hardening_test.v1.TreeRchild
-label (	Rlabelbproto3
+label (	RlabelA
+branches (2%.hardening_test.v1.Tree.BranchesEntryRbranches5
+tags (2!.hardening_test.v1.Tree.TagsEntryRtagsT
+BranchesEntry
+key (	Rkey-
+value (2.hardening_test.v1.TreeRvalue:87
+	TagsEntry
+key (	Rkey
+value (	Rvalue:8bproto3

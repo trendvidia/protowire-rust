@@ -13,6 +13,17 @@ format changes.
 
 ### Fixed
 
+- **A `metadata` map entry on `AppError` counts toward `MaxNestingDepth`**
+  ([protowire#449](https://github.com/trendvidia/protowire/issues/449)).
+  HARDENING counts every PB map entry as a descent, whatever its value's
+  type, and the entry was read by hand with no depth check. It now goes
+  through `read_message`, the same as any nested message, which also
+  checks its length: a length of 2^64 - 1 used to overflow an add (a panic
+  in a debug build), and an entry whose fields ran past its length was
+  accepted. Both are clean errors now. `check-decode`'s `Tree` gains
+  `branches` and `tags` for the corpus's map rows; PXF already counted a
+  map's `{`, and a test now pins that.
+
 - **A dotted string map key is written bare** (draft `-01` § Entries and
   Keys, the Rust leg of
   [protowire#313](https://github.com/trendvidia/protowire/issues/313)).
