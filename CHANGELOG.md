@@ -21,6 +21,17 @@ format changes.
   import closure like the other bind-time checks, whatever the document
   contains.
   `(pxf.required) = false` beside a default stays accepted.
+  
+- **A `metadata` map entry on `AppError` counts toward `MaxNestingDepth`**
+  ([protowire#449](https://github.com/trendvidia/protowire/issues/449)).
+  HARDENING counts every PB map entry as a descent, whatever its value's
+  type, and the entry was read by hand with no depth check. It now goes
+  through `read_message`, the same as any nested message, which also
+  checks its length: a length of 2^64 - 1 used to overflow an add (a panic
+  in a debug build), and an entry whose fields ran past its length was
+  accepted. Both are clean errors now. `check-decode`'s `Tree` gains
+  `branches` and `tags` for the corpus's map rows; PXF already counted a
+  map's `{`, and a test now pins that.
 
 - **A dotted string map key is written bare** (draft `-01` § Entries and
   Keys, the Rust leg of
@@ -145,6 +156,8 @@ format changes.
   bounds `pxf.Decimal.scale` on the PB wire on both signs.
 
 ### Changed
+
+- **The vendored shared schemas are re-synced with [trendvidia/protos](https://github.com/trendvidia/protos) v0.1.2** ([trendvidia/protowire#447](https://github.com/trendvidia/protowire/issues/447)). They gain protos' file options, and `envelope.proto`'s `go_package` now names a published package. Declarations and field numbers are unchanged, and so is this port's public API.
 
 - **Accepted input narrows at the HARDENING defaults**: a document, PB
   message or SBE buffer over 64 MiB is rejected where it decoded before,

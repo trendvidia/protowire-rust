@@ -3,6 +3,11 @@
 syntax = "proto3";
 package pxf;
 
+option csharp_namespace = "Protowire.Pxf";
+option go_package = "github.com/trendvidia/protos/pxf;pxf";
+option java_multiple_files = true;
+option java_package = "org.protowire.proto.pxf";
+
 // Arbitrary-precision signed integer.
 // Wire: unsigned big-endian absolute value + sign flag.
 // PXF text: bare integer literal.
@@ -20,9 +25,12 @@ message Decimal {
   bool negative = 3;
 }
 
-// Arbitrary-precision binary floating point.
+// Arbitrary-precision binary floating point: value = (-1)^negative × mantissa × 2^exponent,
+// rounded to prec bits.
 // Wire: unsigned big-endian integer mantissa + binary exponent + precision + sign flag.
-// PXF text: float literal with arbitrary mantissa precision.
+// PXF text: numeric literal with a precision suffix, "p" and a bit count
+// (e.g. "0.10000000000000001p53"), read at that precision, or at 256 bits
+// without one. See draft -01 § PXF Annotations.
 message BigFloat {
   bytes mantissa = 1;
   int32 exponent = 2;
