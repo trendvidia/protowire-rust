@@ -11,33 +11,11 @@ format changes.
 
 ## [Unreleased]
 
-### Fixed
+## [1.2.0] — 2026-11-01
 
-- **`cargo doc` builds with warnings denied, and CI now requires it** ([#76](https://github.com/trendvidia/protowire-rust/issues/76)). Ten broken or private intra-doc links are fixed.
+This release includes everything listed under 1.1.0, which was tagged but never reached crates.io: its publish failed authenticating to the registry. The last version on crates.io before this one is 1.0.0.
 
-### Fixed
-
-- **The decoder reads what it does not bind, instead of counting braces** ([#60](https://github.com/trendvidia/protowire-rust/issues/60), protowire#312). A field `discard_unknown` drops and a directive's body are now held to the grammar, as `parse` already held them: a `,` or `;` between the entries of such a block is rejected, as is an unterminated one. The `testdata/blocks/` corpus is vendored and runs through `parse` and the decoder.
-
-- **`null` binds only to a field with explicit presence** ([#55](https://github.com/trendvidia/protowire-rust/issues/55), protowire#339, #379, #380). On a plain proto3 scalar, a repeated or map field, or a proto2 `required` field it is now an error naming the field, in a `@dataset` cell too. A schema that bound `null` to a plain scalar needs `optional` or a wrapper. Two editions fixtures cannot run: `prost-reflect` 0.16.5, its latest release, refuses `syntax = "editions"`, and a test pins that.
-- **A simple string holds no raw line feed** (#55, protowire#350), through `parse`, the decoder and every `@dataset` path. `bind_row` now re-escapes a cell's string, so an escaped `\n` in a cell still binds.
-
-- **A singular field bound twice in one message body is rejected** ([#56](https://github.com/trendvidia/protowire-rust/issues/56), protowire#347), whatever the values, and two blocks for one message field no longer replace each other. Each body is its own scope, and repeated fields still concatenate.
-- **A map key bound twice in one message body is rejected, and two bindings of a map with distinct keys merge** ([#58](https://github.com/trendvidia/protowire-rust/issues/58), protowire#396). Keys compare as values of the key type, so `1:` and `"1":` are one key of an integer-keyed map. The second binding used to replace the whole map.
-
-- **The type entry of an Any block is accepted wherever a body is written** ([#53](https://github.com/trendvidia/protowire-rust/issues/53), protowire#354). `@type = "<url>"` opens a singular Any, a list element or a map value, through `parse`, the decoder and `format`. A type entry that isn't first, a second one, and one on a block that isn't an Any are rejected. `unmarshal_full` now applies `(pxf.required)` and `(pxf.default)` inside an Any body before packing it.
-
-- **`DatasetReader` ends the rows only at end of input or a directive** (protowire#336). Anything else where a row could start, and a row cut short by end of input, used to end the sequence silently; both are now errors.
-- **`bind_row` applies `(pxf.required)` and `(pxf.default)`, as its documentation always said.** It runs the row through `unmarshal_full`, and an error now names the column it fell in and is reported at the row.
-
-- **`pxf.BigFloat`'s binary exponent is bounded by `MaxBigFloatExponent` = 16384** ([#57](https://github.com/trendvidia/protowire-rust/issues/57), protowire#281). A literal past it is rejected after rounding to its read precision, `marshal` fails on one, and `Limits::max_big_float_exponent` lowers it per call. Rendering such a value used to take seconds to minutes. `check-decode` applies the bound to the PB rows.
-
-- **`@required` and `@default(v)` are read** ([#65](https://github.com/trendvidia/protowire-rust/issues/65), RFC-001 §8.1). A schema using the annotation spelling used to bind with neither enforced. `is_required`, `get_default`, the decoder and every bind-time check now read the 1327 carrier as well as the bracket options, whether the pool knows that extension or not. Two spellings of a default that disagree are a violation, and an `@default` that reduces to no single literal is too. A diagnostic quotes the spelling the author wrote.
-
-### Changed
-
-- **`pxf.BigFloat`'s text form carries its precision** ([#59](https://github.com/trendvidia/protowire-rust/issues/59), protowire#406, #410). `marshal` writes N = (decimal digits of 2^prec) + 1 significant digits followed by `p<prec>`, so a value reads back exactly: `0.10000000000000001p53`, `0p64`, and a bare `0` only at prec 0. A suffixed literal is read at the suffix's precision and an unsuffixed one at 256 bits. A suffix on any other field, `p0` and a precision past `MaxNumericLiteralDigits` are rejected, and `MaxNumericLiteralDigits` now counts mantissa digits only. An unsuffixed zero is stored with prec 0 and exponent 0, where it used to be prec 256 and exponent -256. Text written by earlier releases still reads; its bytes are the same, except that value.
-- `Violation` gains `surface`, and `annotations` gains `AnnotationSurface`. `IntVal`, `FloatVal` and `Token` gain `prec`, and `parse_big_float` takes the suffix and the exponent bound.
+Documents that used to decode can now be rejected, and `marshal`'s text for every `pxf.BigFloat` changes. See Changed and Fixed below.
 
 ### Added
 
@@ -48,9 +26,27 @@ format changes.
 
 ### Changed
 
+- **`pxf.BigFloat`'s text form carries its precision** ([#59](https://github.com/trendvidia/protowire-rust/issues/59), protowire#406, #410). `marshal` writes N = (decimal digits of 2^prec) + 1 significant digits followed by `p<prec>`, so a value reads back exactly: `0.10000000000000001p53`, `0p64`, and a bare `0` only at prec 0. A suffixed literal is read at the suffix's precision and an unsuffixed one at 256 bits. A suffix on any other field, `p0` and a precision past `MaxNumericLiteralDigits` are rejected, and `MaxNumericLiteralDigits` now counts mantissa digits only. An unsuffixed zero is stored with prec 0 and exponent 0, where it used to be prec 256 and exponent -256. Text written by earlier releases still reads; its bytes are the same, except that value.
+- `Violation` gains `surface`, and `annotations` gains `AnnotationSurface`. `IntVal`, `FloatVal` and `Token` gain `prec`, and `parse_big_float` takes the suffix and the exponent bound.
 - **`Violation.name` holds the `(pxf.default)` literal for `(pxf.required)` with `(pxf.default)` on one field** (protowire-go#211). It was empty.
 
+### Fixed
+
+- **`cargo doc` builds with warnings denied, and CI now requires it** ([#76](https://github.com/trendvidia/protowire-rust/issues/76)). Ten broken or private intra-doc links are fixed.
+- **The decoder reads what it does not bind, instead of counting braces** ([#60](https://github.com/trendvidia/protowire-rust/issues/60), protowire#312). A field `discard_unknown` drops and a directive's body are now held to the grammar, as `parse` already held them: a `,` or `;` between the entries of such a block is rejected, as is an unterminated one. The `testdata/blocks/` corpus is vendored and runs through `parse` and the decoder.
+- **`null` binds only to a field with explicit presence** ([#55](https://github.com/trendvidia/protowire-rust/issues/55), protowire#339, #379, #380). On a plain proto3 scalar, a repeated or map field, or a proto2 `required` field it is now an error naming the field, in a `@dataset` cell too. A schema that bound `null` to a plain scalar needs `optional` or a wrapper. Two editions fixtures cannot run: `prost-reflect` 0.16.5, its latest release, refuses `syntax = "editions"`, and a test pins that.
+- **A simple string holds no raw line feed** (#55, protowire#350), through `parse`, the decoder and every `@dataset` path. `bind_row` now re-escapes a cell's string, so an escaped `\n` in a cell still binds.
+- **A singular field bound twice in one message body is rejected** ([#56](https://github.com/trendvidia/protowire-rust/issues/56), protowire#347), whatever the values, and two blocks for one message field no longer replace each other. Each body is its own scope, and repeated fields still concatenate.
+- **A map key bound twice in one message body is rejected, and two bindings of a map with distinct keys merge** ([#58](https://github.com/trendvidia/protowire-rust/issues/58), protowire#396). Keys compare as values of the key type, so `1:` and `"1":` are one key of an integer-keyed map. The second binding used to replace the whole map.
+- **The type entry of an Any block is accepted wherever a body is written** ([#53](https://github.com/trendvidia/protowire-rust/issues/53), protowire#354). `@type = "<url>"` opens a singular Any, a list element or a map value, through `parse`, the decoder and `format`. A type entry that isn't first, a second one, and one on a block that isn't an Any are rejected. `unmarshal_full` now applies `(pxf.required)` and `(pxf.default)` inside an Any body before packing it.
+- **`DatasetReader` ends the rows only at end of input or a directive** (protowire#336). Anything else where a row could start, and a row cut short by end of input, used to end the sequence silently; both are now errors.
+- **`bind_row` applies `(pxf.required)` and `(pxf.default)`, as its documentation always said.** It runs the row through `unmarshal_full`, and an error now names the column it fell in and is reported at the row.
+- **`pxf.BigFloat`'s binary exponent is bounded by `MaxBigFloatExponent` = 16384** ([#57](https://github.com/trendvidia/protowire-rust/issues/57), protowire#281). A literal past it is rejected after rounding to its read precision, `marshal` fails on one, and `Limits::max_big_float_exponent` lowers it per call. Rendering such a value used to take seconds to minutes. `check-decode` applies the bound to the PB rows.
+- **`@required` and `@default(v)` are read** ([#65](https://github.com/trendvidia/protowire-rust/issues/65), RFC-001 §8.1). A schema using the annotation spelling used to bind with neither enforced. `is_required`, `get_default`, the decoder and every bind-time check now read the 1327 carrier as well as the bracket options, whether the pool knows that extension or not. Two spellings of a default that disagree are a violation, and an `@default` that reduces to no single literal is too. A diagnostic quotes the spelling the author wrote.
+
 ## [1.1.0] — 2026-10-31
+
+Tagged, but not published to crates.io. Its changes first shipped in 1.2.0.
 
 ### Fixed
 
