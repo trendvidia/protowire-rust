@@ -1,0 +1,9 @@
+# §3.4.4 appending. Something other than a row or a directive where the next
+# row could begin. MUST be rejected — the row sequence ends only at end of
+# input or at the next directive.
+
+@dataset test.v1.AllTypes (string_field, int32_field)
+
+("row-1", 1)
+xyz
+("row-2", 2)

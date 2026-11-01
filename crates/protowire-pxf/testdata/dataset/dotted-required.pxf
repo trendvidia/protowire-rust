@@ -1,0 +1,12 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto, whose
+# Req.n is (pxf.required) and Req.d has (pxf.default) "dflt". MUST be
+# accepted. Both apply under a present parent only, as in a body:
+#
+#   "absent": every req.* cell is empty, so req is absent, and req.n is
+#             not required
+#   "set":    req { n 5 }, and req.d takes its default "dflt"
+
+@dataset dataset.v1.Event (id, req.d, req.n)
+
+("absent",  ,  )
+("set",     , 5)

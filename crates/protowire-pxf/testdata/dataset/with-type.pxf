@@ -1,0 +1,8 @@
+# §3.4.4 standalone. @dataset coexisting with @type. MUST be rejected — the
+# @dataset header is itself the document's type declaration.
+
+@type test.v1.AllTypes
+
+@dataset test.v1.AllTypes (string_field, int32_field)
+
+("row-1", 1)

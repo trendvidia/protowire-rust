@@ -1,0 +1,9 @@
+@type nulls.v1.Holder
+
+# Reject: null as the value of a map entry whose value type is a message.
+# The value has presence, but a map entry is not nullable (#380): in
+# binary an entry without a value reads back as the empty message.
+
+mm = {
+  "a": null
+}

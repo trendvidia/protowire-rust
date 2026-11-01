@@ -1,0 +1,6 @@
+@type nulls.v1.Holder
+
+# Reject: null on a repeated field. A list is not nullable; write []
+# for an empty one.
+
+l = null

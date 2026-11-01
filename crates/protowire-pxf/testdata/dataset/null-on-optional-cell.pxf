@@ -1,0 +1,9 @@
+# §3.4.4 + § Booleans, Null, and Identifier Values (#339). Row type
+# dataset.v1.Event in paths.proto. MUST be accepted: a cell applies the
+# singular-field null rules, and opt is an optional scalar, so the null
+# leaves it unset and present-but-null.
+
+@dataset dataset.v1.Event (id, opt)
+
+("a", 1)
+("b", null)

@@ -10,19 +10,19 @@ import "google/protobuf/wrappers.proto";
 import "pxf/annotations.proto";
 
 message WithRequired {
-  string name = 1 [(pxf.required) = true];
+  optional string name = 1 [(pxf.required) = true];
   int32 value = 2;
 }
 
 message WithDefault {
-  string name = 1 [(pxf.default) = "anonymous"];
+  optional string name = 1 [(pxf.default) = "anonymous"];
   int32 count = 2 [(pxf.default) = "5"];
   bool active = 3 [(pxf.default) = "true"];
 }
 
 message WithNullMask {
   string name = 1;
-  int32 value = 2;
+  optional int32 value = 2;
   google.protobuf.FieldMask _null = 100;
 }
 

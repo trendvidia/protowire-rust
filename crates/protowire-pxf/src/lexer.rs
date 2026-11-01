@@ -318,6 +318,16 @@ impl<'a> Lexer<'a> {
                     Err(_) => Token::new(TokenKind::Illegal, "string contains invalid UTF-8", pos),
                 };
             }
+            if ch == b'\n' {
+                // Draft -01 § String Literals (protowire#350): a simple
+                // string spans one line; `\n` or a triple-quoted string
+                // holds a line break.
+                return Token::new(
+                    TokenKind::Illegal,
+                    "raw newline in string: write \\n, or use a triple-quoted string",
+                    pos,
+                );
+            }
             if ch != b'\\' {
                 buf.push(ch);
                 continue;

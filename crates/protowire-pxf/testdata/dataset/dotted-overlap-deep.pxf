@@ -1,0 +1,8 @@
+# §3.4.4 column paths. MUST be rejected at the header: desc.tempo and
+# desc.tempo.min_bpm are both columns, so a row could set tempo twice.
+# The overlap rule holds below the top level. Decided by the header
+# alone, without the row type.
+
+@dataset dataset.v1.Event (id, desc.tempo, desc.tempo.min_bpm)
+
+("x", { max_bpm = 120 }, 60)

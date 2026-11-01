@@ -1,0 +1,9 @@
+# §3.4.4 appending. The last row is cut short by end of input — the shape
+# an interrupted append leaves behind. MUST be rejected, by the streaming
+# API as well as the materializing one: a row whose closing ")" never
+# arrives is a decode error, not the end of the row sequence.
+
+@dataset test.v1.AllTypes (string_field, int32_field)
+
+("row-1", 1)
+("row-2", 2

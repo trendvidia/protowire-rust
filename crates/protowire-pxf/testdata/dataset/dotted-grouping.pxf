@@ -1,0 +1,18 @@
+# §3.4.4 column paths, the grouping rule. Row type dataset.v1.Event in
+# paths.proto. MUST be accepted. A row binds as the body that groups its
+# non-empty cells by path prefix, one block per prefix, wherever the
+# columns sit in the header:
+#
+#   r1: id "r1" desc { energy 0.5 tempo { min_bpm 60 max_bpm 120 } tags ["x"] } plain 1
+#   r2: id "r2" desc { energy 0.25 } plain 2       (every desc.tempo.* cell
+#       is empty, so tempo is absent)
+#   r3: id "r3" plain 3                            (every desc.* cell is
+#       empty, so desc is absent)
+#   r4: id "r4" desc { tempo { max_bpm 9 } } plain 4
+
+@dataset dataset.v1.Event (id, desc.energy, desc.tempo.min_bpm, desc.tags, plain, desc.tempo.max_bpm)
+
+("r1", 0.5,  60, ["x"], 1, 120)
+("r2", 0.25,   ,      , 2,    )
+("r3",     ,   ,      , 3,    )
+("r4",     ,   ,      , 4,   9)

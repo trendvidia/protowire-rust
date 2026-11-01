@@ -1,0 +1,8 @@
+# Draft -01 § String Literals (#350). A raw LF inside a simple string in
+# a cell. MUST be rejected, by Parse and by the streaming reader alike:
+# the cell is a value, and the rule holds for every value.
+
+@dataset test.v1.AllTypes (string_field, int32_field)
+
+("row
+-1", 1)

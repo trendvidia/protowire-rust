@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+
+// Schema for the simple-string newline fixtures under testdata/strings/
+// (issue #350; IETF draft -01 § String Literals: "Within a simple-string,
+// U+000A (LF) MUST NOT appear unescaped").
+
+syntax = "proto3";
+
+package strings.v1;
+
+message Holder {
+  string s = 1;
+  string t = 2;
+}

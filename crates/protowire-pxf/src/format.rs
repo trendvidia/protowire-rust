@@ -172,7 +172,7 @@ impl Formatter<'_> {
 /// Re-emit only the escape sequences the lexer recognizes. Non-printable
 /// characters that aren't in the list pass through unchanged — a limitation
 /// users should avoid by using a `bytes` field.
-fn quote_string(s: &str) -> String {
+pub(crate) fn quote_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
     for ch in s.chars() {

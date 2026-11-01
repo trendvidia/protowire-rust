@@ -364,16 +364,7 @@ pub fn bind_row(
 fn cell_to_pxf(v: &Value, out: &mut String, pos: Position) -> Result<(), PxfError> {
     match v {
         Value::Null(_) => out.push_str("null"),
-        Value::String(s) => {
-            out.push('"');
-            for ch in s.value.chars() {
-                if ch == '"' || ch == '\\' {
-                    out.push('\\');
-                }
-                out.push(ch);
-            }
-            out.push('"');
-        }
+        Value::String(s) => out.push_str(&crate::format::quote_string(&s.value)),
         Value::Int(v) => out.push_str(&v.raw),
         Value::Float(v) => out.push_str(&v.raw),
         Value::Bool(v) => out.push_str(if v.value { "true" } else { "false" }),

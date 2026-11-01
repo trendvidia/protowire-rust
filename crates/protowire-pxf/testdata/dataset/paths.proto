@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+//
+// Row type for the dotted-column fixtures (dotted-*.pxf, draft -01
+// §3.4.4, issue #342). It has what test.v1.AllTypes lacks: a oneof whose
+// members are messages, and a sub-message with a (pxf.required) and a
+// (pxf.default) field, and an optional scalar (null-on-optional-cell, #339).
+syntax = "proto3";
+
+package dataset.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "pxf/annotations.proto";
+import "pxf/bignum.proto";
+import "pxf/secret.proto";
+
+message Tempo {
+  int32 min_bpm = 1;
+  int32 max_bpm = 2;
+}
+
+message Desc {
+  double energy = 1;
+  Tempo tempo = 2;
+  repeated string tags = 3;
+  google.protobuf.StringValue label = 4;
+}
+
+message Pick {
+  string name = 1;
+  int32 n = 2;
+}
+
+message Req {
+  int32 n = 1 [(pxf.required) = true];
+  string d = 2 [(pxf.default) = "dflt"];
+}
+
+message Event {
+  string id = 1;
+  Desc desc = 2;
+  repeated Pick picks = 3;
+  map<string, Pick> by_name = 4;
+  google.protobuf.Timestamp ts = 5;
+  oneof choice {
+    Pick a = 6;
+    Pick b = 7;
+  }
+  Req req = 8;
+  int32 plain = 9;
+  google.protobuf.Int32Value wrap = 10;
+  google.protobuf.Duration dur = 11;
+  pxf.BigInt big = 12;
+  google.protobuf.Any payload = 13;
+  pxf.Secret pw = 14;
+  optional int32 opt = 15;
+}

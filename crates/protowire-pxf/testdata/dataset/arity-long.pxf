@@ -1,0 +1,6 @@
+# §3.4.4 row arity. The header declares 2 columns; the row carries 3.
+# MUST be rejected.
+
+@dataset test.v1.AllTypes (string_field, int32_field)
+
+("row-1", 1, STATUS_ACTIVE)

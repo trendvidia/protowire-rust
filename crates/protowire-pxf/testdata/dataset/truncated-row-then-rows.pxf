@@ -1,0 +1,10 @@
+# §3.4.4 appending. A row cut short mid-number, followed by complete rows
+# appended later. MUST be rejected — a decoder that treated the broken row
+# as the end of the sequence would silently drop every row after it.
+
+@dataset test.v1.AllTypes (string_field, int32_field)
+
+("row-1", 1)
+("row-2", 2
+("row-3", 3)
+("row-4", 4)

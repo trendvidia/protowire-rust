@@ -1,0 +1,6 @@
+# §3.4.4 column paths. MUST be rejected at the header: the same column
+# appears twice. This holds for a plain field name as for a dotted path.
+
+@dataset test.v1.AllTypes (string_field, string_field)
+
+("a", "b")

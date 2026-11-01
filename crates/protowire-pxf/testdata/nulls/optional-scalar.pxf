@@ -1,0 +1,6 @@
+@type nulls.v1.Holder
+
+# Accept: null on an optional scalar field. Explicit presence gives the
+# field an unset state: o is unset, and present-but-null.
+
+o = null

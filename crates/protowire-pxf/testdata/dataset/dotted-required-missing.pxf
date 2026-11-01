@@ -1,0 +1,7 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto, whose
+# Req.n is (pxf.required). MUST be rejected: req.d makes req present, and
+# req.n is empty, as  req { d = "x" }  is rejected in a body.
+
+@dataset dataset.v1.Event (id, req.d, req.n)
+
+("missing", "x", )

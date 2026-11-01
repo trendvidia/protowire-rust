@@ -1,0 +1,6 @@
+# §3.4.4 column paths. MUST be rejected at the header: desc..energy has
+# an empty segment. Decided by the header alone, without the row type.
+
+@dataset dataset.v1.Event (id, desc..energy)
+
+("x", 0.5)

@@ -1,0 +1,6 @@
+@type nulls.v1.Required
+
+# Accept: null on an optional scalar marked (pxf.required). A null field
+# is present for that check: r is unset, and present-but-null.
+
+r = null

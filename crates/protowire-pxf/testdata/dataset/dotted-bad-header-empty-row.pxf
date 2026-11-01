@@ -1,0 +1,8 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto. MUST be
+# rejected at the header: picks is a repeated field. The row's cells are
+# all empty, and the header rules apply to it all the same, since they
+# do not depend on what a row holds.
+
+@dataset dataset.v1.Event (id, picks.name)
+
+( , )

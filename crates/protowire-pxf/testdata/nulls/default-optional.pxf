@@ -1,0 +1,7 @@
+@type nulls.v1.Defaulted
+
+# Accept: null on an optional scalar with a (pxf.default). The default
+# applies only to an absent field: d stays unset, not 5, and is
+# present-but-null.
+
+d = null

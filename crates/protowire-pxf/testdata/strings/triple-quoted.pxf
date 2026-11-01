@@ -1,0 +1,10 @@
+@type strings.v1.Holder
+
+# Accept: a triple-quoted string may span lines. Binds s to "x", LF, "y"
+# (the leading LF after the opening quotes and the common indent are
+# stripped).
+
+s = """
+  x
+  y
+  """

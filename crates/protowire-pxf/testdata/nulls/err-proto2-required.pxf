@@ -1,0 +1,7 @@
+@type nulls.v1.Strict
+
+# Reject: null on a proto2 required field (#379). It has explicit
+# presence, but leaving it unset would make the message invalid in
+# binary, so the null is an error.
+
+r = null

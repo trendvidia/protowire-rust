@@ -1,0 +1,5 @@
+@type nulls.ed.v1.Ed
+
+# Accept: in an editions file, a scalar with EXPLICIT presence (the 2023
+# default) may hold null; it is left unset and present-but-null.
+explicit_scalar = null

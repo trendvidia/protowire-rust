@@ -1,0 +1,17 @@
+# §3.4.4 value cells. MUST be accepted. Each row binds to the message its
+# body would: a non-empty cell in column c means `c = <value>`.
+#
+#   row-1: nested_field {name "n1" value 1}; repeated_string [a, b];
+#          repeated_nested [{x}, {y 2}]; string_map {k: v}; int32_field 1
+#   row-2: nested_field present and empty ({}); repeated_string empty ([]);
+#          repeated_nested and string_map absent (empty cells); int32_field 2
+#   row-3: every nested column absent; int32_field 3
+#   row-4: nested_field null (present-but-null, as `nested_field = null`
+#          is in a body); the other nested columns absent; int32_field 4
+
+@dataset test.v1.AllTypes (string_field, nested_field, repeated_string, repeated_nested, string_map, int32_field)
+
+("row-1", { name = "n1" value = 1 }, ["a", "b"], [{ name = "x" }, { name = "y" value = 2 }], { "k": "v" }, 1)
+("row-2", {},                        [],         ,                                          ,             2)
+("row-3", ,                          ,           ,                                          ,             3)
+("row-4", null,                      ,           ,                                          ,             4)

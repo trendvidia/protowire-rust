@@ -1,0 +1,18 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+
+// The proto2 schema for the null-binding fixtures under testdata/nulls/
+// (issue #339): a proto2 singular scalar has explicit presence, and a
+// proto2 required field rejects null (#379).
+
+syntax = "proto2";
+
+package nulls.v1;
+
+message Legacy {
+  optional int32 p = 1;
+}
+
+message Strict {
+  required int32 r = 1;
+}

@@ -1,0 +1,12 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto. MUST be
+# accepted. Columns may reach different members of the oneof `choice`,
+# and two columns may fill the same member: they share one block, so the
+# member is set once.
+#
+#   row 1: a { name "x" n 1 }
+#   row 2: b { name "y" }
+
+@dataset dataset.v1.Event (a.name, b.name, a.n)
+
+("x",    , 1)
+(   , "y",  )

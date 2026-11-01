@@ -1,0 +1,7 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto. MUST be
+# rejected: the row fills two members of the oneof `choice`, which the
+# body  a { name = "x" } b { name = "y" }  would be rejected for.
+
+@dataset dataset.v1.Event (a.name, b.name)
+
+("x", "y")
