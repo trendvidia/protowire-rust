@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Reject: two blocks for one singular message field bind it twice. They do not merge.
+m { a = 1 }
+m { b = 2 }

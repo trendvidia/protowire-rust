@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Reject: a proto3 optional scalar bound twice.
+o = 1
+o = 2

@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Reject: a scalar oneof member bound twice.
+ks = "a"
+ks = "b"

@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Accept: a repeated field may be bound more than once; the lists concatenate (#337).
+items = [{ a = 1 }]
+items = [{ a = 2 }]

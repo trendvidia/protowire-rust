@@ -1,0 +1,6 @@
+@type dup.v1.Holder
+
+# Accept: each message body is its own scope. a is bound once in m, once in n and once in each list element.
+m { a = 1 }
+n { a = 1 }
+items = [{ a = 1 }, { a = 2 }]

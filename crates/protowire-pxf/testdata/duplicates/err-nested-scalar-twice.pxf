@@ -1,0 +1,7 @@
+@type dup.v1.Holder
+
+# Reject: the rule holds in every message body, here a sub-message.
+m {
+  a = 1
+  a = 2
+}

@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Accept: a map field bound twice with distinct keys; the entries merge.
+labels = { a: "1" }
+labels = { b: "2" }

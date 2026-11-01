@@ -17,7 +17,7 @@ use prost_reflect::{
     Cardinality, DescriptorPool, DynamicMessage, FieldDescriptor, Kind, MapKey, MessageDescriptor,
     OneofDescriptor, ReflectMessage, Value,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::annotations::{find_null_mask_field, get_default, is_required};
 use crate::ast::{
@@ -659,6 +659,9 @@ impl<'a> Decoder<'a> {
     ) -> Result<(), PxfError> {
         let desc = msg.descriptor();
         let mut set_oneofs: HashMap<String, String> = HashMap::new();
+        // The singular fields this body has bound (draft -01 § Entries and
+        // Keys; protowire#347): each message body is its own scope.
+        let mut bound: HashSet<u32> = HashSet::new();
         // A keyed-element context applies to exactly this body: the
         // immediate entries of one element of a keyed repeated field.
         // Take it so nested submessages don't inherit the key checks.
@@ -718,6 +721,7 @@ impl<'a> Decoder<'a> {
                             ));
                         }
                     };
+                    check_bound(&fd, &mut bound, pos)?;
                     self.check_oneof(&fd, &mut set_oneofs, pos)?;
                     if matches!(self.current.kind, TokenKind::Null) {
                         if !nullable(&fd) {
@@ -805,6 +809,7 @@ impl<'a> Decoder<'a> {
                             ),
                         ));
                     }
+                    check_bound(&fd, &mut bound, pos)?;
                     self.check_oneof(&fd, &mut set_oneofs, pos)?;
                     self.mark_present(&fd);
                     let inner_desc = match fd.kind() {
@@ -939,7 +944,7 @@ impl<'a> Decoder<'a> {
 
         // A repeated field bound more than once concatenates in document
         // order (draft -01 § Entries and Keys), so start from what is there.
-        let mut elems: Vec<Value> = existing_list(msg, fd);
+        let mut elems = existing_list(msg, fd);
         let element_kind = fd.kind();
         // Non-None: the anonymous form of a keyed repeated field, whose
         // element bodies get the key-field checks (draft -01 §3.13).
@@ -1018,7 +1023,7 @@ impl<'a> Decoder<'a> {
             Kind::Message(m) => m,
             _ => unreachable!("key_field only matches message-typed lists"),
         };
-        let mut elems: Vec<Value> = existing_list(msg, fd);
+        let mut elems = existing_list(msg, fd);
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         loop {
             match self.current.kind {
@@ -1118,7 +1123,13 @@ impl<'a> Decoder<'a> {
         let key_fd = map_entry_desc.map_entry_key_field();
         let val_fd = map_entry_desc.map_entry_value_field();
 
-        let mut map: HashMap<MapKey, Value> = HashMap::new();
+        // A map bound more than once merges, so start from what is there; a
+        // key bound twice in one body is an error either way (draft -01
+        // § Entries and Keys; protowire#396).
+        let mut map = match msg.take_field(fd) {
+            Some(Value::Map(map)) => map,
+            _ => HashMap::new(),
+        };
 
         while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof) {
             let pos = self.current.pos;
@@ -1158,6 +1169,18 @@ impl<'a> Decoder<'a> {
             }
 
             let key = decode_map_key(fd, &key_fd, key_str, key_kind, pos)?;
+            // Compared as values of the key type, so 1 and "1" are one key
+            // of an integer-keyed map.
+            if map.contains_key(&key) {
+                return Err(self.err_at(
+                    pos,
+                    format!(
+                        "map field {:?}: key {} is already set",
+                        fd.name(),
+                        shown_key(&key)
+                    ),
+                ));
+            }
 
             self.illegal()?;
             if matches!(self.current.kind, TokenKind::Null) {
@@ -1531,14 +1554,43 @@ fn is_any_full_name(full: &str) -> bool {
 
 /// The elements a repeated field already holds, so a second binding of
 /// the same field appends rather than replaces (draft -01 § Entries and
-/// Keys: "elements concatenated in document order").
-fn existing_list(msg: &DynamicMessage, fd: &FieldDescriptor) -> Vec<Value> {
-    if !msg.has_field(fd) {
-        return Vec::new();
-    }
-    match msg.get_field(fd).into_owned() {
-        Value::List(items) => items,
+/// Keys: "elements concatenated in document order"). Taken, not copied:
+/// the caller writes the list back, and a copy per binding would make a
+/// field bound many times quadratic.
+fn existing_list(msg: &mut DynamicMessage, fd: &FieldDescriptor) -> Vec<Value> {
+    match msg.take_field(fd) {
+        Some(Value::List(items)) => items,
         _ => Vec::new(),
+    }
+}
+
+/// Record that this body bound `fd`, or report that it already did: a
+/// singular field is bound at most once in one message body, whatever the
+/// values, and two blocks do not merge (draft -01 § Entries and Keys;
+/// protowire#347). A repeated or map field has no such limit.
+fn check_bound(
+    fd: &FieldDescriptor,
+    bound: &mut HashSet<u32>,
+    pos: Position,
+) -> Result<(), PxfError> {
+    if fd.is_list() || fd.is_map() || bound.insert(fd.number()) {
+        return Ok(());
+    }
+    Err(PxfError::new(
+        pos,
+        format!("field {:?} is already set", fd.name()),
+    ))
+}
+
+/// A map key as an error shows it: a string quoted, anything else bare.
+fn shown_key(key: &MapKey) -> String {
+    match key {
+        MapKey::Bool(v) => v.to_string(),
+        MapKey::I32(v) => v.to_string(),
+        MapKey::I64(v) => v.to_string(),
+        MapKey::U32(v) => v.to_string(),
+        MapKey::U64(v) => v.to_string(),
+        MapKey::String(v) => format!("{v:?}"),
     }
 }
 

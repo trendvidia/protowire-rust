@@ -1,0 +1,4 @@
+@type dup.v1.Holder
+
+# Accept: each message body is its own scope, so key a occurs once in each element's map.
+items = [{ tags = { a: "1" } }, { tags = { a: "2" } }]
