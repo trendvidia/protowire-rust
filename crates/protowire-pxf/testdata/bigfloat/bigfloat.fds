@@ -1,0 +1,21 @@
+
+÷
+pxf/bignum.protopxf"6
+BigInt
+abs (Rabs
+negative (Rnegative"W
+Decimal
+unscaled (Runscaled
+scale (Rscale
+negative (Rnegative"r
+BigFloat
+mantissa (Rmantissa
+exponent (Rexponent
+prec (Rprec
+negative (RnegativeBQ
+org.protowire.proto.pxfPZ$github.com/trendvidia/protos/pxf;pxfªProtowire.Pxfbproto3
+t
+bigfloat/bigfloat.protobf.v1pxf/bignum.proto"8
+H
+bf (2.pxf.BigFloatRbf
+count (Rcountbproto3

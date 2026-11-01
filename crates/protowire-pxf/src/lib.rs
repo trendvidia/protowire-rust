@@ -36,7 +36,7 @@ pub use format::{format, format_with_options, FormatOptions};
 pub use keyed::{canonicalize_keyed, ident_safe_entry_name, key_field};
 pub use lexer::Lexer;
 pub use limits::{
-    Limits, MAX_BYTES_LITERAL_LENGTH, MAX_MESSAGE_SIZE, MAX_NESTING_DEPTH,
+    Limits, MAX_BIG_FLOAT_EXPONENT, MAX_BYTES_LITERAL_LENGTH, MAX_MESSAGE_SIZE, MAX_NESTING_DEPTH,
     MAX_NUMERIC_LITERAL_DIGITS, MAX_REPEATED_COUNT,
 };
 pub use parser::{parse, parse_with_limits};

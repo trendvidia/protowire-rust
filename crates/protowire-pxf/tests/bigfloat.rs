@@ -2,8 +2,8 @@
 // Copyright (c) 2026 TrendVidia, LLC.
 //! `pxf.BigFloat` literals, byte for byte against the reference
 //! (protowire-rust#39). `testdata/bigfloat-oracle.tsv` is what
-//! protowire-go v1.6.0 wrote for each literal — mantissa, exponent, prec,
-//! sign — and the text it marshalled back; the header says how it was
+//! protowire-go wrote for each literal — mantissa, exponent, prec, sign —
+//! and the text it marshalled back; the header says how it was
 //! produced. STABILITY.md promise 2 makes those bytes the contract, and the
 //! reference's conversion is not correctly rounded, so agreement here means
 //! the port mirrors `math/big`'s steps, not merely the nearest value.

@@ -4,7 +4,7 @@
 //! (protowire-rust#34). Mirrors the cases of protowire-go's
 //! `encoding/pxf/bignum_test.go`, plus the digit cap at its bound.
 //!
-//! `pxf.BigFloat`'s literal form is not implemented in this port; the
+//! `pxf.BigFloat`'s literal form has its own tests in `bigfloat.rs`; the
 //! test at the bottom pins that as a documented gap (see the tracking
 //! issue it names) rather than letting it drift silently.
 

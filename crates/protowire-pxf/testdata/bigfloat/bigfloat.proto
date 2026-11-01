@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+
+// Schema for the pxf.BigFloat text-form fixtures under testdata/bigfloat/
+// (issues #393 and #406; IETF draft -01 § PXF Annotations).
+
+syntax = "proto3";
+
+package bf.v1;
+
+import "pxf/bignum.proto";
+
+message H {
+  pxf.BigFloat bf = 1;
+  int32 count = 2;
+}

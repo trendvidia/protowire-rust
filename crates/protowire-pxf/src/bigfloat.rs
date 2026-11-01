@@ -17,28 +17,31 @@
 //! steps rather than the mathematically nearest value: [`Fl::mul`] and
 //! [`Fl::quo`] are correctly rounded (as Go's `umul` / `uquo` are), and
 //! [`parse_big_float`] applies them in the reference's order with the
-//! reference's precisions. The reference's text output is
-//! `big.Float.Text('g', 78)`, mirrored by [`format_big_float`].
+//! reference's precisions, at the literal's read precision. A literal is
+//! read at its `p<prec>` suffix's precision, and at [`BIG_FLOAT_PREC`] bits
+//! without one (draft -01 § PXF Annotations; protowire#406). The text form
+//! is C's `%g` at N significant digits plus the suffix, where N is the
+//! decimal digits of 2^prec plus one, mirrored by [`format_big_float`].
 //!
 //! The arithmetic is hand-rolled on a small unsigned big integer, in the
 //! spirit of the rest of this crate (no bignum dependency); every
 //! conversion is bounded by the literal's digit count
-//! ([`MAX_NUMERIC_LITERAL_DIGITS`]) on the way in. Rendering is
-//! proportional to the wire exponent's magnitude, as the reference's is
-//! (protowire#281 is the open limit there).
+//! ([`MAX_NUMERIC_LITERAL_DIGITS`]) on the way in. Rendering costs the
+//! square of the binary exponent, which [`MAX_BIG_FLOAT_EXPONENT`] bounds
+//! before anything is built (protowire#281).
 
 use crate::bignum::check_literal_digits;
-use crate::limits::MAX_NUMERIC_LITERAL_DIGITS;
+use crate::limits::{MAX_BIG_FLOAT_EXPONENT, MAX_NUMERIC_LITERAL_DIGITS};
 
-/// The precision a PXF `BigFloat` literal is parsed at, in bits — the
-/// reference's `bigFloatPrec`.
+/// The precision a PXF `BigFloat` literal without a suffix is read at, in
+/// bits.
 pub const BIG_FLOAT_PREC: u32 = 256;
 
 /// A parsed `pxf.BigFloat` literal, as the wire message carries it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BigFloatLit {
     /// Unsigned big-endian mantissa; empty for zero. For a non-zero value
-    /// it is exactly [`BIG_FLOAT_PREC`] bits with the top bit set.
+    /// it is exactly `prec` bits with the top bit set.
     pub mantissa: Vec<u8>,
     /// Binary exponent: value = mantissa × 2^exponent.
     pub exponent: i32,
@@ -527,12 +530,104 @@ fn has_non_zero_mantissa_digit(s: &str) -> bool {
     false
 }
 
+/// floor(log10(2) × 2^128), high word first.
+const LOG10_OF_2: (u128, u128) = (0x4d10_4d42_7de7_fbcc, 0x47c4_acd6_05be_48bc);
+
+/// The decimal digits of 2^p, floor(p·log10(2)) + 1, without computing
+/// 2^p, since `p` comes off the wire or out of a document. Fixed point: the
+/// product falls short of p·log10(2) by less than 2^-95, and for every u32
+/// `p` it is further than that from an integer, so the floor is exact. An
+/// f64 is one digit high at p = 146964308.
+fn pow2_digits(p: u32) -> u64 {
+    let p = u128::from(p);
+    (((p * LOG10_OF_2.0) + ((p * LOG10_OF_2.1) >> 64)) >> 64) as u64 + 1
+}
+
+/// The significant digits a `pxf.BigFloat` of `prec` bits is written with:
+/// the decimal digits of 2^prec plus one, the fewest that recover every
+/// `prec`-bit value from its literal (draft -01 § PXF Annotations).
+pub fn big_float_digits(prec: u32) -> u64 {
+    pow2_digits(prec) + 1
+}
+
+/// The binary exponent of the value a mantissa and wire exponent denote,
+/// the exponent plus the mantissa's bit length, or `None` for a zero
+/// mantissa, which has none. Read off the bytes, so nothing is built.
+pub fn big_float_value_exponent(mantissa: &[u8], exponent: i32) -> Option<i64> {
+    let start = mantissa.iter().position(|&b| b != 0)?;
+    let bits =
+        8 * (mantissa.len() - start - 1) as i64 + i64::from(8 - mantissa[start].leading_zeros());
+    Some(i64::from(exponent) + bits)
+}
+
+/// Parse a schema's `pxf.BigFloat` literal, whose suffix is part of the
+/// string: `(pxf.default) = "1.5p53"`. Under the constants, as a schema
+/// literal stays.
+pub fn parse_big_float_default(s: &str) -> Result<BigFloatLit, String> {
+    let (num, prec) = match s.split_once('p') {
+        Some((_, "")) => {
+            return Err(format!(
+                "big float literal {}: precision suffix p is not a positive bit count",
+                clip_literal(s)
+            ));
+        }
+        Some((num, prec)) => (num, prec),
+        None => (s, ""),
+    };
+    parse_big_float(
+        num,
+        prec,
+        MAX_NUMERIC_LITERAL_DIGITS,
+        MAX_BIG_FLOAT_EXPONENT,
+    )
+}
+
 /// Parse a `pxf.BigFloat` literal — an optional `-`, decimal digits with
-/// an optional `.` fraction, and an optional `e` / `E` exponent — into the
-/// wire message's fields, producing the bytes the reference produces for
-/// the same literal.
-pub fn parse_big_float(s: &str, max_digits: usize) -> Result<BigFloatLit, String> {
-    check_literal_digits(s, max_digits)?;
+/// an optional `.` fraction, and an optional `e` / `E` exponent — at the
+/// precision its suffix's digits `prec` state, or at [`BIG_FLOAT_PREC`] when
+/// `prec` is empty, into the wire message's fields.
+///
+/// `max_digits` bounds the mantissa's digits and, through the digit count
+/// it implies, a suffix: the exponent and suffix aren't counted.
+/// `max_exponent` bounds the binary exponent after rounding to the read
+/// precision, on both signs, so the literal of a value at the bound reads
+/// back. A zero keeps the precision its suffix states and its sign, with an
+/// empty mantissa and exponent 0; without a suffix its precision is 0.
+pub fn parse_big_float(
+    s: &str,
+    prec: &str,
+    max_digits: usize,
+    max_exponent: usize,
+) -> Result<BigFloatLit, String> {
+    let suffixed = !prec.is_empty();
+    let read_prec = if suffixed {
+        let parsed = prec
+            .parse::<u32>()
+            .ok()
+            .filter(|&p| p != 0)
+            .ok_or_else(|| {
+                format!(
+                    "big float literal {}p{}: precision suffix p{} is not a positive bit count",
+                    clip_literal(s),
+                    clip_literal(prec),
+                    clip_literal(prec)
+                )
+            })?;
+        let digits = big_float_digits(parsed);
+        if digits > max_digits as u64 {
+            return Err(format!(
+                "big float literal {}p{}: precision p{} renders to {} digits; MaxNumericLiteralDigits={}",
+                clip_literal(s),
+                parsed,
+                parsed,
+                digits,
+                max_digits
+            ));
+        }
+        parsed
+    } else {
+        BIG_FLOAT_PREC
+    };
     let invalid = || format!("invalid big float: {}", s);
     let (negative, body) = match s.strip_prefix('-') {
         Some(rest) => (true, rest),
@@ -542,6 +637,7 @@ pub fn parse_big_float(s: &str, max_digits: usize) -> Result<BigFloatLit, String
         Some(i) => (&body[..i], Some(&body[i + 1..])),
         None => (body, None),
     };
+    check_literal_digits(mant_text, max_digits)?;
     let (int_part, frac_part) = match mant_text.split_once('.') {
         Some((i, f)) => (i, f),
         None => (mant_text, ""),
@@ -596,13 +692,13 @@ pub fn parse_big_float(s: &str, max_digits: usize) -> Result<BigFloatLit, String
             prec: bits as u32,
         };
         if exp5 == 0 {
-            Fl::round_into(d, exp2, BIG_FLOAT_PREC, false)
+            Fl::round_into(d, exp2, read_prec, false)
         } else {
-            let p = pow5(exp5.unsigned_abs(), BIG_FLOAT_PREC + 64);
+            let p = pow5(exp5.unsigned_abs(), read_prec + 64);
             if exp5 < 0 {
-                exact.quo(&p, BIG_FLOAT_PREC)
+                exact.quo(&p, read_prec)
             } else {
-                exact.mul(&p, BIG_FLOAT_PREC)
+                exact.mul(&p, read_prec)
             }
         }
     };
@@ -618,8 +714,8 @@ pub fn parse_big_float(s: &str, max_digits: usize) -> Result<BigFloatLit, String
         )),
         Fl::Zero => Ok(BigFloatLit {
             mantissa: Vec::new(),
-            exponent: -(BIG_FLOAT_PREC as i32),
-            prec: BIG_FLOAT_PREC,
+            exponent: 0,
+            prec: if suffixed { read_prec } else { 0 },
             negative,
         }),
         Fl::Finite { mant, exp, prec } => {
@@ -628,6 +724,14 @@ pub fn parse_big_float(s: &str, max_digits: usize) -> Result<BigFloatLit, String
                 return Err(format!(
                     "big float literal {} is below the wire's exponent range",
                     clip_literal(s)
+                ));
+            }
+            if exp.unsigned_abs() > max_exponent as u64 {
+                return Err(format!(
+                    "big float literal {} has binary exponent {}, and MaxBigFloatExponent={} bounds its magnitude",
+                    clip_literal(s),
+                    exp,
+                    max_exponent
                 ));
             }
             Ok(BigFloatLit {
@@ -640,53 +744,54 @@ pub fn parse_big_float(s: &str, max_digits: usize) -> Result<BigFloatLit, String
     }
 }
 
-/// Render a `pxf.BigFloat` message as the literal the reference writes:
-/// `big.Float.Text('g', digits)` with `digits = ⌊prec × 0.30103⌋ + 1` (78 at
-/// 256 bits) — the value's exact decimal expansion rounded to that many
-/// significant digits, trailing zeros trimmed, in `%e` form when the
-/// decimal exponent is below −4 or at least the digit count, else `%f`.
-/// An empty mantissa is `0` (or `-0`); a message whose `prec` would render
-/// to more than `MaxNumericLiteralDigits` digits, or whose exponent
-/// overflows, is an error.
+/// Render a `pxf.BigFloat` message as its literal (draft -01 § PXF
+/// Annotations; protowire#406): N = [`big_float_digits`] significant digits
+/// of the value rounded to `prec` bits, trailing zeros trimmed, in `%e` form
+/// when the decimal exponent is below −4 or at least N, else `%f`, then the
+/// suffix `p<prec>`. A zero keeps its precision and sign, `0p64` or `-0p64`;
+/// a precision of 0 is zero whatever the other fields say, and is the one
+/// value written without a suffix. A value past
+/// [`MAX_BIG_FLOAT_EXPONENT`], or a `prec` that would render past
+/// `MaxNumericLiteralDigits`, has no literal and is an error, checked
+/// before anything is built.
 pub fn format_big_float(
     mantissa: &[u8],
     exponent: i32,
     prec: u32,
     negative: bool,
 ) -> Result<String, String> {
+    let sign = if negative { "-" } else { "" };
     if prec == 0 {
-        return Ok("0".to_string());
+        return Ok(format!("{sign}0"));
     }
-    // The reference's literal 0.30103, not LOG10_2: the two differ in the
-    // sixth digit, and the floor below must agree with Go's for every
-    // `prec` a producer may write.
-    #[allow(clippy::approx_constant)]
-    let dec_digits = (f64::from(prec) * 0.30103) as i64 + 1;
+    if let Some(e) = big_float_value_exponent(mantissa, exponent) {
+        if e.unsigned_abs() > MAX_BIG_FLOAT_EXPONENT as u64 {
+            return Err(format!(
+                "pxf.BigFloat binary exponent {} exceeds MaxBigFloatExponent={}",
+                e, MAX_BIG_FLOAT_EXPONENT
+            ));
+        }
+    }
+    let dec_digits = big_float_digits(prec) as i64;
     if dec_digits > MAX_NUMERIC_LITERAL_DIGITS as i64 {
         return Err(format!(
             "pxf.BigFloat prec {} bits renders to {} digits; MaxNumericLiteralDigits={}",
             prec, dec_digits, MAX_NUMERIC_LITERAL_DIGITS
         ));
     }
-    let sign = if negative { "-" } else { "" };
+    let suffix = format!("p{prec}");
     let m = BigUint::from_be_bytes(mantissa);
     if m.is_zero() {
-        return Ok(format!("{}0", sign));
+        return Ok(format!("{sign}0{suffix}"));
     }
     // readBigFloat: SetPrec(prec).SetInt(m) rounds m to prec bits, then
     // SetMantExp scales by 2^exponent.
     let bits = m.bit_len() as i64;
     let value = Fl::round_into(m, bits, prec, false);
     let Fl::Finite { mant, exp, prec } = value else {
-        return Ok(format!("{}Inf", if negative { "-" } else { "+" }));
+        return Err("pxf.BigFloat mantissa rounds to no finite value".to_string());
     };
     let exp = exp + i64::from(exponent);
-    if exp > MAX_EXP {
-        return Ok(format!("{}Inf", if negative { "-" } else { "+" }));
-    }
-    if exp < MIN_EXP {
-        return Ok(format!("{}0", sign));
-    }
     // Exact decimal expansion of mant × 2^(exp − prec).
     let e2 = exp - i64::from(prec);
     let (digits, mut dexp): (String, i64) = if e2 >= 0 {
@@ -749,15 +854,7 @@ pub fn format_big_float(
         }
         fmt_f(&mut out, (prec_g - dexp).max(0) as usize, &d, dexp);
     }
-    if out.len() > MAX_NUMERIC_LITERAL_DIGITS {
-        let n = out.bytes().filter(u8::is_ascii_digit).count();
-        if n > MAX_NUMERIC_LITERAL_DIGITS {
-            return Err(format!(
-                "pxf.BigFloat renders to {} digits; MaxNumericLiteralDigits={}",
-                n, MAX_NUMERIC_LITERAL_DIGITS
-            ));
-        }
-    }
+    out.push_str(&suffix);
     Ok(out)
 }
 
