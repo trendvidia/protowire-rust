@@ -1,0 +1,9 @@
+@type blocks.v1.Doc
+
+# Accept: block entries on their own lines. Binds the same values as
+# space-in-block.pxf, through the bare-block form.
+
+address {
+  city = "Berlin"
+  zip = "10115"
+}

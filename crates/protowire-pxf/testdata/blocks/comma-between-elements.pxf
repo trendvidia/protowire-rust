@@ -1,0 +1,6 @@
+@type blocks.v1.Doc
+
+# Accept: commas between list elements, each a block whose entries
+# are separated by spaces. Binds two children, "greeting" and "title".
+
+children = [ { id = "greeting" type = "Label" }, { id = "title" type = "Label" } ]

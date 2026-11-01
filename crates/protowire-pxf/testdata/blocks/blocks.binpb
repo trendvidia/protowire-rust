@@ -1,0 +1,16 @@
+
+Ý
+blocks/blocks.proto	blocks.v1"/
+Address
+city (	Rcity
+zip (	Rzip"+
+Child
+id (	Rid
+type (	Rtype"Ô
+Doc,
+address (2.blocks.v1.AddressRaddress5
+headers (2.blocks.v1.Doc.HeadersEntryRheaders,
+children (2.blocks.v1.ChildRchildren:
+HeadersEntry
+key (	Rkey
+value (	Rvalue:8bproto3

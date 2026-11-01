@@ -41,6 +41,30 @@ pub fn parse_with_limits(input: &str, limits: Limits) -> Result<Document, PxfErr
     Parser::new(input, limits).parse_document()
 }
 
+/// Read one value with this parser from where a decoder stands: `current`
+/// is the value's first token, and on return `lex` and `current` stand past
+/// the value. The decoder reads what it does not bind this way (a field
+/// `discard_unknown` drops, a directive's body), so skipping accepts only
+/// what parsing accepts, rather than whatever balances its braces.
+pub(crate) fn read_value(
+    lex: &mut Lexer<'_>,
+    current: &mut Token,
+    depth: usize,
+    limits: Limits,
+) -> Result<Value, PxfError> {
+    let mut p = Parser {
+        lex: lex.clone(),
+        current: std::mem::replace(current, Token::new(TokenKind::Eof, "", Position::new(1, 1))),
+        pending: Vec::new(),
+        depth,
+        limits,
+    };
+    let value = p.parse_value()?;
+    lex.restore(p.lex.snapshot());
+    *current = p.current;
+    Ok(value)
+}
+
 struct Parser<'a> {
     lex: Lexer<'a>,
     current: Token,

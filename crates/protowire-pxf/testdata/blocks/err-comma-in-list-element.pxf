@@ -1,0 +1,7 @@
+@type blocks.v1.Doc
+
+# Reject: a comma between the entries of a block that is a list
+# element. The comma after the block would separate elements; the one
+# inside it separates nothing the grammar admits.
+
+children = [ { id = "greeting", type = "Label" } ]

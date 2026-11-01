@@ -1,0 +1,6 @@
+@type blocks.v1.Doc
+
+# Reject: a semicolon between the entries of a message block. The
+# grammar has no ";" separator; a decoder MUST reject it.
+
+address = { city = "Berlin"; zip = "10115" }
