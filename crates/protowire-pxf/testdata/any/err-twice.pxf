@@ -1,0 +1,7 @@
+# Reject: one type entry per block.
+@type any.v1.Holder
+
+payload {
+  @type = "any.v1.Leaf"
+  @type = "any.v1.Leaf"
+}

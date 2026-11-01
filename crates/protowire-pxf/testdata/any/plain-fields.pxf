@@ -1,0 +1,8 @@
+# Accept: without a type entry an Any block is its own fields.
+# CgF0 is any.v1.Leaf{tag: "t"}.
+@type any.v1.Holder
+
+payload = {
+  type_url = "any.v1.Leaf"
+  value = b"CgF0"
+}

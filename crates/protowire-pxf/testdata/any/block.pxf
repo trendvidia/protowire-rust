@@ -1,0 +1,8 @@
+# Accept: a type entry opens the block; the rest is a body of any.v1.Leaf.
+@type any.v1.Holder
+
+payload {
+  @type = "any.v1.Leaf"
+  tag = "t"
+  n = 7
+}

@@ -38,6 +38,10 @@ use crate::parser::{find_matching_brace, read_value};
 use crate::result::Presence;
 use crate::token::{Position, Token, TokenKind};
 
+/// The error for a type entry anywhere but the start of an Any block.
+pub(crate) const TYPE_ENTRY_MISPLACED: &str =
+    "@type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 \"Any Blocks\")";
+
 /// Resolves `google.protobuf.Any` type URLs to message descriptors. Mirrors the
 /// Go interface of the same name. The URL prefix (`type.googleapis.com/…`) is
 /// the implementation's responsibility — strip it as appropriate.
@@ -62,10 +66,10 @@ impl<'a> TypeResolver for PoolResolver<'a> {
 pub struct UnmarshalOptions<'a> {
     /// Silently skip fields not declared in the schema instead of erroring.
     pub discard_unknown: bool,
-    /// Resolves type URLs for `google.protobuf.Any` fields. When `Some`, Any
-    /// fields use sugar syntax (`@type = "..."` plus inline fields). When
-    /// `None`, Any fields decode as regular messages with `type_url` and
-    /// `value` fields.
+    /// Resolves type URLs for `google.protobuf.Any` fields. A block bound to
+    /// Any that opens with `@type = "..."` needs it, and is an error without
+    /// it; a block without a type entry is the Any's own `type_url` and
+    /// `value` fields either way.
     pub type_resolver: Option<&'a dyn TypeResolver>,
     /// Skip the per-call schema reserved-name check (draft §3.13).
     /// Callers that have already validated their descriptors (typically
@@ -658,6 +662,16 @@ impl<'a> Decoder<'a> {
         in_block: bool,
     ) -> Result<(), PxfError> {
         let desc = msg.descriptor();
+        // A block bound to google.protobuf.Any may open with a type entry
+        // (draft -01 "Any Blocks"; protowire#354), wherever a body is
+        // written: a singular field, a list element, a map value. Without
+        // one, the block is the Any's own fields, type_url and value.
+        if in_block
+            && matches!(self.current.kind, TokenKind::AtType)
+            && is_any_full_name(desc.full_name())
+        {
+            return self.decode_any_body(msg);
+        }
         let mut set_oneofs: HashMap<String, String> = HashMap::new();
         // The singular fields this body has bound (draft -01 § Entries and
         // Keys; protowire#347): each message body is its own scope.
@@ -681,6 +695,9 @@ impl<'a> Decoder<'a> {
 
             let pos = self.current.pos;
             let key_kind = self.current.kind;
+            if matches!(key_kind, TokenKind::AtType) {
+                return Err(self.err_at(pos, TYPE_ENTRY_MISPLACED));
+            }
             if !matches!(
                 key_kind,
                 TokenKind::Ident | TokenKind::String | TokenKind::Int
@@ -817,12 +834,7 @@ impl<'a> Decoder<'a> {
                         _ => unreachable!(),
                     };
                     let mut sub = DynamicMessage::new(inner_desc);
-                    if is_any_full_name(sub.descriptor().full_name())
-                        && self.type_resolver.is_some()
-                        && matches!(self.current.kind, TokenKind::AtType)
-                    {
-                        self.decode_any_inner(&mut sub)?;
-                    } else if self.presence.is_some() {
+                    if self.presence.is_some() {
                         let saved = std::mem::take(&mut self.path_prefix);
                         self.path_prefix = format!("{}{}.", saved, fd.name());
                         self.decode_fields(&mut sub, true)?;
@@ -905,12 +917,7 @@ impl<'a> Decoder<'a> {
                 return Err(self.err(format!("expected '{{' for message field {:?}", fd.name())));
             }
             self.advance();
-            if is_any_full_name(sub.descriptor().full_name())
-                && self.type_resolver.is_some()
-                && matches!(self.current.kind, TokenKind::AtType)
-            {
-                self.decode_any_inner(&mut sub)?;
-            } else if self.presence.is_some() {
+            if self.presence.is_some() {
                 let saved = std::mem::take(&mut self.path_prefix);
                 self.path_prefix = format!("{}{}.", saved, fd.name());
                 self.decode_fields(&mut sub, true)?;
@@ -1219,35 +1226,44 @@ impl<'a> Decoder<'a> {
         Ok(())
     }
 
-    /// Decode `google.protobuf.Any` sugar — caller has already entered the
-    /// `{` body or otherwise positioned the lexer at the `@type` directive.
-    /// Reads `@type = "url"` followed by inline fields of the resolved inner
-    /// message, packs the inner message to bytes, and writes `type_url` /
-    /// `value` onto `target`.
-    fn decode_any_inner(&mut self, target: &mut DynamicMessage) -> Result<(), PxfError> {
-        let resolver = self
-            .type_resolver
-            .ok_or_else(|| self.err("internal: decode_any_inner without resolver"))?;
-        if !matches!(self.current.kind, TokenKind::AtType) {
-            return Err(self.err("Any field requires @type as first entry"));
-        }
-        self.advance();
+    /// Decode a `google.protobuf.Any` block that opens with a type entry,
+    /// `@type = "<type-url>"`, its `{` consumed: the rest of the block is a
+    /// body of the type the URL names, packed into `value`, and the URL is
+    /// stored verbatim in `type_url`.
+    fn decode_any_body(&mut self, target: &mut DynamicMessage) -> Result<(), PxfError> {
+        self.advance(); // consume @type
         if !matches!(self.current.kind, TokenKind::Equals) {
             return Err(self.err("expected '=' after @type"));
         }
         self.advance();
         if !matches!(self.current.kind, TokenKind::String) {
-            return Err(self.err("expected string type URL after @type ="));
+            return Err(self.err("expected a string type URL after @type ="));
         }
         let type_url = std::mem::take(&mut self.current.value);
         let url_pos = self.current.pos;
         self.advance();
 
+        let resolver = self.type_resolver.ok_or_else(|| {
+            PxfError::new(
+                url_pos,
+                format!("cannot resolve Any type {type_url:?}: no type_resolver"),
+            )
+        })?;
         let inner_desc = resolver.find_message_by_url(&type_url).ok_or_else(|| {
             PxfError::new(url_pos, format!("cannot resolve Any type {:?}", type_url))
         })?;
         let mut inner = DynamicMessage::new(inner_desc);
-        self.decode_fields(&mut inner, true)?;
+        // The body shares the Any's braces, which the enclosing
+        // decode_fields has already counted as one descent.
+        self.depth -= 1;
+        let decoded = self.decode_fields(&mut inner, true);
+        self.depth += 1;
+        decoded?;
+        // Packed to bytes below, the body is out of reach of the pass over
+        // the root, so it takes that pass here, under the Any's own path.
+        if let Some(presence) = &self.presence {
+            post_decode(&mut inner, presence, None, &self.path_prefix)?;
+        }
         let packed = inner.encode_to_vec();
 
         let target_desc = target.descriptor();

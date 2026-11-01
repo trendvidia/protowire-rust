@@ -1,0 +1,9 @@
+# Accept: a map value of type Any may open with a type entry.
+@type any.v1.Holder
+
+by_key = {
+  "k": {
+    @type = "any.v1.Leaf"
+    tag = "t"
+  }
+}

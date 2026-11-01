@@ -1,0 +1,7 @@
+# Accept: the = { } spelling of the same value.
+@type any.v1.Holder
+
+payload = {
+  @type = "any.v1.Leaf"
+  tag = "t"
+}
