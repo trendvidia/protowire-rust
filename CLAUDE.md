@@ -42,7 +42,7 @@ All 15 slices have landed (one commit each on `main`, mirroring
 | 15. sbe-D XML — saxlite + parse_xml_schema + xml_to_proto + proto_to_xml | 26 | done |
 
 The per-slice counts above are historical; `cargo test --workspace` is
-the number (457 at the time of writing, 2026-09-08). `cargo clippy
+the number (550 at the time of writing, 2026-10-31). `cargo clippy
 --all-targets --all-features --workspace -- -D warnings` is clean and
 gates merges.
 
@@ -60,7 +60,9 @@ gates merges.
   `keyed::canonicalize_keyed`); `_null` field of type
   `google.protobuf.FieldMask` carries null-survival across binary.
   Bind-time checks (`schema.rs`) cover the import closure and are
-  memoized per file descriptor.
+  memoized per file descriptor. `@required` / `@default(v)` is the other
+  spelling: one `AnnotationList` at 1327 (`carrier.rs`), usually an unknown
+  field, since only `protowire/schema/v1/descriptor.proto` declares it.
 - `sbe` annotations: `sbe.schema_id` = 1319, `version` = 1320,
   `template_id` = 1321, `length` = 1322, `encoding` = 1323.
 - `sbe` wire: 8-byte LE message header + 4-byte LE group header.
@@ -117,6 +119,15 @@ gates merges.
   Don't fork — it's the cross-language contract. Compile to
   `FileDescriptorSet` `.binpb` at fixture-build time; per-port fixtures
   for port-specific tests live under each crate's `testdata/`.
+
+## Spec corpora
+
+`crates/protowire-pxf/testdata/{blocks,nulls,strings,duplicates,any,dataset,bigfloat,...}`
+are vendored verbatim from `testdata/` in the spec repo, each run by a
+`tests/corpus_*.rs`. `carrier/` is built by the reference compiler, not
+`gen-testdata.sh`; see its README. Two `nulls/` fixtures can't run:
+`prost-reflect` 0.16.5 refuses `syntax = "editions"`, and
+`editions_schemas_still_do_not_load` fails the day that changes.
 
 ## TS pitfalls that may transfer
 

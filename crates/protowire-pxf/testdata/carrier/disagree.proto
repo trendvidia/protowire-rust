@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// The two spellings of a default disagree, and must not be reconciled (RFC-001 §8.5).
+syntax = "proto3";
+package carrier.disagree.v1;
+
+import "protowire/schema/v1/annotations.proto";
+import "protowire/schema/v1/descriptor.proto";
+import "pxf/annotations.proto";
+
+message M {
+  string f = 1 [(pxf.default) = "a"] @default("b");
+}

@@ -229,7 +229,7 @@ fn needs_quoting(s: &str) -> bool {
 }
 
 /// Standard base64 encode with `=` padding (Go's `base64.StdEncoding`).
-fn encode_base64(bytes: &[u8]) -> String {
+pub(crate) fn encode_base64(bytes: &[u8]) -> String {
     const ALPHA: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     let mut i = 0;

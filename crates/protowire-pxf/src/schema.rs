@@ -41,7 +41,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, LazyLock, Mutex};
 
-use crate::annotations::{get_default, get_key, is_required};
+use crate::annotations::{field_annotations, get_key, AnnotationSurface};
 
 /// Which bind-time check an element failed: which kind of schema element
 /// collides with a reserved PXF value keyword, or which annotation is
@@ -115,6 +115,9 @@ pub struct Violation {
     /// A human-readable explanation; set for the three annotation kinds,
     /// empty for the reserved-name kinds.
     pub detail: String,
+    /// Which spelling the offending annotation was written in, so `Display`
+    /// quotes the form the author wrote.
+    pub surface: AnnotationSurface,
 }
 
 impl fmt::Display for Violation {
@@ -127,13 +130,20 @@ impl fmt::Display for Violation {
             ),
             ViolationKind::DefaultOption => write!(
                 f,
-                "{}: field \"{}\": invalid (pxf.default) = \"{}\": {} (draft -01 §annotation-extensions)",
-                self.file, self.element, self.name, self.detail
+                "{}: field \"{}\": invalid {} = \"{}\": {} (draft -01 §annotation-extensions)",
+                self.file,
+                self.element,
+                self.surface.default_name(),
+                self.name,
+                self.detail
             ),
             ViolationKind::RequiredOption => write!(
                 f,
-                "{}: field \"{}\": invalid (pxf.required): {} (draft -01 §annotation-extensions)",
-                self.file, self.element, self.detail
+                "{}: field \"{}\": invalid {}: {} (draft -01 §annotation-extensions)",
+                self.file,
+                self.element,
+                self.surface.required_name(),
+                self.detail
             ),
             ViolationKind::Field | ViolationKind::Oneof | ViolationKind::EnumValue => write!(
                 f,
@@ -349,6 +359,7 @@ struct OneofDefault {
     oneof: OneofDescriptor,
     field: FieldDescriptor,
     def: String,
+    surface: AnnotationSurface,
 }
 
 fn walk_message(path: &str, md: &MessageDescriptor, out: &mut Vec<Violation>) {
@@ -361,35 +372,53 @@ fn walk_message(path: &str, md: &MessageDescriptor, out: &mut Vec<Violation>) {
                 name: f.name().to_string(),
                 kind: ViolationKind::Field,
                 detail: String::new(),
+                surface: AnnotationSurface::Option,
             });
         }
         if let Some(key) = get_key(&f) {
             check_key_option(path, &f, &key, out);
         }
-        let def = get_default(&f);
-        if let Some(def) = &def {
-            check_default_option(path, &f, def, out);
+        let annotations = field_annotations(&f);
+        let def = annotations.default.clone();
+        if let Some(problem) = &annotations.default_problem {
+            out.push(Violation {
+                file: path.to_string(),
+                element: f.full_name().to_string(),
+                name: def.clone().unwrap_or_default(),
+                kind: ViolationKind::DefaultOption,
+                detail: problem.clone(),
+                surface: annotations.default_surface,
+            });
+        } else if let Some(def) = &def {
+            check_default_option(path, &f, def, annotations.default_surface, out);
         }
-        if let Some(def) = def.as_ref().filter(|_| is_required(&f)) {
+        if let Some(def) = def.as_ref().filter(|_| annotations.required) {
             out.push(Violation {
                 file: path.to_string(),
                 element: f.full_name().to_string(),
                 name: def.to_string(),
                 kind: ViolationKind::RequiredOption,
-                detail: "(pxf.required) and (pxf.default) are exclusive on one field: the first rejects a document where the field is absent, and the second treats it as supplied".to_string(),
+                detail: format!(
+                    "{} and {} are exclusive on one field: the first rejects a document where the field is absent, and the second treats it as supplied",
+                    annotations.required_surface.required_name(),
+                    annotations.default_surface.default_name()
+                ),
+                surface: annotations.required_surface,
             });
         }
         if let Some(oo) = real_oneof(&f) {
-            if is_required(&f) {
+            if annotations.required {
                 out.push(Violation {
                     file: path.to_string(),
                     element: f.full_name().to_string(),
                     name: oo.name().to_string(),
                     kind: ViolationKind::RequiredOption,
                     detail: format!(
-                        "(pxf.required) is not valid on a member of oneof \"{}\": read per field it demands that one arm always be chosen, which makes every other arm undecodable",
+                        "{} is not valid on a member of oneof \"{}\": read per field it demands that one arm always be chosen, which makes every other arm undecodable",
+                        annotations.required_surface.required_name(),
                         oo.name()
                     ),
+                    surface: annotations.required_surface,
                 });
             }
             if let Some(def) = def {
@@ -397,6 +426,7 @@ fn walk_message(path: &str, md: &MessageDescriptor, out: &mut Vec<Violation>) {
                     oneof: oo,
                     field: f.clone(),
                     def,
+                    surface: annotations.default_surface,
                 });
             }
         }
@@ -414,6 +444,7 @@ fn walk_message(path: &str, md: &MessageDescriptor, out: &mut Vec<Violation>) {
                 name: o.name().to_string(),
                 kind: ViolationKind::Oneof,
                 detail: String::new(),
+                surface: AnnotationSurface::Option,
             });
         }
     }
@@ -468,6 +499,7 @@ fn check_oneof_default_cap(path: &str, annotated: &[OneofDefault], out: &mut Vec
                 name: m.def.clone(),
                 kind: ViolationKind::DefaultOption,
                 detail: detail.clone(),
+                surface: m.surface,
             });
         }
     }
@@ -485,6 +517,7 @@ fn check_key_option(path: &str, f: &FieldDescriptor, key_name: &str, out: &mut V
             name: key_name.to_string(),
             kind: ViolationKind::KeyOption,
             detail,
+            surface: AnnotationSurface::Option,
         });
     };
     let element = match f.kind() {
@@ -530,7 +563,14 @@ fn check_key_option(path: &str, f: &FieldDescriptor, key_name: &str, out: &mut V
 /// (`"abc"` on an int32) stays a decode-time error. Placement is
 /// decidable from the descriptor alone; the literal is not, without
 /// running the value parser here.
-fn check_default_option(path: &str, f: &FieldDescriptor, def: &str, out: &mut Vec<Violation>) {
+fn check_default_option(
+    path: &str,
+    f: &FieldDescriptor,
+    def: &str,
+    surface: AnnotationSurface,
+    out: &mut Vec<Violation>,
+) {
+    let name = surface.default_name();
     let violation = |detail: String, out: &mut Vec<Violation>| {
         out.push(Violation {
             file: path.to_string(),
@@ -538,37 +578,34 @@ fn check_default_option(path: &str, f: &FieldDescriptor, def: &str, out: &mut Ve
             name: def.to_string(),
             kind: ViolationKind::DefaultOption,
             detail,
+            surface,
         });
     };
     // Map before list: a map field reports is_map (and is_list), and the
     // ordering matches the decoder's runtime guard.
     if f.is_map() {
         violation(
-            "(pxf.default) is not valid on map fields: one literal cannot denote a map".to_string(),
+            format!("{name} is not valid on map fields: one literal cannot denote a map"),
             out,
         );
         return;
     }
     if f.is_list() {
         violation(
-            "(pxf.default) is not valid on repeated fields: one literal cannot denote a list"
-                .to_string(),
+            format!("{name} is not valid on repeated fields: one literal cannot denote a list"),
             out,
         );
         return;
     }
     if f.is_group() {
-        violation(
-            "(pxf.default) is not valid on group fields".to_string(),
-            out,
-        );
+        violation(format!("{name} is not valid on group fields"), out);
         return;
     }
     if let Kind::Message(m) = f.kind() {
         if !is_defaultable_message(m.full_name()) {
             violation(
                 format!(
-                    "(pxf.default) is not valid on message type {}: no PXF literal denotes it",
+                    "{name} is not valid on message type {}: no PXF literal denotes it",
                     m.full_name()
                 ),
                 out,
@@ -613,6 +650,7 @@ fn walk_enum(path: &str, en: &EnumDescriptor, out: &mut Vec<Violation>) {
                 name: v.name().to_string(),
                 kind: ViolationKind::EnumValue,
                 detail: String::new(),
+                surface: AnnotationSurface::Option,
             });
         }
     }
