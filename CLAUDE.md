@@ -125,9 +125,7 @@ gates merges.
 `crates/protowire-pxf/testdata/{blocks,nulls,strings,duplicates,any,dataset,bigfloat,...}`
 are vendored verbatim from `testdata/` in the spec repo, each run by a
 `tests/corpus_*.rs`. `carrier/` is built by the reference compiler, not
-`gen-testdata.sh`; see its README. Two `nulls/` fixtures can't run:
-`prost-reflect` 0.16.5 refuses `syntax = "editions"`, and
-`editions_schemas_still_do_not_load` fails the day that changes.
+`gen-testdata.sh`; see its README.
 
 ## TS pitfalls that may transfer
 
