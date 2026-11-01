@@ -6,7 +6,7 @@
 //! (`carrier.rs`), plus the `_null` `google.protobuf.FieldMask`
 //! lookup. Mirrors the upstream `encoding/pxf/annotations.go` interface.
 //!
-//! Resolves the extensions through the parent [`DescriptorPool`], so the
+//! Resolves the extensions through the parent [`prost_reflect::DescriptorPool`], so the
 //! pool must contain `pxf/annotations.proto` (typically pulled in as a
 //! transitive descriptor when the user's schema imports it).
 

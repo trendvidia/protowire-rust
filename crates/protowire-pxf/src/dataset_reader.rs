@@ -3,7 +3,7 @@
 //! Streaming consumption for the `@dataset` directive (draft §3.4.4).
 //!
 //! [`crate::unmarshal_full`] materializes every row of an `@dataset`
-//! directive into [`crate::Presence::tables`]. That works for small
+//! directive into [`crate::Presence::datasets`]. That works for small
 //! datasets and breaks for the CSV-replacement workload `@dataset` was
 //! designed for. [`DatasetReader`] pulls one row at a time from an
 //! [`io::Read`] source; per-row arity and the v1 cell-grammar rule are

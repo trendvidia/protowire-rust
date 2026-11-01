@@ -154,7 +154,7 @@ impl KeyedElemState {
 /// absent or empty keys — are left in the anonymous form, and entries that
 /// don't resolve against the schema are left untouched, so formatting an
 /// invalid document never destroys information. Callers follow with
-/// [`crate::format`]; that pair is the `pxf fmt` pipeline.
+/// [`crate::format()`]; that pair is the `pxf fmt` pipeline.
 pub fn canonicalize_keyed(doc: &mut Document, desc: &MessageDescriptor) {
     canon_entries(&mut doc.entries, desc);
 }
