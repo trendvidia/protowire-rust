@@ -311,8 +311,7 @@ dependencies = [
 [[package]]
 name = "prost-reflect"
 version = "0.16.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01b80ea363c31af2de2b92e3c07ed1156628f7838c4afb4df75ee78a37fedbd1"
+source = "git+https://github.com/trendvidia/prost-reflect?rev=f82c954a7842ab2e32a18aa3bc4aa1e8c144a258#f82c954a7842ab2e32a18aa3bc4aa1e8c144a258"
 dependencies = [
  "prost",
  "prost-types",

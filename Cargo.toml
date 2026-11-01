@@ -38,3 +38,10 @@ prost-types = "0.14"
 bytes = "1.7"
 thiserror = "2.0"
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
+
+# HOLD: prost-reflect 0.16.5 refuses editions. This runs the two editions
+# fixtures against andrewhickman/prost-reflect#207. A [patch] never reaches
+# this crate's published users, so replace it with a version bump once
+# upstream releases the change, then merge.
+[patch.crates-io]
+prost-reflect = { git = "https://github.com/trendvidia/prost-reflect", rev = "f82c954a7842ab2e32a18aa3bc4aa1e8c144a258" }
