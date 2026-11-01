@@ -9,7 +9,7 @@
 mod common;
 
 use common::{declared_type, fixtures, message, must_reject, pool};
-use prost_reflect::{DescriptorPool, MessageDescriptor, ReflectMessage};
+use prost_reflect::{MessageDescriptor, ReflectMessage};
 use protowire_pxf::{bind_row, parse, unmarshal, unmarshal_full, DatasetReader, UnmarshalOptions};
 
 const NULLS: &[u8] = include_bytes!("../testdata/nulls/nulls.binpb");
@@ -19,32 +19,15 @@ const STRINGS: &[u8] = include_bytes!("../testdata/strings/strings.binpb");
 const TEST: &[u8] = include_bytes!("../testdata/test.binpb");
 const PATHS: &[u8] = include_bytes!("../testdata/dataset/paths.binpb");
 
-/// The fixtures that bind to an editions schema. prost-reflect, through its
-/// latest release (0.16.5), refuses `syntax = "editions"`, so no such schema
-/// can be loaded here and these two cannot be run. See
-/// [`editions_schemas_still_do_not_load`].
-const EDITIONS: [&str; 2] = ["editions-explicit", "err-editions-implicit"];
-
 fn desc(name: &str) -> MessageDescriptor {
     let source = if name == "nulls.v1.Legacy" || name == "nulls.v1.Strict" {
         NULLS_P2
+    } else if name.starts_with("nulls.ed.") {
+        NULLS_ED
     } else {
         NULLS
     };
     message(&pool(source), name)
-}
-
-/// Fails on the day a prost-reflect upgrade can load an editions schema:
-/// then take `EDITIONS` out of the skip below and decide IMPLICIT presence
-/// from what `supports_presence` reports for such a file. Until then the
-/// load does not return, it panics in the library's own error path.
-#[test]
-fn editions_schemas_still_do_not_load() {
-    let loaded = std::panic::catch_unwind(|| DescriptorPool::decode(NULLS_ED).is_ok());
-    assert!(
-        !matches!(loaded, Ok(true)),
-        "prost-reflect now loads editions: run the two editions fixtures"
-    );
 }
 
 #[test]
@@ -53,9 +36,6 @@ fn every_null_fixture_meets_its_verdict() {
     assert_eq!(files.len(), 19, "the README lists nineteen fixtures");
     let mut ran = 0;
     for (stem, doc) in files {
-        if EDITIONS.contains(&stem.as_str()) {
-            continue;
-        }
         ran += 1;
         parse(&doc).unwrap_or_else(|e| panic!("{stem}: parse accepts every fixture: {e}"));
         let d = desc(declared_type(&doc).unwrap_or("nulls.v1.Holder"));
@@ -72,7 +52,7 @@ fn every_null_fixture_meets_its_verdict() {
         assert_eq!(msg.fields().count(), 0, "{stem}: a default must not apply");
         assert_eq!(presence.null_paths().count(), 1, "{stem}: present-but-null");
     }
-    assert_eq!(ran, 17);
+    assert_eq!(ran, 19);
 }
 
 #[test]
