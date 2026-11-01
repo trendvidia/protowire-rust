@@ -10,8 +10,9 @@
 use crate::ast::{
     Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, DatasetDirective, DatasetRow,
     Directive, Document, DurationVal, Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry,
-    NullVal, ProtoDirective, ProtoShape, StringVal, TimestampVal, Value,
+    NullVal, ProtoDirective, ProtoShape, StringVal, TimestampVal, TypeEntry, Value,
 };
+use crate::decode::TYPE_ENTRY_MISPLACED;
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
 use crate::limits::Limits;
@@ -805,6 +806,10 @@ impl<'a> Parser<'a> {
         self.enter(open_pos)?;
         let mut entries = Vec::new();
         while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof) {
+            if matches!(self.current.kind, TokenKind::AtType) {
+                entries.push(self.parse_type_entry(entries.is_empty())?);
+                continue;
+            }
             // Inside a '{ ... }' block both forms are accepted; the schema
             // layer disambiguates submessage vs map<K,V>.
             entries.push(self.parse_entry(true)?);
@@ -818,6 +823,43 @@ impl<'a> Parser<'a> {
         self.advance();
         self.leave();
         Ok(entries)
+    }
+
+    /// Reads `@type = "<type-url>"`, the type entry of a
+    /// `google.protobuf.Any` block (draft -01 "Any Blocks"). `first` says
+    /// whether it opens its block, the only place it may stand. A parser
+    /// can't tell which blocks are Any, so it admits one in any block and
+    /// the schema layer refuses the rest.
+    fn parse_type_entry(&mut self, first: bool) -> Result<Entry, PxfError> {
+        let leading_comments = self.flush_comments();
+        let pos = self.current.pos;
+        if !first {
+            return Err(PxfError::new(pos, TYPE_ENTRY_MISPLACED));
+        }
+        self.advance(); // consume @type
+        if !matches!(self.current.kind, TokenKind::Equals) {
+            return Err(PxfError::new(
+                self.current.pos,
+                format!("expected '=' after @type, got {}", self.current.kind.name()),
+            ));
+        }
+        self.advance();
+        if !matches!(self.current.kind, TokenKind::String) {
+            return Err(PxfError::new(
+                self.current.pos,
+                format!(
+                    "expected a string type URL after @type =, got {}",
+                    self.current.kind.name()
+                ),
+            ));
+        }
+        let url = std::mem::take(&mut self.current.value);
+        self.advance();
+        Ok(Entry::TypeEntry(TypeEntry {
+            pos,
+            url,
+            leading_comments,
+        }))
     }
 }
 
@@ -1470,7 +1512,7 @@ mod tests {
                         tls = true;
                     }
                 }
-                Entry::MapEntry(_) => {}
+                Entry::MapEntry(_) | Entry::TypeEntry(_) => {}
             }
         }
         assert!(hostname);

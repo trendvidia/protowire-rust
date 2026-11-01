@@ -126,6 +126,13 @@ impl Formatter<'_> {
                     self.write_indent(level);
                     self.out.push_str("}\n");
                 }
+                Entry::TypeEntry(t) => {
+                    self.write_comments(&t.leading_comments, level);
+                    self.write_indent(level);
+                    self.out.push_str("@type = ");
+                    self.out.push_str(&quote_string(&t.url));
+                    self.out.push('\n');
+                }
             }
         }
     }

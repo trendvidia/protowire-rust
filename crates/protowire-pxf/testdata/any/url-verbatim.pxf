@@ -1,0 +1,7 @@
+# Accept: the type URL is stored in type_url exactly as written.
+@type any.v1.Holder
+
+payload {
+  @type = "type.googleapis.com/any.v1.Leaf"
+  tag = "t"
+}

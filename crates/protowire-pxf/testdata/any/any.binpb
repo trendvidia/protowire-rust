@@ -1,0 +1,21 @@
+
+ä
+google/protobuf/any.protogoogle.protobuf"6
+Any
+type_url (	RtypeUrl
+value (RvalueBv
+com.google.protobufBAnyProtoPZ,google.golang.org/protobuf/types/known/anypb¢GPBªGoogle.Protobuf.WellKnownTypesbproto3
+ë
+any/any.protoany.v1google/protobuf/any.proto"†
+Holder.
+payload (2.google.protobuf.AnyRpayload(
+anys (2.google.protobuf.AnyRanys0
+by_key (2.any.v1.Holder.ByKeyEntryRbyKey 
+leaf (2.any.v1.LeafRleafN
+
+ByKeyEntry
+key (	Rkey*
+value (2.google.protobuf.AnyRvalue:8"&
+Leaf
+tag (	Rtag
+n (Rnbproto3

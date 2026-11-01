@@ -190,7 +190,7 @@ fn canon_entries(entries: &mut [Entry], desc: &MessageDescriptor) {
                     }
                 }
             }
-            Entry::MapEntry(_) => {}
+            Entry::MapEntry(_) | Entry::TypeEntry(_) => {}
         }
     }
 }
@@ -315,6 +315,7 @@ fn drop_key_assignments(entries: &mut Vec<Entry>, key_name: &str, entry_name: &s
             let target = match &mut e {
                 Entry::Assignment(n) => &mut n.leading_comments,
                 Entry::Block(n) => &mut n.leading_comments,
+                Entry::TypeEntry(t) => &mut t.leading_comments,
                 Entry::MapEntry(n) => &mut n.leading_comments,
             };
             let mut merged = std::mem::take(&mut pending);

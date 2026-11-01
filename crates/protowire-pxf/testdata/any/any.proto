@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+//
+// Schema for the Any block fixtures (draft -01 "Any Blocks", issue #354).
+syntax = "proto3";
+
+package any.v1;
+
+import "google/protobuf/any.proto";
+
+message Holder {
+  google.protobuf.Any payload = 1;
+  repeated google.protobuf.Any anys = 2;
+  map<string, google.protobuf.Any> by_key = 3;
+  Leaf leaf = 4;
+}
+
+message Leaf {
+  string tag = 1;
+  int32 n = 2;
+}

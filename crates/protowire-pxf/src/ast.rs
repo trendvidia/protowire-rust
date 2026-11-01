@@ -179,6 +179,7 @@ pub enum Entry {
     Assignment(Assignment),
     MapEntry(MapEntry),
     Block(Block),
+    TypeEntry(TypeEntry),
 }
 
 impl Entry {
@@ -187,6 +188,7 @@ impl Entry {
             Entry::Assignment(a) => a.pos,
             Entry::MapEntry(m) => m.pos,
             Entry::Block(b) => b.pos,
+            Entry::TypeEntry(t) => t.pos,
         }
     }
 }
@@ -348,4 +350,15 @@ pub struct ListVal {
 pub struct BlockVal {
     pub pos: Position,
     pub entries: Vec<Entry>,
+}
+
+/// The type entry `@type = "<type-url>"` that may open a block bound to
+/// `google.protobuf.Any` (draft -01 "Any Blocks"). A parser has no schema,
+/// so it admits one as the first entry of any block; the decoder refuses
+/// one in a block that isn't an Any.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeEntry {
+    pub pos: Position,
+    pub url: String,
+    pub leading_comments: Vec<Comment>,
 }

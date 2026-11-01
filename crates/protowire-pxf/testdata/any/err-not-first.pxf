@@ -1,0 +1,7 @@
+# Reject: a type entry must be the first entry of its block.
+@type any.v1.Holder
+
+payload {
+  tag = "t"
+  @type = "any.v1.Leaf"
+}

@@ -25,7 +25,7 @@ pub mod token;
 pub use ast::{
     Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, DatasetDirective, DatasetRow,
     Directive, Document, DurationVal, Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry,
-    NullVal, StringVal, TimestampVal, Value,
+    NullVal, StringVal, TimestampVal, TypeEntry, Value,
 };
 pub use dataset_reader::{bind_row, DatasetReader, DEFAULT_HEADER_MAX_BYTES};
 pub use decode::{unmarshal, unmarshal_full, PoolResolver, TypeResolver, UnmarshalOptions};

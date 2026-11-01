@@ -181,3 +181,11 @@ buf build --as-file-descriptor-set --exclude-source-info \
   -o crates/protowire-pxf/testdata/duplicates/duplicates.binpb
 
 echo "wrote crates/protowire-pxf/testdata/duplicates/duplicates.binpb (buf)"
+
+# Vendored verbatim from the spec repo's testdata/any/ (protowire#354); keep
+# in sync when the spec repo adds fixtures.
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/any/any.proto \
+  -o crates/protowire-pxf/testdata/any/any.binpb
+
+echo "wrote crates/protowire-pxf/testdata/any/any.binpb (buf)"

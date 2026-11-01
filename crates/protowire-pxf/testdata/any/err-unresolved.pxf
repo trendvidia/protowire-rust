@@ -1,0 +1,7 @@
+# Reject: the type URL names no type the resolver knows.
+@type any.v1.Holder
+
+payload {
+  @type = "any.v1.Nope"
+  tag = "t"
+}

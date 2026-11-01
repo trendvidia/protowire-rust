@@ -21,8 +21,11 @@ format changes.
 - **A singular field bound twice in one message body is rejected** ([#56](https://github.com/trendvidia/protowire-rust/issues/56), protowire#347), whatever the values, and two blocks for one message field no longer replace each other. Each body is its own scope, and repeated fields still concatenate.
 - **A map key bound twice in one message body is rejected, and two bindings of a map with distinct keys merge** ([#58](https://github.com/trendvidia/protowire-rust/issues/58), protowire#396). Keys compare as values of the key type, so `1:` and `"1":` are one key of an integer-keyed map. The second binding used to replace the whole map.
 
+- **The type entry of an Any block is accepted wherever a body is written** ([#53](https://github.com/trendvidia/protowire-rust/issues/53), protowire#354). `@type = "<url>"` opens a singular Any, a list element or a map value, through `parse`, the decoder and `format`. A type entry that isn't first, a second one, and one on a block that isn't an Any are rejected. `unmarshal_full` now applies `(pxf.required)` and `(pxf.default)` inside an Any body before packing it.
+
 ### Added
 
+- `Entry::TypeEntry`, the AST node for an Any block's type entry. A `match` on `Entry` needs the new arm.
 - `proto/pxf/secret.proto`, vendored from protowire, for the dataset corpus.
 
 ### Changed

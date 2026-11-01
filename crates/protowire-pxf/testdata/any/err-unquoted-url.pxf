@@ -1,0 +1,6 @@
+# Reject: the type URL is a string.
+@type any.v1.Holder
+
+payload {
+  @type = any.v1.Leaf
+}

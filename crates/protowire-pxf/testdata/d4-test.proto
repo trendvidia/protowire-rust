@@ -5,6 +5,7 @@
 syntax = "proto3";
 package d4_test.v1;
 
+import "google/protobuf/any.proto";
 import "google/protobuf/field_mask.proto";
 import "google/protobuf/wrappers.proto";
 import "pxf/annotations.proto";
@@ -57,4 +58,9 @@ message OneofNullableSibling {
 
 message SyntheticOneof {
   optional string opt = 1 [(pxf.default) = "syn"];
+}
+
+// An Any body takes the required / default pass before it is packed.
+message AnyHolder {
+  google.protobuf.Any payload = 1;
 }
