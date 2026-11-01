@@ -17,7 +17,7 @@
 //!   - [`Presence::directives`] — generic `@<name> *(prefix) [{ ... }]`
 //!     blocks, in source order, excluding `@type` and `@dataset` (which
 //!     have their own handling).
-//!   - [`Presence::tables`] — `@dataset <type> ( cols ) row*` directives,
+//!   - [`Presence::datasets`] — `@dataset <type> ( cols ) row*` directives,
 //!     in source order. A document with any `@dataset` has no body
 //!     entries, so the rows are the document's payload — consumers walk
 //!     `DatasetDirective.rows` and bind each row's cells to a fresh

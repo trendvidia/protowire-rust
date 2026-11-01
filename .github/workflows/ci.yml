@@ -86,6 +86,19 @@ jobs:
       - run: cargo fmt --all --check
 
   # ---------------------------------------------------------------------
+  # doc — a broken or private intra-doc link is a dead link on docs.rs.
+  # ---------------------------------------------------------------------
+  doc:
+    name: cargo doc
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo doc --no-deps --workspace --all-features
+
+  # ---------------------------------------------------------------------
   # clippy — lint gate. -D warnings means any new lint regression
   # blocks merge.
   # ---------------------------------------------------------------------

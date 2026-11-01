@@ -14,8 +14,8 @@
 //! square-and-multiply at 384 bits, then rounds once more to 256 — so a
 //! port that converted exactly would disagree with the reference in the
 //! last bit for many literals. This module therefore mirrors `math/big`'s
-//! steps rather than the mathematically nearest value: [`Fl::mul`] and
-//! [`Fl::quo`] are correctly rounded (as Go's `umul` / `uquo` are), and
+//! steps rather than the mathematically nearest value: `Fl::mul` and
+//! `Fl::quo` are correctly rounded (as Go's `umul` / `uquo` are), and
 //! [`parse_big_float`] applies them in the reference's order with the
 //! reference's precisions, at the literal's read precision. A literal is
 //! read at its `p<prec>` suffix's precision, and at [`BIG_FLOAT_PREC`] bits

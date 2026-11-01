@@ -9,11 +9,11 @@
 //!   (`null` / `true` / `false`): such a name lexes as the keyword, so
 //!   the declared element is unreachable from PXF surface syntax.
 //! - `(pxf.key)` placement (draft -01 §3.13.1 "Schema Placement"), see
-//!   [`check_key_option`].
+//!   `check_key_option`.
 //! - `(pxf.default)` placement (draft -01 §annotation-extensions,
-//!   "Default Placement"), see [`check_default_option`]; plus the cap of
+//!   "Default Placement"), see `check_default_option`; plus the cap of
 //!   one `(pxf.default)` per oneof (same section, "Oneof Members"), see
-//!   [`check_oneof_default_cap`].
+//!   `check_oneof_default_cap`.
 //! - `(pxf.required)` placement: not valid on a member of a oneof at all
 //!   ("Oneof Members"), and not valid beside `(pxf.default)` on one field
 //!   ("Required and Default").
