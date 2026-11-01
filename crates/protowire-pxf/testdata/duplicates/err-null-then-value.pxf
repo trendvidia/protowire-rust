@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Reject: null is a binding, so a value after it binds the field a second time.
+w = null
+w = 3

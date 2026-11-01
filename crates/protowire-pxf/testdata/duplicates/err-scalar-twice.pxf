@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Reject: a singular scalar bound twice. The second binding is the error; it does not replace the first.
+s = "a"
+s = "b"

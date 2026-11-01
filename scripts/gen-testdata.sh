@@ -173,3 +173,11 @@ for f in nulls/nulls nulls/nulls_proto2 nulls/nulls_editions strings/strings dat
     -o "crates/protowire-pxf/testdata/$f.binpb"
   echo "wrote crates/protowire-pxf/testdata/$f.binpb (buf)"
 done
+
+# Vendored verbatim from the spec repo's testdata/duplicates/ (protowire#347,
+# #396); keep in sync when the spec repo adds fixtures.
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/duplicates/duplicates.proto \
+  -o crates/protowire-pxf/testdata/duplicates/duplicates.binpb
+
+echo "wrote crates/protowire-pxf/testdata/duplicates/duplicates.binpb (buf)"

@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Reject: a singular scalar bound twice, even to the same value.
+s = "a"
+s = "a"

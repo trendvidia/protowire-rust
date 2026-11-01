@@ -205,20 +205,24 @@ fn bool_map_key_spellings() {
     }
 }
 
-/// All three admitted spellings of each value land on the same key; the
-/// later spelling wins, as any duplicate key does.
+/// All three admitted spellings of each value are one key, so writing two
+/// of them binds that key twice, which is an error (protowire#396).
 #[test]
 fn admitted_spellings_share_one_key() {
-    let msg = unmarshal(
-        "by_flag = {\n  1: \"a\"\n  \"false\": \"b\"\n  true: \"c\"\n  false: \"d\"\n}",
-        &flags(),
-        UnmarshalOptions::default(),
-    )
-    .expect("binds");
-    let m = map_of(&msg, "by_flag");
-    assert_eq!(m.len(), 2);
-    assert_eq!(m[&MapKey::Bool(true)], Value::String("c".into()));
-    assert_eq!(m[&MapKey::Bool(false)], Value::String("d".into()));
+    for (first, second, key) in [
+        ("1", "true", "true"),
+        ("\"true\"", "1", "true"),
+        ("0", "\"false\"", "false"),
+        ("false", "0", "false"),
+    ] {
+        let doc = format!("by_flag = {{\n  {first}: \"a\"\n  {second}: \"b\"\n}}");
+        let err = unmarshal(&doc, &flags(), UnmarshalOptions::default())
+            .expect_err("one key, bound twice");
+        assert_eq!(
+            err.msg,
+            format!("map field \"by_flag\": key {key} is already set")
+        );
+    }
 }
 
 // ---------------- The keyword on other key types ----------------

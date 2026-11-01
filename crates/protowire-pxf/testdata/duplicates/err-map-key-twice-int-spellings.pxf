@@ -1,0 +1,7 @@
+@type dup.v1.Holder
+
+# Reject: keys compare as values of the key type, so 1 and "1" are one key of an int32-keyed map.
+nums = {
+  1: "x"
+  "1": "y"
+}

@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Reject: a map key repeated across two bindings of the map field.
+labels = { a: "1" }
+labels = { a: "2" }

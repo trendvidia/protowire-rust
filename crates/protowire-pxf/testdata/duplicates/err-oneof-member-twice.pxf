@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Reject: a oneof member bound twice.
+km { a = 1 }
+km { a = 1 }

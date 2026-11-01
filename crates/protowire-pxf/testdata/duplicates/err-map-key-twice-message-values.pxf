@@ -1,0 +1,7 @@
+@type dup.v1.Holder
+
+# Reject: a repeated key in a map of messages; the two values do not merge.
+inners = {
+  k: { a = 1 }
+  k: { b = 2 }
+}

@@ -1,0 +1,7 @@
+@type dup.v1.Holder
+
+# Reject: a repeated map key, even with the same value.
+labels = {
+  a: "1"
+  a: "1"
+}

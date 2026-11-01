@@ -1,0 +1,33 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+
+// Schema for the singular-field-bound-twice fixtures under
+// testdata/duplicates/ (issues #347 and #396; IETF draft -01 § Entries and Keys).
+
+syntax = "proto3";
+
+package dup.v1;
+
+import "google/protobuf/wrappers.proto";
+
+message Inner {
+  int32 a = 1;
+  int32 b = 2;
+  map<string, string> tags = 3;
+}
+
+message Holder {
+  string s = 1;
+  google.protobuf.Int32Value w = 2;
+  Inner m = 3;
+  oneof k {
+    Inner km = 4;
+    string ks = 5;
+  }
+  Inner n = 6;
+  repeated Inner items = 7;
+  optional int32 o = 8;
+  map<string, string> labels = 9;
+  map<int32, string> nums = 10;
+  map<string, Inner> inners = 11;
+}

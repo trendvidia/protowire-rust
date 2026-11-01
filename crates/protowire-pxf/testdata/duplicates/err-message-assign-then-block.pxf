@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Reject: "m = { ... }" and "m { ... }" are the same binding written two ways; both together bind m twice.
+m = { a = 1 }
+m { b = 2 }

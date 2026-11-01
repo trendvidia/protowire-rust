@@ -1,0 +1,5 @@
+@type dup.v1.Holder
+
+# Reject: a wrapper is a singular field; binding it twice is rejected.
+w = 1
+w = 2
