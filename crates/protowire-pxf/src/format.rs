@@ -148,11 +148,19 @@ impl Formatter<'_> {
         }
     }
 
+    fn write_number(&mut self, raw: &str, prec: &str) {
+        self.out.push_str(raw);
+        if !prec.is_empty() {
+            self.out.push('p');
+            self.out.push_str(prec);
+        }
+    }
+
     fn format_value(&mut self, val: &Value, level: usize) {
         match val {
             Value::String(s) => self.out.push_str(&quote_string(&s.value)),
-            Value::Int(i) => self.out.push_str(&i.raw),
-            Value::Float(f) => self.out.push_str(&f.raw),
+            Value::Int(i) => self.write_number(&i.raw, &i.prec),
+            Value::Float(f) => self.write_number(&f.raw, &f.prec),
             Value::Bool(b) => self.out.push_str(if b.value { "true" } else { "false" }),
             Value::Bytes(bv) => {
                 self.out.push_str("b\"");

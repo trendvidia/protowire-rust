@@ -623,6 +623,15 @@ impl<'a> Parser<'a> {
                 ),
             ));
         }
+        if !self.current.prec.is_empty() {
+            return Err(PxfError::new(
+                pos,
+                format!(
+                    "a key cannot carry a precision suffix (p{})",
+                    self.current.prec
+                ),
+            ));
+        }
         let key_kind = k;
         let key = std::mem::take(&mut self.current.value);
         self.advance();
@@ -721,13 +730,15 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Int => {
                 let raw = std::mem::take(&mut self.current.value);
+                let prec = std::mem::take(&mut self.current.prec);
                 self.advance();
-                Ok(Value::Int(IntVal { pos, raw }))
+                Ok(Value::Int(IntVal { pos, raw, prec }))
             }
             TokenKind::Float => {
                 let raw = std::mem::take(&mut self.current.value);
+                let prec = std::mem::take(&mut self.current.prec);
                 self.advance();
-                Ok(Value::Float(FloatVal { pos, raw }))
+                Ok(Value::Float(FloatVal { pos, raw, prec }))
             }
             TokenKind::Bool => {
                 let value = self.current.value == "true";

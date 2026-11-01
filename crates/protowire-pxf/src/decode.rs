@@ -23,7 +23,7 @@ use crate::annotations::{find_null_mask_field, get_default, is_required};
 use crate::ast::{
     DatasetDirective, DatasetRow, Directive, ProtoDirective, ProtoShape, Value as AstValue,
 };
-use crate::bigfloat::{parse_big_float, BigFloatLit};
+use crate::bigfloat::{parse_big_float, parse_big_float_default, BigFloatLit};
 use crate::bignum::{parse_big_int, parse_decimal, BigIntLit, DecimalLit};
 use crate::dataset_paths::column_path_error;
 use crate::errors::PxfError;
@@ -659,6 +659,15 @@ impl<'a> Decoder<'a> {
                     ),
                 ));
             }
+            if !self.current.prec.is_empty() {
+                return Err(self.err_at(
+                    pos,
+                    format!(
+                        "a key cannot carry a precision suffix (p{})",
+                        self.current.prec
+                    ),
+                ));
+            }
             let key_quoted = matches!(key_kind, TokenKind::String);
             let key = std::mem::take(&mut self.current.value);
             self.advance();
@@ -1107,6 +1116,16 @@ impl<'a> Decoder<'a> {
             ) {
                 return Err(self.err_at(pos, format!("expected map key, got {}", tk)));
             }
+            if !self.current.prec.is_empty() {
+                return Err(self.err_at(
+                    pos,
+                    format!(
+                        "map field {:?}: a key cannot carry a precision suffix (p{})",
+                        fd.name(),
+                        self.current.prec
+                    ),
+                ));
+            }
             let key_str = std::mem::take(&mut self.current.value);
             let key_kind = tk;
             self.advance();
@@ -1282,6 +1301,7 @@ impl<'a> Decoder<'a> {
         // through to the block form, as for every message type. The digit
         // cap runs before the quadratic conversion.
         if full == "pxf.BigInt" && matches!(self.current.kind, TokenKind::Int) {
+            self.no_precision(&full)?;
             let pos = self.current.pos;
             let lit = parse_big_int(&self.current.value, self.limits.max_numeric_literal_digits)
                 .map_err(|e| PxfError::new(pos, e))?;
@@ -1290,6 +1310,7 @@ impl<'a> Decoder<'a> {
             return Ok(true);
         }
         if full == "pxf.Decimal" && matches!(self.current.kind, TokenKind::Int | TokenKind::Float) {
+            self.no_precision(&full)?;
             let pos = self.current.pos;
             let lit = parse_decimal(&self.current.value, self.limits.max_numeric_literal_digits)
                 .map_err(|e| PxfError::new(pos, e))?;
@@ -1300,8 +1321,13 @@ impl<'a> Decoder<'a> {
         if full == "pxf.BigFloat" && matches!(self.current.kind, TokenKind::Int | TokenKind::Float)
         {
             let pos = self.current.pos;
-            let lit = parse_big_float(&self.current.value, self.limits.max_numeric_literal_digits)
-                .map_err(|e| PxfError::new(pos, e))?;
+            let lit = parse_big_float(
+                &self.current.value,
+                &self.current.prec,
+                self.limits.max_numeric_literal_digits,
+                self.limits.max_big_float_exponent,
+            )
+            .map_err(|e| PxfError::new(pos, e))?;
             set_big_float_fields(target, &lit);
             self.advance();
             return Ok(true);
@@ -1309,8 +1335,23 @@ impl<'a> Decoder<'a> {
         Ok(false)
     }
 
+    /// Reject a precision suffix on the current literal, which binds to
+    /// `field`, not a `pxf.BigFloat` (draft -01 § PXF Annotations;
+    /// protowire#406). The suffix lexes on any number; only a BigFloat reads
+    /// it.
+    fn no_precision(&self, field: &str) -> Result<(), PxfError> {
+        if self.current.prec.is_empty() {
+            return Ok(());
+        }
+        Err(self.err(format!(
+            "precision suffix p{} is allowed only on a pxf.BigFloat, not on field {:?}",
+            self.current.prec, field
+        )))
+    }
+
     fn consume_scalar(&mut self, fd: &FieldDescriptor) -> Result<Value, PxfError> {
         self.illegal()?;
+        self.no_precision(fd.name())?;
         let pos = self.current.pos;
         let kind = fd.kind();
         match kind {
@@ -1431,6 +1472,7 @@ impl<'a> Decoder<'a> {
 
     fn consume_enum(&mut self, fd: &FieldDescriptor) -> Result<Value, PxfError> {
         self.illegal()?;
+        self.no_precision(fd.name())?;
         let pos = self.current.pos;
         let enum_desc = match fd.kind() {
             Kind::Enum(e) => e,
@@ -1672,7 +1714,8 @@ fn set_big_int_fields(target: &mut DynamicMessage, lit: &BigIntLit) {
 
 /// Write a parsed `pxf.BigFloat` literal into its message, mirroring the
 /// reference's `setBigFloatFields`: `mantissa` only when non-zero,
-/// `exponent` only when non-zero, `prec` always, `negative` only when set.
+/// `exponent` only when non-zero, `prec` only when non-zero (an unsuffixed
+/// zero has none), `negative` only when set.
 fn set_big_float_fields(target: &mut DynamicMessage, lit: &BigFloatLit) {
     let desc = target.descriptor();
     if !lit.mantissa.is_empty() {
@@ -1685,8 +1728,10 @@ fn set_big_float_fields(target: &mut DynamicMessage, lit: &BigFloatLit) {
             target.set_field(&fd, Value::I32(lit.exponent));
         }
     }
-    if let Some(fd) = desc.get_field_by_name("prec") {
-        target.set_field(&fd, Value::U32(lit.prec));
+    if lit.prec != 0 {
+        if let Some(fd) = desc.get_field_by_name("prec") {
+            target.set_field(&fd, Value::U32(lit.prec));
+        }
     }
     if lit.negative {
         if let Some(fd) = desc.get_field_by_name("negative") {
@@ -1892,7 +1937,7 @@ fn apply_message_default(
         return Ok(());
     }
     if full == "pxf.BigFloat" {
-        let lit = parse_big_float(def, MAX_NUMERIC_LITERAL_DIGITS).map_err(|e| {
+        let lit = parse_big_float_default(def).map_err(|e| {
             PxfError::new(
                 pos,
                 format!("invalid default for field {:?}: {}", fd.name(), e),

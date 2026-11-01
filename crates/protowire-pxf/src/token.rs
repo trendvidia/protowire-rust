@@ -125,6 +125,10 @@ pub struct Token {
     pub kind: TokenKind,
     pub value: String,
     pub pos: Position,
+    /// The digits of a number's precision suffix, as written (`53` for
+    /// `0.1p53`), or empty. Only a `pxf.BigFloat` reads one; any other field
+    /// rejects it, which is the decoder's call, not the lexer's.
+    pub prec: String,
 }
 
 impl Token {
@@ -133,6 +137,7 @@ impl Token {
             kind,
             value: value.into(),
             pos,
+            prec: String::new(),
         }
     }
 }

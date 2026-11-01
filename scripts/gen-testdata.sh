@@ -189,3 +189,12 @@ buf build --as-file-descriptor-set --exclude-source-info \
   -o crates/protowire-pxf/testdata/any/any.binpb
 
 echo "wrote crates/protowire-pxf/testdata/any/any.binpb (buf)"
+
+# Vendored verbatim from the spec repo's testdata/bigfloat/ (protowire#406);
+# keep in sync when the spec repo adds fixtures. Its .binpb files are PB
+# messages, so the schema's descriptor set is bigfloat.fds.
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/bigfloat/bigfloat.proto \
+  -o crates/protowire-pxf/testdata/bigfloat/bigfloat.fds
+
+echo "wrote crates/protowire-pxf/testdata/bigfloat/bigfloat.fds (buf)"

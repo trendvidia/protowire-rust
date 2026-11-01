@@ -290,6 +290,9 @@ pub struct StringVal {
 pub struct IntVal {
     pub pos: Position,
     pub raw: String,
+    /// The digits of a precision suffix, as written (`53` for `0.1p53`), or
+    /// empty. Only a `pxf.BigFloat` admits one.
+    pub prec: String,
 }
 
 /// Floating-point literal, raw text.
@@ -297,6 +300,9 @@ pub struct IntVal {
 pub struct FloatVal {
     pub pos: Position,
     pub raw: String,
+    /// The digits of a precision suffix, as written (`53` for `0.1p53`), or
+    /// empty. Only a `pxf.BigFloat` admits one.
+    pub prec: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

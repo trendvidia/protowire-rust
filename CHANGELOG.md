@@ -26,6 +26,13 @@ format changes.
 - **`DatasetReader` ends the rows only at end of input or a directive** (protowire#336). Anything else where a row could start, and a row cut short by end of input, used to end the sequence silently; both are now errors.
 - **`bind_row` applies `(pxf.required)` and `(pxf.default)`, as its documentation always said.** It runs the row through `unmarshal_full`, and an error now names the column it fell in and is reported at the row.
 
+- **`pxf.BigFloat`'s binary exponent is bounded by `MaxBigFloatExponent` = 16384** ([#57](https://github.com/trendvidia/protowire-rust/issues/57), protowire#281). A literal past it is rejected after rounding to its read precision, `marshal` fails on one, and `Limits::max_big_float_exponent` lowers it per call. Rendering such a value used to take seconds to minutes. `check-decode` applies the bound to the PB rows.
+
+### Changed
+
+- **`pxf.BigFloat`'s text form carries its precision** ([#59](https://github.com/trendvidia/protowire-rust/issues/59), protowire#406, #410). `marshal` writes N = (decimal digits of 2^prec) + 1 significant digits followed by `p<prec>`, so a value reads back exactly: `0.10000000000000001p53`, `0p64`, and a bare `0` only at prec 0. A suffixed literal is read at the suffix's precision and an unsuffixed one at 256 bits. A suffix on any other field, `p0` and a precision past `MaxNumericLiteralDigits` are rejected, and `MaxNumericLiteralDigits` now counts mantissa digits only. An unsuffixed zero is stored with prec 0 and exponent 0, where it used to be prec 256 and exponent -256. Text written by earlier releases still reads; its bytes are the same, except that value.
+- `IntVal`, `FloatVal` and `Token` gain `prec`, and `parse_big_float` takes the suffix and the exponent bound.
+
 ### Added
 
 - **`@dataset` value cells** ([#52](https://github.com/trendvidia/protowire-rust/issues/52), protowire#341). A cell holds any value, list and block included, and binds as the body entry `c = <value>` would. `{}` is a present empty message; an empty cell stays absent.

@@ -44,6 +44,7 @@ use protowire_pb::wire::{Reader, Result as PbResult, WireType, Writer};
 use protowire_pb::{
     read_message, unmarshal_with as pb_unmarshal, write_map_entry, write_message, Message,
 };
+use protowire_pxf::bigfloat::big_float_value_exponent;
 use protowire_pxf::{unmarshal as pxf_unmarshal, UnmarshalOptions};
 
 // --- Hand-mirrored Go-style message impls for adversarial.proto -------------
@@ -384,14 +385,24 @@ impl BigNumHolder {
     /// signs before anything is materialised. This port's `pb` layer
     /// carries no Decimal type and materialises nothing; the bound is
     /// applied here, where a consumer would first read the value.
-    /// `BigFloat.exponent` is a binary exponent and has no limit.
-    fn check_limits(&self, max_digits: usize) -> Result<(), String> {
+    /// A `BigFloat`'s binary exponent is bound by MaxBigFloatExponent the
+    /// same way (protowire#281); a precision of zero is zero, whatever the
+    /// other fields say, so it has none.
+    fn check_limits(&self, max_digits: usize, max_exponent: usize) -> Result<(), String> {
         if let Some(d) = &self.decimal {
             let max = max_digits as i64;
             if i64::from(d.scale) > max || i64::from(d.scale) < -max {
                 return Err(format!(
                     "pxf.Decimal scale {} exceeds MaxNumericLiteralDigits={}",
                     d.scale, max
+                ));
+            }
+        }
+        if let Some(f) = self.big_float.as_ref().filter(|f| f.prec != 0) {
+            let exponent = big_float_value_exponent(&f.mantissa, f.exponent);
+            if let Some(e) = exponent.filter(|e| e.unsigned_abs() > max_exponent as u64) {
+                return Err(format!(
+                    "pxf.BigFloat binary exponent {e} exceeds MaxBigFloatExponent={max_exponent}"
                 ));
             }
         }
@@ -413,6 +424,7 @@ struct LimitFlags {
     max_numeric_literal_digits: Option<usize>,
     max_bytes_literal_length: Option<usize>,
     max_repeated_count: Option<usize>,
+    max_big_float_exponent: Option<usize>,
 }
 
 impl LimitFlags {
@@ -434,6 +446,7 @@ impl LimitFlags {
             "MaxNumericLiteralDigits" => self.max_numeric_literal_digits = Some(n),
             "MaxBytesLiteralLength" => self.max_bytes_literal_length = Some(n),
             "MaxRepeatedCount" => self.max_repeated_count = Some(n),
+            "MaxBigFloatExponent" => self.max_big_float_exponent = Some(n),
             _ => return Err(format!("--limit: unknown limit {name:?}")),
         }
         Ok(())
@@ -451,6 +464,9 @@ impl LimitFlags {
                 .max_bytes_literal_length
                 .unwrap_or(d.max_bytes_literal_length),
             max_repeated_count: self.max_repeated_count.unwrap_or(d.max_repeated_count),
+            max_big_float_exponent: self
+                .max_big_float_exponent
+                .unwrap_or(d.max_big_float_exponent),
         }
     }
 
@@ -469,6 +485,11 @@ impl LimitFlags {
             max_message_size: self.max_message_size.unwrap_or(d.max_message_size),
             max_repeated_count: self.max_repeated_count.unwrap_or(d.max_repeated_count),
         }
+    }
+
+    fn max_big_float_exponent(&self) -> usize {
+        self.max_big_float_exponent
+            .unwrap_or(protowire_pxf::MAX_BIG_FLOAT_EXPONENT)
     }
 
     fn max_digits(&self) -> usize {
@@ -617,7 +638,7 @@ fn pb_decode(input: &Path, schema: &str, limits: &LimitFlags) -> Result<(), Stri
         "adversarial.v1.BigNumHolder" => pb_unmarshal::<BigNumHolder>(&bytes, lim)
             .map_err(|e| format!("pb: {e}"))
             .and_then(|m| {
-                m.check_limits(limits.max_digits())
+                m.check_limits(limits.max_digits(), limits.max_big_float_exponent())
                     .map_err(|e| format!("pb: {e}"))
             }),
         other => Err(format!("unknown schema for pb: {other}")),

@@ -569,11 +569,28 @@ impl<'a> Lexer<'a> {
             return self.lex_float(pos, start);
         }
 
-        Token::new(
+        let mut token = Token::new(
             TokenKind::Int,
             slice_to_string(&self.input[start..self.pos]),
             pos,
-        )
+        );
+        token.prec = self.lex_precision();
+        token
+    }
+
+    /// Consumes a number's precision suffix, `p` and one or more digits
+    /// (draft -01 § PXF Annotations; protowire#406), and returns its digits,
+    /// or nothing when no suffix stands at the cursor.
+    fn lex_precision(&mut self) -> String {
+        if self.peek() != b'p' || !is_digit(self.peek_at(1)) {
+            return String::new();
+        }
+        self.advance(); // p
+        let start = self.pos;
+        while self.pos < self.input.len() && is_digit(self.peek()) {
+            self.advance();
+        }
+        slice_to_string(&self.input[start..self.pos])
     }
 
     /// Reports whether the input at the current position begins a time-unit
@@ -614,11 +631,13 @@ impl<'a> Lexer<'a> {
                 self.advance();
             }
         }
-        Token::new(
+        let mut token = Token::new(
             TokenKind::Float,
             slice_to_string(&self.input[start..self.pos]),
             pos,
-        )
+        );
+        token.prec = self.lex_precision();
+        token
     }
 
     fn lex_timestamp(&mut self, pos: Position, start: usize) -> Token {

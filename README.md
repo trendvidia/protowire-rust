@@ -104,8 +104,9 @@ out of that or are explicit deferred work:
   `MaxNumericLiteralDigits` enforced before the conversion; on the
   wire the user-facing type stays `Vec<u8>` (big-endian magnitude) —
   callers convert to `num-bigint::BigInt` / `rust_decimal::Decimal`
-  themselves. `pxf.BigFloat` literals are parsed and rendered exactly as
-  the reference's `math/big` does at 256 bits (`src/bigfloat.rs`), so the
+  themselves. `pxf.BigFloat` literals are read at their `p<prec>` suffix's
+  precision, or at 256 bits without one, and written with that suffix,
+  following the reference's `math/big` steps (`src/bigfloat.rs`) so the
   bytes match across ports; the value type is again the raw message.
 - **No runtime `.proto` compilation.** The Go port uses `protocompile`
   to turn a `.proto` schema into a `FileDescriptorSet` in-process;
