@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// The annotation spelling of required and default, which lowers to one
+// AnnotationList at extension 1327 (RFC-001 §8.1). Parses only with the
+// reference compiler: see README.md (protowire-rust#65).
+syntax = "proto3";
+package carrier.v1;
+
+import "protowire/schema/v1/annotations.proto";
+import "protowire/schema/v1/descriptor.proto";
+import "pxf/bignum.proto";
+
+enum Color {
+  COLOR_UNSPECIFIED = 0;
+  COLOR_RED = 1;
+}
+
+message Req {
+  string name = 1 @required;
+  int32 n = 2;
+}
+
+message Def {
+  string s = 1 @default("x");
+  string named = 2 @default(value = "y");
+  int32 n = 3 @default(-5);
+  bool b = 4 @default(true);
+  double d = 5 @default(1.5);
+  uint64 u = 6 @default(18446744073709551615);
+  Color c = 7 @default(Color.COLOR_RED);
+  pxf.BigInt big = 8 @default(123);
+  pxf.Decimal dec = 9 @default(1.25);
+  pxf.BigFloat flt = 10 @default(1.5);
+}

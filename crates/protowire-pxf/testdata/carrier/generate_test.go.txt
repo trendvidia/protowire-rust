@@ -1,0 +1,76 @@
+package pxf_test
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protodesc"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/descriptorpb"
+)
+
+func TestGenCarrier(t *testing.T) {
+	dir := os.Getenv("CARRIER_DIR")
+	names, _ := filepath.Glob(filepath.Join(dir, "*.proto"))
+	for _, p := range names {
+		src, _ := os.ReadFile(p)
+		fd := compileV12(t, string(src))
+		seen := map[string]bool{}
+		var full descriptorpb.FileDescriptorSet
+		var add func(f protoreflect.FileDescriptor)
+		add = func(f protoreflect.FileDescriptor) {
+			if seen[f.Path()] { return }
+			seen[f.Path()] = true
+			imps := f.Imports()
+			for i := 0; i < imps.Len(); i++ { add(imps.Get(i).FileDescriptor) }
+			full.File = append(full.File, protodesc.ToFileDescriptorProto(f))
+		}
+		add(fd)
+		for _, f := range full.File {
+			for _, m := range f.MessageType {
+				var to, from *descriptorpb.FieldDescriptorProto
+				var kept []*descriptorpb.FieldDescriptorProto
+				for _, x := range m.Field {
+					switch x.GetName() {
+					case "target":
+						to = x
+					case "donor":
+						from = x
+						continue
+					}
+					kept = append(kept, x)
+				}
+				if from != nil {
+					if to.Options == nil {
+						to.Options = &descriptorpb.FieldOptions{}
+					}
+					proto.Merge(to.Options, from.Options)
+					m.Field = kept
+				}
+			}
+		}
+		// The stripped set drops the schema files, so 1327 reaches a reader
+		// as an unknown field, as it does a consumer without those imports.
+		var bare descriptorpb.FileDescriptorSet
+		for _, f := range full.File {
+			if strings.HasPrefix(f.GetName(), "protowire/schema/") { continue }
+			g := proto.Clone(f).(*descriptorpb.FileDescriptorProto)
+			var deps []string
+			for _, d := range g.Dependency {
+				if !strings.HasPrefix(d, "protowire/schema/") { deps = append(deps, d) }
+			}
+			g.Dependency = deps
+			g.PublicDependency, g.WeakDependency = nil, nil
+			bare.File = append(bare.File, g)
+		}
+		base := strings.TrimSuffix(p, ".proto")
+		for name, set := range map[string]*descriptorpb.FileDescriptorSet{base + ".binpb": &full, base + ".bare.binpb": &bare} {
+			b, err := proto.MarshalOptions{Deterministic: true}.Marshal(set)
+			if err != nil { t.Fatal(err) }
+			if err := os.WriteFile(name, b, 0o644); err != nil { t.Fatal(err) }
+		}
+	}
+}

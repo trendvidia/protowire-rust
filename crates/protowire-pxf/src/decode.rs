@@ -19,7 +19,7 @@ use prost_reflect::{
 };
 use std::collections::{HashMap, HashSet};
 
-use crate::annotations::{find_null_mask_field, get_default, is_required};
+use crate::annotations::{field_annotations, find_null_mask_field};
 use crate::ast::{
     DatasetDirective, DatasetRow, Directive, ProtoDirective, ProtoShape, Value as AstValue,
 };
@@ -1622,13 +1622,14 @@ fn post_decode(
         }
         let path = format!("{}{}", path_prefix, fd.name());
         if presence.is_absent(&path) {
-            if is_required(fd) {
+            let annotations = field_annotations(fd);
+            if annotations.required {
                 return Err(PxfError::new(
                     pos,
                     format!("required field {:?} is absent", path),
                 ));
             }
-            if let Some(def) = get_default(fd) {
+            if let Some(def) = annotations.default {
                 if !oneof_already_chosen(fd, presence, path_prefix) {
                     apply_default(parent, fd, &def, pos)?;
                 }

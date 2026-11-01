@@ -28,10 +28,12 @@ format changes.
 
 - **`pxf.BigFloat`'s binary exponent is bounded by `MaxBigFloatExponent` = 16384** ([#57](https://github.com/trendvidia/protowire-rust/issues/57), protowire#281). A literal past it is rejected after rounding to its read precision, `marshal` fails on one, and `Limits::max_big_float_exponent` lowers it per call. Rendering such a value used to take seconds to minutes. `check-decode` applies the bound to the PB rows.
 
+- **`@required` and `@default(v)` are read** ([#65](https://github.com/trendvidia/protowire-rust/issues/65), RFC-001 §8.1). A schema using the annotation spelling used to bind with neither enforced. `is_required`, `get_default`, the decoder and every bind-time check now read the 1327 carrier as well as the bracket options, whether the pool knows that extension or not. Two spellings of a default that disagree are a violation, and an `@default` that reduces to no single literal is too. A diagnostic quotes the spelling the author wrote.
+
 ### Changed
 
 - **`pxf.BigFloat`'s text form carries its precision** ([#59](https://github.com/trendvidia/protowire-rust/issues/59), protowire#406, #410). `marshal` writes N = (decimal digits of 2^prec) + 1 significant digits followed by `p<prec>`, so a value reads back exactly: `0.10000000000000001p53`, `0p64`, and a bare `0` only at prec 0. A suffixed literal is read at the suffix's precision and an unsuffixed one at 256 bits. A suffix on any other field, `p0` and a precision past `MaxNumericLiteralDigits` are rejected, and `MaxNumericLiteralDigits` now counts mantissa digits only. An unsuffixed zero is stored with prec 0 and exponent 0, where it used to be prec 256 and exponent -256. Text written by earlier releases still reads; its bytes are the same, except that value.
-- `IntVal`, `FloatVal` and `Token` gain `prec`, and `parse_big_float` takes the suffix and the exponent bound.
+- `Violation` gains `surface`, and `annotations` gains `AnnotationSurface`. `IntVal`, `FloatVal` and `Token` gain `prec`, and `parse_big_float` takes the suffix and the exponent bound.
 
 ### Added
 
