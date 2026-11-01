@@ -11,6 +11,11 @@ format changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Presence` reports a keyed entry's name as setting the key field** (protowire-go#214). `kd { alpha {} }` now reports `kd[0].name` as set, nested entries too (`kn[0].inner[0].name`).
+- **Each list element and map value has its own presence path**, as in the reference (protowire-go#156): `items[0].label`, `by_id["a"].label`, `by_num[7].label`. A field set inside an element used to be recorded under the parent, so `is_set("items[0].label")` was false and `is_set("label")` could be true. That recording satisfied the parent's `(pxf.required)` and kept its `(pxf.default)` off when an element's field had the same name, so such a document now takes the default, or is rejected if the required field is really absent. A `null` inside an element now belongs to that element: `marshal` with `null_fields` used to write it on every element of the list, and the root's `_null` mask no longer gets it (protowire-go#170).
+
 ## [1.2.0] — 2026-11-01
 
 This release includes everything listed under 1.1.0, which was tagged but never reached crates.io: its publish failed authenticating to the registry. The last version on crates.io before this one is 1.0.0.

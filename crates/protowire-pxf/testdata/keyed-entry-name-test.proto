@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for keyed_entry_name.rs: an entry name of a keyed block
+// supplies the element's key field (protowire-go#214). Same schema as the
+// reference's keyed_entry_name_presence_test.go.
+syntax = "proto3";
+package keyedname.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/field_mask.proto";
+import "pxf/annotations.proto";
+
+message P {
+  repeated WithDefault kd = 1 [(pxf.key) = "name"];
+  repeated WithRequired kr = 2 [(pxf.key) = "name"];
+  repeated InOneof ko = 3 [(pxf.key) = "name"];
+  repeated Nests kn = 4 [(pxf.key) = "name"];
+  google.protobuf.Any payload = 5;
+}
+
+message WithDefault {
+  string name = 1 [(pxf.default) = "dflt"];
+}
+
+message WithRequired {
+  string name = 1 [(pxf.required) = true];
+}
+
+message InOneof {
+  oneof pick {
+    string name = 1;
+    string other = 2 [(pxf.default) = "other-dflt"];
+  }
+}
+
+message Nests {
+  string name = 1;
+  repeated WithDefault inner = 2 [(pxf.key) = "name"];
+}
+
+// Element bodies with the same field names as their parent: marks made
+// inside an element must not land on the parent's paths.
+message Shadow {
+  string name = 1 [(pxf.required) = true];
+  string label = 2 [(pxf.default) = "shadow-dflt"];
+  repeated Element items = 3;
+  repeated Element keyed = 4 [(pxf.key) = "name"];
+  map<string, Element> by_id = 5;
+  map<int32, Element> by_num = 6;
+  google.protobuf.FieldMask _null = 7;
+}
+
+message Element {
+  string name = 1;
+  string label = 2;
+  optional string note = 3;
+}

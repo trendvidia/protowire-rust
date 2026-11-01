@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use crate::annotations::find_null_mask_field;
 use crate::bigfloat::format_big_float;
 use crate::bignum::{format_big_int, format_decimal};
-use crate::decode::TypeResolver;
+use crate::decode::{shown_key, TypeResolver};
 use crate::errors::PxfError;
 use crate::keyed::{ident_safe_entry_name, key_field};
 use crate::result::Presence;
@@ -153,6 +153,28 @@ impl<'a> Encoder<'a> {
         }
     }
 
+    /// Extend the path of the null lookup for the `i`th element of a list,
+    /// as the decoder does, returning the path to restore. Only a null set
+    /// reads the path.
+    fn enter_index(&mut self, name: &str, i: usize) -> String {
+        if self.null_set.is_none() {
+            return String::new();
+        }
+        let saved = std::mem::take(&mut self.path_prefix);
+        self.path_prefix = format!("{saved}{name}[{i}].");
+        saved
+    }
+
+    /// [`Self::enter_index`] for the value of map key `key`.
+    fn enter_key(&mut self, name: &str, key: &MapKey) -> String {
+        if self.null_set.is_none() {
+            return String::new();
+        }
+        let saved = std::mem::take(&mut self.path_prefix);
+        self.path_prefix = format!("{saved}{name}[{}].", shown_key(key));
+        saved
+    }
+
     fn write_indent(&mut self, level: usize) {
         for _ in 0..level {
             self.buf.push_str(self.indent);
@@ -280,7 +302,9 @@ impl<'a> Encoder<'a> {
                         self.buf.push_str(&text);
                     } else {
                         self.buf.push_str("{\n");
+                        let saved = self.enter_index(fd.name(), i);
                         self.encode_message(sub, level + 2);
+                        self.path_prefix = saved;
                         self.write_indent(level + 1);
                         self.buf.push('}');
                     }
@@ -316,7 +340,7 @@ impl<'a> Encoder<'a> {
         self.write_indent(level);
         self.buf.push_str(fd.name());
         self.buf.push_str(" {\n");
-        for elem in list {
+        for (i, elem) in list.iter().enumerate() {
             let Value::Message(sub) = elem else { continue };
             let key = match sub.get_field(key_fd).into_owned() {
                 Value::String(s) => s,
@@ -330,7 +354,9 @@ impl<'a> Encoder<'a> {
             }
             self.buf.push_str(" {\n");
             self.skip_key_fd = Some(key_fd.clone());
+            let saved = self.enter_index(fd.name(), i);
             self.encode_message(sub, level + 2);
+            self.path_prefix = saved;
             self.write_indent(level + 1);
             self.buf.push_str("}\n");
         }
@@ -356,13 +382,13 @@ impl<'a> Encoder<'a> {
         self.write_field_prefix(level, fd.name());
         self.buf.push_str("{\n");
 
-        let mut entries: Vec<(String, Value)> = map
+        let mut entries: Vec<(String, MapKey, Value)> = map
             .into_iter()
-            .map(|(k, v)| (format_map_key(&k), v))
+            .map(|(k, v)| (format_map_key(&k), k, v))
             .collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
-        for (key_str, val) in entries {
+        for (key_str, key, val) in entries {
             self.write_indent(level + 1);
             self.buf.push_str(&key_str);
             self.buf.push_str(": ");
@@ -376,7 +402,9 @@ impl<'a> Encoder<'a> {
                         self.buf.push('\n');
                     } else {
                         self.buf.push_str("{\n");
+                        let saved = self.enter_key(fd.name(), &key);
                         self.encode_message(sub, level + 2);
+                        self.path_prefix = saved;
                         self.write_indent(level + 1);
                         self.buf.push_str("}\n");
                     }
