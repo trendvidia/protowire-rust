@@ -21,13 +21,11 @@ use std::collections::{HashMap, HashSet};
 
 use crate::annotations::{find_null_mask_field, get_default, is_required};
 use crate::ast::{
-    BoolVal as AstBoolVal, BytesVal as AstBytesVal, DatasetDirective, DatasetRow, Directive,
-    DurationVal as AstDurationVal, FloatVal as AstFloatVal, IdentVal as AstIdentVal,
-    IntVal as AstIntVal, NullVal as AstNullVal, ProtoDirective, ProtoShape,
-    StringVal as AstStringVal, TimestampVal as AstTimestampVal, Value as AstValue,
+    DatasetDirective, DatasetRow, Directive, ProtoDirective, ProtoShape, Value as AstValue,
 };
 use crate::bigfloat::{parse_big_float, BigFloatLit};
 use crate::bignum::{parse_big_int, parse_decimal, BigIntLit, DecimalLit};
+use crate::dataset_paths::column_path_error;
 use crate::errors::PxfError;
 use crate::keyed::{
     duplicate_key_error, empty_name_error, key_field, quoted_name_unkeyed_error, KeyedElemState,
@@ -300,39 +298,14 @@ impl<'a> Decoder<'a> {
     /// Enforces the standalone constraint (draft §3.4.4): a document
     /// containing any `@dataset` directive MUST NOT also carry `@type`
     /// or top-level field entries.
-    /// Parse one scalar @dataset cell token at `self.current` into an
-    /// AST `Value`. Mirrors the scalar branches of the AST parser's
-    /// `parse_value`. List / block tokens are rejected by the caller
-    /// before this is invoked.
-    fn parse_scalar_cell_value(&mut self) -> Result<AstValue, PxfError> {
-        let pos = self.current.pos;
-        let value = std::mem::take(&mut self.current.value);
-        let kind = self.current.kind;
-        let out = match kind {
-            TokenKind::String => AstValue::String(AstStringVal { pos, value }),
-            TokenKind::Int => AstValue::Int(AstIntVal { pos, raw: value }),
-            TokenKind::Float => AstValue::Float(AstFloatVal { pos, raw: value }),
-            TokenKind::Bool => AstValue::Bool(AstBoolVal {
-                pos,
-                value: value == "true",
-            }),
-            TokenKind::Bytes => {
-                let bytes = decode_base64(&value).unwrap_or_default();
-                AstValue::Bytes(AstBytesVal { pos, value: bytes })
-            }
-            TokenKind::Timestamp => AstValue::Timestamp(AstTimestampVal { pos, raw: value }),
-            TokenKind::Duration => AstValue::Duration(AstDurationVal { pos, raw: value }),
-            TokenKind::Null => AstValue::Null(AstNullVal { pos }),
-            TokenKind::Ident => AstValue::Ident(AstIdentVal { pos, name: value }),
-            _ => {
-                return Err(PxfError::new(
-                    pos,
-                    format!("unsupported @dataset cell value: {}", kind),
-                ));
-            }
-        };
-        self.advance();
-        Ok(out)
+    /// One cell of a @dataset row at `self.current`: `None` for an empty
+    /// cell, otherwise any value, list and block included (draft §3.4.4;
+    /// protowire#341), read as `parse` reads it.
+    fn read_cell(&mut self) -> Result<Option<AstValue>, PxfError> {
+        if matches!(self.current.kind, TokenKind::Comma | TokenKind::RParen) {
+            return Ok(None);
+        }
+        read_value(&mut self.lex, &mut self.current, 0, self.limits).map(Some)
     }
 
     fn consume_directives(&mut self) -> Result<(), PxfError> {
@@ -448,15 +421,12 @@ impl<'a> Decoder<'a> {
                         );
                     }
                     let mut columns: Vec<String> = Vec::new();
+                    let mut column_pos: Vec<Position> = Vec::new();
                     loop {
                         if !matches!(self.current.kind, TokenKind::Ident) {
                             return Err(self.err("expected column field name"));
                         }
-                        if self.current.value.contains('.') {
-                            return Err(self.err(
-                                "@dataset column has dotted path; not supported in v1 (draft §3.4.4)",
-                            ));
-                        }
+                        column_pos.push(self.current.pos);
                         columns.push(std::mem::take(&mut self.current.value));
                         self.advance();
                         if matches!(self.current.kind, TokenKind::Comma) {
@@ -468,42 +438,21 @@ impl<'a> Decoder<'a> {
                         }
                         return Err(self.err("expected ',' or ')' in @dataset column list"));
                     }
+                    if let Some((i, msg)) = column_path_error(&columns) {
+                        return Err(self.err_at(column_pos[i], msg));
+                    }
                     self.advance(); // consume )
                     let n_cols = columns.len();
                     let mut rows: Vec<DatasetRow> = Vec::new();
-                    // Zero or more rows; each cell is a single scalar
-                    // token (or empty).
+                    // Zero or more rows.
                     while matches!(self.current.kind, TokenKind::LParen) {
                         let row_pos = self.current.pos;
                         self.advance(); // (
                         let mut cells: Vec<Option<AstValue>> = Vec::with_capacity(n_cols);
-                        // First cell.
-                        if matches!(self.current.kind, TokenKind::Comma | TokenKind::RParen) {
-                            cells.push(None);
-                        } else if matches!(
-                            self.current.kind,
-                            TokenKind::LBracket | TokenKind::LBrace
-                        ) {
-                            return Err(self.err(
-                                "@dataset cells cannot contain list/block values in v1 (draft §3.4.4)",
-                            ));
-                        } else {
-                            cells.push(Some(self.parse_scalar_cell_value()?));
-                        }
+                        cells.push(self.read_cell()?);
                         while matches!(self.current.kind, TokenKind::Comma) {
                             self.advance();
-                            if matches!(self.current.kind, TokenKind::Comma | TokenKind::RParen) {
-                                cells.push(None);
-                            } else if matches!(
-                                self.current.kind,
-                                TokenKind::LBracket | TokenKind::LBrace
-                            ) {
-                                return Err(self.err(
-                                    "@dataset cells cannot contain list/block values in v1 (draft §3.4.4)",
-                                ));
-                            } else {
-                                cells.push(Some(self.parse_scalar_cell_value()?));
-                            }
+                            cells.push(self.read_cell()?);
                         }
                         if !matches!(self.current.kind, TokenKind::RParen) {
                             return Err(self.err("expected ',' or ')' in @dataset row"));

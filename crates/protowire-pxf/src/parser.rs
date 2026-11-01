@@ -12,6 +12,7 @@ use crate::ast::{
     Directive, Document, DurationVal, Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry,
     NullVal, ProtoDirective, ProtoShape, StringVal, TimestampVal, TypeEntry, Value,
 };
+use crate::dataset_paths::column_path_error;
 use crate::decode::TYPE_ENTRY_MISPLACED;
 use crate::errors::PxfError;
 use crate::lexer::Lexer;
@@ -64,6 +65,19 @@ pub(crate) fn read_value(
     lex.restore(p.lex.snapshot());
     *current = p.current;
     Ok(value)
+}
+
+/// Parse one `( cell, ... )` row of a `@dataset` of `expected` columns, on
+/// its own: the streaming reader has already checked the header.
+pub(crate) fn parse_row(
+    input: &str,
+    expected: usize,
+    limits: Limits,
+) -> Result<DatasetRow, PxfError> {
+    limits
+        .check_message_size(input.len())
+        .map_err(|m| PxfError::new(Position::new(1, 1), m))?;
+    Ok(Parser::new(input, limits).parse_dataset_row(expected)?.0)
 }
 
 struct Parser<'a> {
@@ -362,6 +376,7 @@ impl<'a> Parser<'a> {
             ));
         }
         let mut columns: Vec<String> = Vec::new();
+        let mut column_pos: Vec<Position> = Vec::new();
         loop {
             if !matches!(self.current.kind, TokenKind::Ident) {
                 return Err(PxfError::new(
@@ -372,15 +387,7 @@ impl<'a> Parser<'a> {
                     ),
                 ));
             }
-            if self.current.value.contains('.') {
-                return Err(PxfError::new(
-                    self.current.pos,
-                    format!(
-                        "@dataset column {:?}: dotted column paths are not supported in v1 (draft §3.4.4)",
-                        self.current.value
-                    ),
-                ));
-            }
+            column_pos.push(self.current.pos);
             columns.push(std::mem::take(&mut self.current.value));
             self.advance();
             if matches!(self.current.kind, TokenKind::Comma) {
@@ -397,6 +404,9 @@ impl<'a> Parser<'a> {
                     self.current.kind.name()
                 ),
             ));
+        }
+        if let Some((i, msg)) = column_path_error(&columns) {
+            return Err(PxfError::new(column_pos[i], msg));
         }
         let mut end_offset = self.current.pos.offset + 1; // past `)`
         self.advance(); // consume )
@@ -581,19 +591,11 @@ impl<'a> Parser<'a> {
     }
 
     /// Consumes one cell of a @dataset row. Returns `None` for an empty
-    /// cell (no value between two commas, or at row start/end). Rejects
-    /// list / block values per v1 cell-grammar (draft §3.4.4).
+    /// cell (no value between two commas, or at row start/end). A cell
+    /// holds any value, list and block included (draft §3.4.4; protowire#341).
     fn parse_row_cell(&mut self) -> Result<Option<Value>, PxfError> {
         match self.current.kind {
             TokenKind::Comma | TokenKind::RParen => Ok(None),
-            TokenKind::LBracket => Err(PxfError::new(
-                self.current.pos,
-                "@dataset cells cannot contain list values in v1 (draft §3.4.4)".to_string(),
-            )),
-            TokenKind::LBrace => Err(PxfError::new(
-                self.current.pos,
-                "@dataset cells cannot contain block values in v1 (draft §3.4.4)".to_string(),
-            )),
             _ => Ok(Some(self.parse_value()?)),
         }
     }

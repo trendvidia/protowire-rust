@@ -14,20 +14,23 @@
 //! Convenience: [`DatasetReader::scan`] reads the next row and binds its
 //! cells to a fresh [`prost_reflect::DynamicMessage`]. [`bind_row`] is
 //! exported for callers iterating
-//! [`crate::Presence::tables`]\[i\].rows from the materializing path.
+//! [`crate::Presence::datasets`]\[i\].rows from the materializing path.
 //!
 //! Mirrors the cpp port at `protowire-cpp/src/pxf/dataset_reader.cc`.
 
+use std::collections::HashMap;
 use std::io::{self, Read};
 
 use prost_reflect::{DynamicMessage, MessageDescriptor};
 
 use crate::ast::{DatasetRow, Directive, Value};
+use crate::dataset_paths::check_column_paths;
 use crate::errors::PxfError;
+use crate::format::format_value_text;
 use crate::limits::Limits;
-use crate::parser::parse_with_limits;
+use crate::parser::{parse_row, parse_with_limits};
 use crate::token::Position;
-use crate::{unmarshal, UnmarshalOptions};
+use crate::{unmarshal_full, UnmarshalOptions};
 
 /// Default cap on the @dataset header (leading directives plus the
 /// `@dataset TYPE ( cols )` declaration). Real headers are tiny — a few
@@ -60,6 +63,8 @@ pub struct DatasetReader<R: Read> {
     columns: Vec<String>,
     directives: Vec<Directive>,
     limits: Limits,
+    /// The row type whose column paths [`Self::scan_one`] last checked.
+    paths_checked: Option<MessageDescriptor>,
 }
 
 impl<R: Read> DatasetReader<R> {
@@ -90,6 +95,7 @@ impl<R: Read> DatasetReader<R> {
             columns: Vec::new(),
             directives: Vec::new(),
             limits,
+            paths_checked: None,
         };
         r.read_header()?;
         Ok(r)
@@ -134,45 +140,34 @@ impl<R: Read> DatasetReader<R> {
                     return Some(Err(e));
                 }
                 Ok(FindRow::Found { start, end }) => {
-                    // Parse the row by handing a synthetic
-                    // `@dataset _.Row (c1,c2,...) <rowBytes>` to the AST
-                    // parser, reusing parse_dataset_row's arity check and
-                    // v1 cell-grammar enforcement.
-                    let row_bytes = &self.pending[start..=end];
-                    let synthetic = build_synthetic_row(&self.columns, row_bytes);
-                    let parsed = parse_with_limits(&synthetic, self.limits);
+                    let parsed = std::str::from_utf8(&self.pending[start..=end])
+                        .map_err(|_| {
+                            PxfError::new(Position::default(), "pxf: row is not valid UTF-8")
+                        })
+                        .and_then(|row| parse_row(row, self.columns.len(), self.limits));
                     // Advance past the consumed bytes whether parse
                     // succeeded or not — on failure we don't want to
                     // retry the same bad row forever.
                     self.pending.drain(..=end);
-                    match parsed {
-                        Ok(doc) => {
-                            if doc.datasets.is_empty() || doc.datasets[0].rows.is_empty() {
-                                let e = PxfError::new(
-                                    Position::default(),
-                                    "pxf: DatasetReader: synthetic row parse produced no row",
-                                );
-                                self.err = Some(e.clone());
-                                return Some(Err(e));
-                            }
-                            // Take the first (and only) row from the
-                            // synthetic doc.
-                            let mut datasets = doc.datasets;
-                            let mut rows = std::mem::take(&mut datasets[0].rows);
-                            return Some(Ok(rows.swap_remove(0)));
-                        }
-                        Err(e) => {
-                            self.err = Some(e.clone());
-                            return Some(Err(e));
-                        }
-                    }
+                    return Some(parsed.inspect_err(|e| self.err = Some(e.clone())));
                 }
                 Ok(FindRow::Done) => {
                     self.finished = true;
                     return None;
                 }
-                Ok(FindRow::NeedMore) => {
+                Ok(found @ (FindRow::NeedMore | FindRow::InRow)) => {
                     if self.src_eof {
+                        // Only end of input between rows ends the sequence:
+                        // a row whose `)` never came is an error, not the
+                        // end of the rows (protowire#336).
+                        if matches!(found, FindRow::InRow) {
+                            let e = PxfError::new(
+                                Position::default(),
+                                "pxf: expected ',' or ')' in @dataset row, got end of input",
+                            );
+                            self.err = Some(e.clone());
+                            return Some(Err(e));
+                        }
                         self.finished = true;
                         return None;
                     }
@@ -211,7 +206,16 @@ impl<R: Read> DatasetReader<R> {
         match self.next_row() {
             None => Ok(None),
             Some(Err(e)) => Err(e),
-            Some(Ok(row)) => Ok(Some(bind_row(desc, &self.columns, &row, options)?)),
+            Some(Ok(row)) => {
+                // The column paths depend on the type and the header, never
+                // on the row, so they are checked once per type.
+                let checked = self.paths_checked.as_ref() == Some(desc);
+                let msg = bind(desc, &self.columns, &row, options, checked)?;
+                if !checked {
+                    self.paths_checked = Some(desc.clone());
+                }
+                Ok(Some(msg))
+            }
         }
     }
 
@@ -317,19 +321,30 @@ impl<R: Read> Iterator for DatasetReader<R> {
 /// of `desc` by column name. `columns` and `row.cells` MUST have the
 /// same length.
 ///
+/// A column is a field of `desc`, or a dotted path to a field inside one of
+/// its sub-messages. A path that names no field, goes through a repeated,
+/// map or scalar field, or goes into a type written as a literal fails the
+/// row, its cells empty or not (draft §3.4.4).
+///
 /// Cell-state semantics (mirrors draft §3.4.4):
 ///   - `None` cell — field absent. `(pxf.default)` applies if declared;
 ///     `(pxf.required)` errors if neither default nor value is present.
-///   - `Some(Value::Null(_))` — field cleared, per draft §3.9.
-///   - any other `Some(Value::*)` — field set to that value.
+///   - `Some(Value::Null(_))` — present-but-null, where the field may be
+///     null; elsewhere the body's error (draft § Booleans, Null, and
+///     Identifier Values).
+///   - any other `Some(Value::*)` — field set to that value, as the body
+///     entry `c = <value>` would set it: a list or block cell included,
+///     so `{}` is a present empty message.
 ///
-/// Strategy is **format-and-reparse**: render the row as a synthetic
-/// PXF body (`<col> = <val>` per non-None cell) and run it through
-/// [`crate::unmarshal`]. This mirrors `protowire-cpp`'s `BindRow` and
-/// reuses every branch of the existing decoder (WKT timestamps /
-/// durations, wrapper-nullability, enum-by-name, `pxf.required` /
-/// `pxf.default`, oneof) instead of growing a parallel
-/// Value→FieldDescriptor switch.
+/// Strategy is **format-and-reparse**: render the row as a synthetic PXF
+/// body and run it through [`crate::unmarshal_full`], reusing every branch
+/// of the decoder (WKT timestamps / durations, wrapper-nullability,
+/// enum-by-name, `pxf.required` / `pxf.default`, oneof) instead of growing a
+/// parallel Value→FieldDescriptor switch. Cells sharing a path prefix land
+/// in one block, in the order its first non-empty cell appears, because two
+/// blocks would bind one sub-message twice; a prefix with no non-empty cell
+/// writes no block, so its sub-message stays absent. An error names the
+/// column it fell in.
 ///
 /// `skip_validate` on `options` defaults to `false` (matching
 /// `unmarshal`); callers in a tight scan loop typically want to set
@@ -339,6 +354,16 @@ pub fn bind_row(
     columns: &[String],
     row: &DatasetRow,
     options: UnmarshalOptions<'_>,
+) -> Result<DynamicMessage, PxfError> {
+    bind(desc, columns, row, options, false)
+}
+
+fn bind(
+    desc: &MessageDescriptor,
+    columns: &[String],
+    row: &DatasetRow,
+    mut options: UnmarshalOptions<'_>,
+    paths_checked: bool,
 ) -> Result<DynamicMessage, PxfError> {
     if columns.len() != row.cells.len() {
         return Err(PxfError::new(
@@ -350,107 +375,177 @@ pub fn bind_row(
             ),
         ));
     }
-    let mut body = String::new();
-    for (col, cell) in columns.iter().zip(row.cells.iter()) {
-        let Some(v) = cell else { continue };
-        body.push_str(col);
-        body.push_str(" = ");
-        cell_to_pxf(v, &mut body, row.pos)?;
-        body.push('\n');
+    if !paths_checked {
+        let depth = options.limits.max_nesting_depth;
+        if let Some(msg) = check_column_paths(desc, columns, depth) {
+            return Err(PxfError::new(row.pos, msg));
+        }
     }
-    unmarshal(&body, desc, options)
+    let mut writer = BodyWriter {
+        // The empty first line keeps an error the decoder reports at 1:1,
+        // a missing required field, out of every column's span.
+        body: String::from("\n"),
+        line: 2,
+        spans: Vec::with_capacity(row.cells.len()),
+        cells: &row.cells,
+    };
+    writer.write_row(columns);
+    let BodyWriter { body, spans, .. } = writer;
+    // The row's bytes were capped as they were read, and the body it is
+    // rendered to may run wider.
+    options.limits.max_message_size = usize::MAX;
+    match unmarshal_full(&body, desc, options) {
+        Ok((msg, _)) => Ok(msg),
+        Err(e) => Err(at_row(e, row.pos, columns, &spans)),
+    }
 }
 
-fn cell_to_pxf(v: &Value, out: &mut String, pos: Position) -> Result<(), PxfError> {
-    match v {
-        Value::Null(_) => out.push_str("null"),
-        Value::String(s) => out.push_str(&crate::format::quote_string(&s.value)),
-        Value::Int(v) => out.push_str(&v.raw),
-        Value::Float(v) => out.push_str(&v.raw),
-        Value::Bool(v) => out.push_str(if v.value { "true" } else { "false" }),
-        Value::Bytes(v) => {
-            out.push_str("b\"");
-            out.push_str(&encode_base64(&v.value));
-            out.push('"');
-        }
-        Value::Ident(v) => out.push_str(&v.name),
-        Value::Timestamp(v) => out.push_str(&v.raw),
-        Value::Duration(v) => out.push_str(&v.raw),
-        _ => {
-            // List / Block — rejected at row-parse time, so unreachable
-            // in practice.
-            return Err(PxfError::new(
-                pos,
-                "pxf: bind_row: unexpected cell variant (v1 @dataset cells are scalar-shaped)",
-            ));
-        }
-    }
-    Ok(())
+/// Move a decode error to the row it came from and name the column it fell
+/// in: the decoder read a synthetic body, so its position is a line of that
+/// body. A row built by hand has no position, and keeps the body's.
+fn at_row(e: PxfError, pos: Position, columns: &[String], spans: &[CellSpan]) -> PxfError {
+    let msg = match spans
+        .iter()
+        .find(|s| s.first <= e.pos.line && e.pos.line <= s.last)
+    {
+        Some(s) => format!("column {}: {}", columns[s.col], e.msg),
+        None => e.msg,
+    };
+    PxfError::new(if pos.line == 0 { e.pos } else { pos }, msg)
 }
 
-fn encode_base64(bytes: &[u8]) -> String {
-    const ALPH: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
-    let chunks = bytes.chunks_exact(3);
-    let rem = chunks.remainder();
-    for c in chunks {
-        let n = ((c[0] as u32) << 16) | ((c[1] as u32) << 8) | (c[2] as u32);
-        out.push(ALPH[((n >> 18) & 63) as usize] as char);
-        out.push(ALPH[((n >> 12) & 63) as usize] as char);
-        out.push(ALPH[((n >> 6) & 63) as usize] as char);
-        out.push(ALPH[(n & 63) as usize] as char);
-    }
-    match rem.len() {
-        1 => {
-            let n = (rem[0] as u32) << 16;
-            out.push(ALPH[((n >> 18) & 63) as usize] as char);
-            out.push(ALPH[((n >> 12) & 63) as usize] as char);
-            out.push('=');
-            out.push('=');
-        }
-        2 => {
-            let n = ((rem[0] as u32) << 16) | ((rem[1] as u32) << 8);
-            out.push(ALPH[((n >> 18) & 63) as usize] as char);
-            out.push(ALPH[((n >> 12) & 63) as usize] as char);
-            out.push(ALPH[((n >> 6) & 63) as usize] as char);
-            out.push('=');
-        }
-        _ => {}
-    }
-    out
+/// The lines of a row's body that a column's entry takes.
+struct CellSpan {
+    col: usize,
+    first: usize,
+    last: usize,
 }
 
-fn build_synthetic_row(columns: &[String], row_bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(row_bytes.len() + 64);
-    s.push_str("@dataset _.Row (");
-    for (i, c) in columns.iter().enumerate() {
-        if i > 0 {
-            s.push(',');
-        }
-        s.push_str(c);
+/// One entry of a row body: a column's cell, or the block of a path prefix
+/// that dotted columns share.
+#[derive(Default)]
+struct BodyNode<'a> {
+    name: &'a str,
+    /// The column whose cell this is; `None` for a block.
+    col: Option<usize>,
+    children: Vec<BodyNode<'a>>,
+    /// Index of each block among `children`, by name.
+    blocks: HashMap<&'a str, usize>,
+}
+
+impl BodyNode<'_> {
+    /// The column of the first cell inside this block.
+    fn first_col(&self) -> usize {
+        let first = &self.children[0];
+        first.col.unwrap_or_else(|| first.first_col())
     }
-    s.push_str(")\n");
-    // row_bytes is guaranteed UTF-8 because the upstream input was
-    // string-shaped (the byte scanner only operates on already-
-    // validated PXF). Defensive fallback: lossy conversion.
-    s.push_str(std::str::from_utf8(row_bytes).unwrap_or(""));
-    s.push('\n');
-    s
+}
+
+struct BodyWriter<'a> {
+    body: String,
+    /// The number of the next line to be written.
+    line: usize,
+    spans: Vec<CellSpan>,
+    cells: &'a [Option<Value>],
+}
+
+impl BodyWriter<'_> {
+    fn write_row(&mut self, columns: &[String]) {
+        let mut root = BodyNode::default();
+        for (i, cell) in self.cells.iter().enumerate() {
+            if cell.is_none() {
+                continue;
+            }
+            let mut node = &mut root;
+            let mut segs = columns[i].split('.').peekable();
+            while let Some(seg) = segs.next() {
+                if segs.peek().is_none() {
+                    node.children.push(BodyNode {
+                        name: seg,
+                        col: Some(i),
+                        ..Default::default()
+                    });
+                    break;
+                }
+                let next = match node.blocks.get(seg) {
+                    Some(&next) => next,
+                    None => {
+                        node.blocks.insert(seg, node.children.len());
+                        node.children.push(BodyNode {
+                            name: seg,
+                            ..Default::default()
+                        });
+                        node.children.len() - 1
+                    }
+                };
+                node = &mut node.children[next];
+            }
+        }
+        self.write_block(&root);
+    }
+
+    fn write_block(&mut self, node: &BodyNode<'_>) {
+        for child in &node.children {
+            if let Some(col) = child.col {
+                self.write_cell(child.name, col);
+                continue;
+            }
+            // An error on the block's own lines, a second oneof member say,
+            // is laid at the first column in it. Its span comes after its
+            // cells', so a cell's wins.
+            let first = self.line;
+            self.body.push_str(child.name);
+            self.body.push_str(" {\n");
+            self.line += 1;
+            self.write_block(child);
+            self.body.push_str("}\n");
+            self.spans.push(CellSpan {
+                col: child.first_col(),
+                first,
+                last: self.line,
+            });
+            self.line += 1;
+        }
+    }
+
+    fn write_cell(&mut self, name: &str, col: usize) {
+        let value = self.cells[col].as_ref().expect("only non-empty cells");
+        let text = format_value_text(value);
+        self.body.push_str(name);
+        self.body.push_str(" = ");
+        self.body.push_str(&text);
+        self.body.push('\n');
+        let last = self.line + text.matches('\n').count();
+        self.spans.push(CellSpan {
+            col,
+            first: self.line,
+            last,
+        });
+        self.line = last + 1;
+    }
 }
 
 // ---- byte-level row scanner -------------------------------------------
 
 enum FindRow {
-    Found { start: usize, end: usize },
+    Found {
+        start: usize,
+        end: usize,
+    },
     Done,
     NeedMore,
+    /// Input ran out inside a row.
+    InRow,
 }
 
 /// Locates the next `( ... )` row in `input`, skipping leading
 /// whitespace + comments. Returns:
 ///   - `Found { start, end }` (inclusive of the `(` and `)`),
-///   - `Done` when the next significant byte is NOT `(` (end of rows),
-///   - `NeedMore` when the input runs out mid-scan.
+///   - `Done` at the next directive, which ends the rows,
+///   - `NeedMore` when the input runs out between rows,
+///   - `InRow` when it runs out inside a row,
+///   - `Err` at anything else: the row sequence ends only at end of input
+///     or at a directive (draft §3.4.4, "Appending"; protowire#336).
 fn find_next_row(input: &[u8]) -> Result<FindRow, PxfError> {
     let n = input.len();
     let mut i = 0;
@@ -474,12 +569,18 @@ fn find_next_row(input: &[u8]) -> Result<FindRow, PxfError> {
     if i >= n {
         return Ok(FindRow::NeedMore);
     }
-    if input[i] != b'(' {
+    if input[i] == b'@' {
         return Ok(FindRow::Done);
+    }
+    if input[i] != b'(' {
+        return Err(PxfError::new(
+            Position::default(),
+            "pxf: @dataset directive cannot coexist with top-level field entries; expected a row or a directive (draft §3.4.4)",
+        ));
     }
     match find_matching_paren_safe(input, i)? {
         Some(end) => Ok(FindRow::Found { start: i, end }),
-        None => Ok(FindRow::NeedMore),
+        None => Ok(FindRow::InRow),
     }
 }
 

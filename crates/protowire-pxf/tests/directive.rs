@@ -166,21 +166,41 @@ fn table_arity_mismatch_rejected() {
 }
 
 #[test]
-fn table_dotted_column_rejected() {
-    let err = parse("@dataset x.Row ( a.b )\n").unwrap_err();
-    assert!(err.to_string().contains("dotted column"));
+fn table_dotted_column_parses() {
+    let doc = parse(
+        "@dataset x.Row (a.b)
+",
+    )
+    .unwrap();
+    assert_eq!(doc.datasets[0].columns, ["a.b"]);
 }
 
 #[test]
-fn table_list_cell_rejected() {
-    let err = parse("@dataset x.Row ( a )\n( [1, 2] )\n").unwrap_err();
-    assert!(err.to_string().contains("list values"));
+fn table_list_cell_parses() {
+    let doc = parse(
+        "@dataset x.Row (a)
+( [1, 2] )
+",
+    )
+    .unwrap();
+    assert!(matches!(
+        doc.datasets[0].rows[0].cells[0],
+        Some(Value::List(_))
+    ));
 }
 
 #[test]
-fn table_block_cell_rejected() {
-    let err = parse("@dataset x.Row ( a )\n( { x = 1 } )\n").unwrap_err();
-    assert!(err.to_string().contains("block values"));
+fn table_block_cell_parses() {
+    let doc = parse(
+        "@dataset x.Row (a)
+( { x = 1 } )
+",
+    )
+    .unwrap();
+    assert!(matches!(
+        doc.datasets[0].rows[0].cells[0],
+        Some(Value::Block(_))
+    ));
 }
 
 #[test]
