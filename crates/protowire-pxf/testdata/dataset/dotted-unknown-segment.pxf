@@ -1,0 +1,6 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto. MUST be
+# rejected at the header: dataset.v1.Desc has no field nope.
+
+@dataset dataset.v1.Event (id, desc.nope)
+
+("x", 1)

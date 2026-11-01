@@ -1,0 +1,5 @@
+@type nulls.v1.Holder
+
+# Reject: null as a list element. List elements are not nullable.
+
+l = [1, null]

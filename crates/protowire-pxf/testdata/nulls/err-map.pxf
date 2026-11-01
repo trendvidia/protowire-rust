@@ -1,0 +1,6 @@
+@type nulls.v1.Holder
+
+# Reject: null on a map field. A map is not nullable; write {} for an
+# empty one.
+
+m = null

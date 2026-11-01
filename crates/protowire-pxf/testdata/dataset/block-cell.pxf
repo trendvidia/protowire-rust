@@ -1,0 +1,7 @@
+# §3.4.4 value cells. A block in a cell on a message column. MUST be
+# accepted: a cell means what `nested_field = { name = "inner" value = 99 }`
+# means in a body. Rejected before v1.13, when cells were scalar-only.
+
+@dataset test.v1.AllTypes (string_field, nested_field)
+
+("row-1", { name = "inner" value = 99 })

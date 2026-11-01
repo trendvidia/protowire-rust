@@ -1,0 +1,4 @@
+# §3.4.4 zero-row table. Valid — a header with no rows denotes an empty
+# dataset. MUST be accepted.
+
+@dataset test.v1.AllTypes (string_field, int32_field)

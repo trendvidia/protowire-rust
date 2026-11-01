@@ -1,0 +1,6 @@
+@type nulls.v1.Legacy
+
+# Accept: null on a proto2 optional scalar. It has explicit presence: p
+# is unset, and present-but-null.
+
+p = null

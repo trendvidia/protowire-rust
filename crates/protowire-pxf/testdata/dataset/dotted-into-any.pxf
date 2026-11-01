@@ -1,0 +1,9 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto. MUST be
+# accepted: payload is a google.protobuf.Any, and a path into it names
+# the Any's own fields, as a block with no type entry does (§3.16). The
+# row binds as
+#   id = "x" payload { type_url = "type.googleapis.com/dataset.v1.Pick" value = b"CgF4" }
+
+@dataset dataset.v1.Event (id, payload.type_url, payload.value)
+
+("x", "type.googleapis.com/dataset.v1.Pick", b"CgF4")

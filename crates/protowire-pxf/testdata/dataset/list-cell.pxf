@@ -1,0 +1,7 @@
+# §3.4.4 value cells. A list in a cell on a repeated column. MUST be
+# accepted: a cell means what `repeated_string = ["alpha", "beta"]` means
+# in a body. Rejected before v1.13, when cells were scalar-only.
+
+@dataset test.v1.AllTypes (string_field, repeated_string)
+
+("row-1", ["alpha", "beta"])

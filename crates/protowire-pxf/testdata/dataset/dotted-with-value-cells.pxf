@@ -1,0 +1,10 @@
+# §3.4.4 column paths beside value cells. Row type dataset.v1.Event in
+# paths.proto. MUST be accepted. A dotted column may hold a list or a
+# block, and plain columns may hold value cells next to it:
+#
+#   id "m" desc { energy 0.5 tempo { min_bpm 60 } tags ["a", "b"] }
+#          picks [{ name "p" }]
+
+@dataset dataset.v1.Event (id, desc.energy, desc.tempo, desc.tags, picks)
+
+("m", 0.5, { min_bpm = 60 }, ["a", "b"], [{ name = "p" }])

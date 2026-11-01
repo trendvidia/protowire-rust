@@ -1,0 +1,5 @@
+@type nulls.ed.v1.Ed
+
+# Reject: an editions scalar with IMPLICIT presence has no unset state, so
+# null would read back as zero.
+implicit_scalar = null

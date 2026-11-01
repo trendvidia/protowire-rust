@@ -15,6 +15,13 @@ format changes.
 
 - **The decoder reads what it does not bind, instead of counting braces** ([#60](https://github.com/trendvidia/protowire-rust/issues/60), protowire#312). A field `discard_unknown` drops and a directive's body are now held to the grammar, as `parse` already held them: a `,` or `;` between the entries of such a block is rejected, as is an unterminated one. The `testdata/blocks/` corpus is vendored and runs through `parse` and the decoder.
 
+- **`null` binds only to a field with explicit presence** ([#55](https://github.com/trendvidia/protowire-rust/issues/55), protowire#339, #379, #380). On a plain proto3 scalar, a repeated or map field, or a proto2 `required` field it is now an error naming the field, in a `@dataset` cell too. A schema that bound `null` to a plain scalar needs `optional` or a wrapper. Two editions fixtures cannot run: `prost-reflect` 0.16.5, its latest release, refuses `syntax = "editions"`, and a test pins that.
+- **A simple string holds no raw line feed** (#55, protowire#350), through `parse`, the decoder and every `@dataset` path. `bind_row` now re-escapes a cell's string, so an escaped `\n` in a cell still binds.
+
+### Added
+
+- `proto/pxf/secret.proto`, vendored from protowire, for the dataset corpus.
+
 ### Changed
 
 - **`Violation.name` holds the `(pxf.default)` literal for `(pxf.required)` with `(pxf.default)` on one field** (protowire-go#211). It was empty.

@@ -1,0 +1,7 @@
+@type strings.v1.Holder
+
+# Reject: a raw LF inside a simple string. Decoders MUST reject it,
+# at the string. Write it as \n, or use a """triple-quoted""" string.
+
+s = "x
+y"

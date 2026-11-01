@@ -1,0 +1,7 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto. MUST be
+# rejected at the header: picks is a repeated field, and a path has no
+# index. A value cell on picks is the way to write it.
+
+@dataset dataset.v1.Event (id, picks.name)
+
+("x", "p")

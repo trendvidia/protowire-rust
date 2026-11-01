@@ -1,0 +1,6 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto. MUST be
+# rejected at the header: by_name is a map field, and a path has no key.
+
+@dataset dataset.v1.Event (id, by_name.name)
+
+("x", "p")

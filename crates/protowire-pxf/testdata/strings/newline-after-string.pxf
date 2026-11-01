@@ -1,0 +1,7 @@
+@type strings.v1.Holder
+
+# Accept: a newline after a closed string ends the entry, not the string.
+# Binds s to "x" and t to "y".
+
+s = "x"
+t = "y"

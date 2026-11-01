@@ -1,0 +1,6 @@
+@type strings.v1.Holder
+
+# Accept: the escape \n is how a simple string holds a line break.
+# Binds s to "x", LF, "y".
+
+s = "x\ny"

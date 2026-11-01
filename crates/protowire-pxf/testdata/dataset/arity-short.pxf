@@ -1,0 +1,6 @@
+# §3.4.4 row arity. The header declares 3 columns; the row carries 2.
+# MUST be rejected — trailing-empty shorthand is not permitted in v1.
+
+@dataset test.v1.AllTypes (string_field, int32_field, enum_field)
+
+("row-1", 1)

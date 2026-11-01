@@ -1,0 +1,6 @@
+@type nulls.v1.Holder
+
+# Accept: null on a message member of a oneof clears it: the oneof k is
+# unset.
+
+km = null

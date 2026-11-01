@@ -1,0 +1,9 @@
+@type nulls.v1.Holder
+
+# Reject: null as the value of a map entry. A map is list-typed for the
+# null rule, and its entries are not nullable (#380). Leave the key out
+# instead.
+
+m = {
+  "a": null
+}

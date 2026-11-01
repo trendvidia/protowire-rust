@@ -1,0 +1,6 @@
+@type nulls.v1.Holder
+
+# Accept: null on a wrapper field. The wrapper makes the scalar
+# nullable: w is unset, and present-but-null.
+
+w = null

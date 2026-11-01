@@ -1,0 +1,7 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto. MUST be
+# rejected at the header: plain is an int32, not a message field, so a
+# path cannot go through it.
+
+@dataset dataset.v1.Event (id, plain.x)
+
+("x", 1)

@@ -14,7 +14,7 @@
 
 use prost::Message as _;
 use prost_reflect::{
-    DescriptorPool, DynamicMessage, FieldDescriptor, Kind, MapKey, MessageDescriptor,
+    Cardinality, DescriptorPool, DynamicMessage, FieldDescriptor, Kind, MapKey, MessageDescriptor,
     OneofDescriptor, ReflectMessage, Value,
 };
 use std::collections::HashMap;
@@ -720,6 +720,9 @@ impl<'a> Decoder<'a> {
                     };
                     self.check_oneof(&fd, &mut set_oneofs, pos)?;
                     if matches!(self.current.kind, TokenKind::Null) {
+                        if !nullable(&fd) {
+                            return Err(null_not_allowed(self.current.pos, &fd));
+                        }
                         self.mark_null(&fd);
                         self.advance();
                         continue;
@@ -1488,6 +1491,38 @@ impl<'a> Decoder<'a> {
         read_value(&mut self.lex, &mut self.current, self.depth, self.limits)?;
         Ok(())
     }
+}
+
+/// Whether `null` may bind to `fd`: a singular field with explicit
+/// presence, which it leaves unset and present-but-null (draft -01
+/// § Booleans, Null, and Identifier Values; protowire#339, #379). That is a
+/// message field, wrappers included, a proto3 `optional` scalar, a oneof
+/// member or a proto2 `optional` field. A required field would be invalid
+/// in binary unset, and a scalar without presence has no unset state, so
+/// `null` would read back as its zero value.
+fn nullable(fd: &FieldDescriptor) -> bool {
+    fd.supports_presence()
+        && !fd.is_list()
+        && !fd.is_map()
+        && fd.cardinality() != Cardinality::Required
+}
+
+/// The error for a `null` that [`nullable`] refuses, saying how the schema
+/// can admit one where it can.
+fn null_not_allowed(pos: Position, fd: &FieldDescriptor) -> PxfError {
+    let name = fd.name();
+    let msg = if fd.is_map() {
+        format!("null is not allowed on map field {name:?}")
+    } else if fd.is_list() {
+        format!("null is not allowed on repeated field {name:?}")
+    } else if fd.cardinality() == Cardinality::Required {
+        format!("null is not allowed on required field {name:?}: it must be set")
+    } else {
+        format!(
+            "null is not allowed on scalar field {name:?}: declare it optional, or use a wrapper type, to make it nullable"
+        )
+    };
+    PxfError::new(pos, msg)
 }
 
 fn is_any_full_name(full: &str) -> bool {

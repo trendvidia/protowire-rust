@@ -1,0 +1,7 @@
+@type nulls.v1.Holder
+
+# Reject: a null oneof member is that member present, so writing it after
+# a sibling of the same oneof writes two members.
+
+km { x = 1 }
+ks = null

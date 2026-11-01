@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+
+// Schema for the null-binding fixtures under testdata/nulls/ (issue #339;
+// IETF draft -01 § Booleans, Null, and Identifier Values). The proto2
+// case is in nulls_proto2.proto.
+
+syntax = "proto3";
+
+package nulls.v1;
+
+import "google/protobuf/wrappers.proto";
+import "pxf/annotations.proto";
+
+message Inner {
+  int32 x = 1;
+}
+
+message Holder {
+  int32 n = 1;
+  optional int32 o = 2;
+  repeated int32 l = 3;
+  oneof k {
+    string ks = 4;
+    Inner km = 5;
+  }
+  Inner msg = 6;
+  google.protobuf.Int32Value w = 7;
+  map<string, int32> m = 8;
+  map<string, Inner> mm = 9;
+}
+
+// A null optional scalar counts as present for (pxf.required).
+message Required {
+  optional int32 r = 1 [(pxf.required) = true];
+}
+
+// A null optional scalar is not given its (pxf.default).
+message Defaulted {
+  optional int32 d = 1 [(pxf.default) = "5"];
+}

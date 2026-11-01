@@ -1,0 +1,8 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto. MUST be
+# accepted. null in a dotted cell applies to the leaf, as
+#   desc { label = null }
+# does in a body: label (a wrapper) is unset, and desc is present.
+
+@dataset dataset.v1.Event (id, desc.label)
+
+("n", null)

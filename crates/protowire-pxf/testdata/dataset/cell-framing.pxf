@@ -1,0 +1,11 @@
+# §3.4.4 value cells. Row framing. MUST be accepted: two rows. A ")" or ","
+# inside a string, a triple-quoted string or a comment within a block cell
+# neither ends the row nor splits the cell. A streaming reader finds the
+# row by matching parentheses outside strings and comments, so it MUST
+# yield the same two rows as a materializing parse.
+
+@dataset test.v1.AllTypes (string_field, nested_field, repeated_string)
+
+("row-1", { name = "a), (b," value = 1 }, ["),", "(,"])
+("row-2", { name = """x) "y", (z""" /* ), ( */ value = 2 }, [ # ) ,
+  "end" ])

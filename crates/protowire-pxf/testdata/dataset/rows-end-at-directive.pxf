@@ -1,0 +1,12 @@
+# §3.4.4 appending. Two datasets in one document. The first one's rows end
+# at the second "@dataset" directive, which is a legitimate end of the
+# sequence. MUST be accepted: two datasets, two rows and one row.
+
+@dataset test.v1.AllTypes (string_field, int32_field)
+
+("row-1", 1)
+("row-2", 2)
+
+@dataset test.v1.AllTypes (string_field, enum_field)
+
+("row-3", STATUS_ACTIVE)

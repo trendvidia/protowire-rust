@@ -163,3 +163,13 @@ buf build --as-file-descriptor-set --exclude-source-info \
   -o crates/protowire-pxf/testdata/blocks/blocks.binpb
 
 echo "wrote crates/protowire-pxf/testdata/blocks/blocks.binpb (buf)"
+
+# Vendored verbatim from the spec repo's testdata/{nulls,strings,dataset}/
+# (protowire#339, #350, #341, #342); keep in sync when the spec repo adds
+# fixtures.
+for f in nulls/nulls nulls/nulls_proto2 nulls/nulls_editions strings/strings dataset/paths; do
+  buf build --as-file-descriptor-set --exclude-source-info \
+    --path "crates/protowire-pxf/testdata/$f.proto" \
+    -o "crates/protowire-pxf/testdata/$f.binpb"
+  echo "wrote crates/protowire-pxf/testdata/$f.binpb (buf)"
+done

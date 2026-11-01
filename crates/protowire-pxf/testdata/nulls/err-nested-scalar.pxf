@@ -1,0 +1,6 @@
+@type nulls.v1.Holder
+
+# Reject: null on a plain proto3 scalar inside a message body. The rule
+# applies in every body, not only at the top level.
+
+msg { x = null }

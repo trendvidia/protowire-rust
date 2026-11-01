@@ -1,0 +1,6 @@
+@type nulls.v1.Holder
+
+# Accept: null on a scalar member of a oneof. A member has explicit
+# presence: the oneof k is unset, and ks is present-but-null.
+
+ks = null

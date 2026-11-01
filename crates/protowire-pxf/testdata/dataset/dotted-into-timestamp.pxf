@@ -1,0 +1,7 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto. MUST be
+# rejected at the header: ts is a google.protobuf.Timestamp, which is
+# written as a literal, so a path into its encoding is not a column.
+
+@dataset dataset.v1.Event (id, ts.seconds)
+
+("x", 1)

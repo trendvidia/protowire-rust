@@ -1,0 +1,7 @@
+# §3.4.4 value cells. A block in a cell on a scalar column. MUST be
+# rejected, binding the row: the cell means `int32_field = { value = 1 }`,
+# and a block on a scalar field is an error in a body too.
+
+@dataset test.v1.AllTypes (string_field, int32_field)
+
+("row-1", { value = 1 })

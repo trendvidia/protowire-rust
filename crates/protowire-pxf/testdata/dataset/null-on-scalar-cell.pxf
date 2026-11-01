@@ -1,0 +1,8 @@
+# §3.4.4 + § Booleans, Null, and Identifier Values (#339). Row type
+# test.v1.AllTypes. MUST be rejected: a cell applies the singular-field
+# null rules, and int32_field is a plain scalar.
+
+@dataset test.v1.AllTypes (string_field, int32_field)
+
+("a", 1)
+("b", null)

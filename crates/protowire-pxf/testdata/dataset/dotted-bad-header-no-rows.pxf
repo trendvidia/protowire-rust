@@ -1,0 +1,7 @@
+# §3.4.4 column paths. Row type dataset.v1.Event in paths.proto. MUST be
+# accepted: picks is a repeated field, so the header breaks a rule that
+# needs the row type, but those rules are checked when a row binds, and
+# this table has no rows. Compare dotted-bad-header-empty-row, which has
+# one row of empty cells and is rejected.
+
+@dataset dataset.v1.Event (id, picks.name)
