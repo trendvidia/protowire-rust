@@ -277,6 +277,7 @@ fn required_with_default_is_rejected() {
         vs[0].element,
         "required_default_test.v1.RequiredWithDefault.f"
     );
+    assert_eq!(vs[0].name, "x");
     assert_eq!(
         vs[0].to_string(),
         "required-default-test.proto: field \"required_default_test.v1.RequiredWithDefault.f\": invalid (pxf.required): (pxf.required) and (pxf.default) are exclusive on one field: the first rejects a document where the field is absent, and the second treats it as supplied (draft -01 §annotation-extensions)"
