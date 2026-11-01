@@ -23,8 +23,13 @@ format changes.
 
 - **The type entry of an Any block is accepted wherever a body is written** ([#53](https://github.com/trendvidia/protowire-rust/issues/53), protowire#354). `@type = "<url>"` opens a singular Any, a list element or a map value, through `parse`, the decoder and `format`. A type entry that isn't first, a second one, and one on a block that isn't an Any are rejected. `unmarshal_full` now applies `(pxf.required)` and `(pxf.default)` inside an Any body before packing it.
 
+- **`DatasetReader` ends the rows only at end of input or a directive** (protowire#336). Anything else where a row could start, and a row cut short by end of input, used to end the sequence silently; both are now errors.
+- **`bind_row` applies `(pxf.required)` and `(pxf.default)`, as its documentation always said.** It runs the row through `unmarshal_full`, and an error now names the column it fell in and is reported at the row.
+
 ### Added
 
+- **`@dataset` value cells** ([#52](https://github.com/trendvidia/protowire-rust/issues/52), protowire#341). A cell holds any value, list and block included, and binds as the body entry `c = <value>` would. `{}` is a present empty message; an empty cell stays absent.
+- **`@dataset` dotted column paths** ([#54](https://github.com/trendvidia/protowire-rust/issues/54), protowire#342). A column may be a path into a sub-message, and a row's cells sharing a prefix land in one block. A header that names a path twice (a plain column too, so `(a, a)` is now rejected), names a field beside a path inside it, or has an empty segment is rejected by `parse`; a path the row type can't follow is rejected when a row binds.
 - `Entry::TypeEntry`, the AST node for an Any block's type entry. A `match` on `Entry` needs the new arm.
 - `proto/pxf/secret.proto`, vendored from protowire, for the dataset corpus.
 

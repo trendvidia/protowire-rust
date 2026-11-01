@@ -51,6 +51,17 @@ pub fn format_with_options(doc: &Document, opts: &FormatOptions) -> String {
     f.out
 }
 
+/// One value as PXF text, for a `@dataset` cell bound as the body entry
+/// `c = <value>` would be.
+pub(crate) fn format_value_text(val: &Value) -> String {
+    let mut f = Formatter {
+        out: String::new(),
+        indent: "  ",
+    };
+    f.format_value(val, 0);
+    f.out
+}
+
 struct Formatter<'a> {
     out: String,
     indent: &'a str,

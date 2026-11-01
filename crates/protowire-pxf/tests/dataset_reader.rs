@@ -277,7 +277,7 @@ fn bind_row_unknown_column_errors() {
     let err = tr.scan_one(&all_types(), opts).unwrap_err();
     // The synthetic body's "not_a_field = ..." goes through unmarshal,
     // which rejects unknown fields by default.
-    assert!(err.to_string().to_lowercase().contains("unknown"));
+    assert!(err.to_string().contains("has no field"));
 }
 
 #[test]
