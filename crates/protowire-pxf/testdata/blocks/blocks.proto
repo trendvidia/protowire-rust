@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+
+// Schema for the block-entry separator fixtures under testdata/blocks/
+// (issue #312; IETF draft -01 § Blocks and Map Tails: the entries of a
+// block are separated by whitespace, newlines included, and nothing else).
+
+syntax = "proto3";
+
+package blocks.v1;
+
+message Address {
+  string city = 1;
+  string zip = 2;
+}
+
+message Child {
+  string id = 1;
+  string type = 2;
+}
+
+message Doc {
+  Address address = 1;
+  map<string, string> headers = 2;
+  repeated Child children = 3;
+}

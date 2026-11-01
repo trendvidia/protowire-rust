@@ -11,6 +11,10 @@ format changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The decoder reads what it does not bind, instead of counting braces** ([#60](https://github.com/trendvidia/protowire-rust/issues/60), protowire#312). A field `discard_unknown` drops and a directive's body are now held to the grammar, as `parse` already held them: a `,` or `;` between the entries of such a block is rejected, as is an unterminated one. The `testdata/blocks/` corpus is vendored and runs through `parse` and the decoder.
+
 ### Changed
 
 - **`Violation.name` holds the `(pxf.default)` literal for `(pxf.required)` with `(pxf.default)` on one field** (protowire-go#211). It was empty.

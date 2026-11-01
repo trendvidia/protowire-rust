@@ -1,0 +1,6 @@
+@type blocks.v1.Doc
+
+# Reject: a comma between the entries of a map block, which are
+# separated by whitespace like a message block's.
+
+headers = { "a": "x", "b": "y" }

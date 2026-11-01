@@ -34,6 +34,7 @@ use crate::keyed::{
 };
 use crate::lexer::Lexer;
 use crate::limits::{Limits, MAX_NUMERIC_LITERAL_DIGITS};
+use crate::parser::{find_matching_brace, read_value};
 use crate::result::Presence;
 use crate::token::{Position, Token, TokenKind};
 
@@ -383,34 +384,21 @@ impl<'a> Decoder<'a> {
                     };
                     let mut body: Vec<u8> = Vec::new();
                     let mut has_body = false;
-                    // Optional inline block — slice raw bytes by walking
-                    // brace depth at the token level. Strings / comments
-                    // are handled by the lexer, so brace tokens here are
-                    // always real braces.
+                    // Optional inline block. It is read as `parse` reads it,
+                    // so a body that is not PXF is an error here too, not
+                    // skipped by counting braces; `body` stays the raw bytes.
                     if matches!(self.current.kind, TokenKind::LBrace) {
                         let open = self.current.pos.offset;
-                        let mut depth: usize = 1;
-                        self.advance();
-                        while depth > 0 && !matches!(self.current.kind, TokenKind::Eof) {
-                            match self.current.kind {
-                                TokenKind::LBrace => depth += 1,
-                                TokenKind::RBrace => {
-                                    depth -= 1;
-                                    if depth == 0 {
-                                        let close = self.current.pos.offset;
-                                        body = self.lex.input_view()[open + 1..close].to_vec();
-                                        has_body = true;
-                                        self.advance();
-                                        break;
-                                    }
-                                }
-                                _ => {}
-                            }
-                            self.advance();
+                        read_value(&mut self.lex, &mut self.current, 0, self.limits)?;
+                        let input = self.lex.input_view();
+                        let close = find_matching_brace(input, open);
+                        if close < 0 {
+                            return Err(
+                                self.err_at(at_pos, format!("directive @{}: unmatched '{{'", name))
+                            );
                         }
-                        if depth != 0 {
-                            return Err(self.err("unmatched '{' in directive block"));
-                        }
+                        body = input[open + 1..close as usize].to_vec();
+                        has_body = true;
                     }
                     if let Some(p) = self.presence.as_mut() {
                         p.add_directive(Directive {
@@ -721,7 +709,7 @@ impl<'a> Decoder<'a> {
                         Some(fd) => fd,
                         None => {
                             if self.discard_unknown {
-                                self.skip_value();
+                                self.skip_value()?;
                                 continue;
                             }
                             return Err(self.err_at(
@@ -751,7 +739,6 @@ impl<'a> Decoder<'a> {
                     self.decode_field_value(msg, &fd)?;
                 }
                 TokenKind::LBrace => {
-                    self.advance();
                     if key_quoted {
                         return Err(quoted_name_unkeyed_error(pos, &key));
                     }
@@ -759,7 +746,8 @@ impl<'a> Decoder<'a> {
                         Some(fd) => fd,
                         None => {
                             if self.discard_unknown {
-                                self.skip_braced();
+                                // From the '{', so it reads as a block.
+                                self.skip_value()?;
                                 continue;
                             }
                             return Err(self.err_at(
@@ -768,6 +756,7 @@ impl<'a> Decoder<'a> {
                             ));
                         }
                     };
+                    self.advance();
                     if fd.is_list() {
                         // Keyed repeated field (draft -01 §3.13): the block
                         // form is a sequence of named entries, one per
@@ -1492,42 +1481,12 @@ impl<'a> Decoder<'a> {
         }
     }
 
-    fn skip_value(&mut self) {
-        match self.current.kind {
-            TokenKind::LBrace => {
-                self.advance();
-                self.skip_braced();
-            }
-            TokenKind::LBracket => {
-                self.advance();
-                self.skip_bracketed();
-            }
-            _ => self.advance(),
-        }
-    }
-
-    fn skip_braced(&mut self) {
-        let mut depth: i32 = 1;
-        while depth > 0 && !matches!(self.current.kind, TokenKind::Eof) {
-            match self.current.kind {
-                TokenKind::LBrace => depth += 1,
-                TokenKind::RBrace => depth -= 1,
-                _ => {}
-            }
-            self.advance();
-        }
-    }
-
-    fn skip_bracketed(&mut self) {
-        let mut depth: i32 = 1;
-        while depth > 0 && !matches!(self.current.kind, TokenKind::Eof) {
-            match self.current.kind {
-                TokenKind::LBracket => depth += 1,
-                TokenKind::RBracket => depth -= 1,
-                _ => {}
-            }
-            self.advance();
-        }
+    /// Consume the value of a field `discard_unknown` drops. It is read
+    /// with the parser, not by counting braces: dropping a field does not
+    /// exempt it from the grammar, and the same rule covers its depth.
+    fn skip_value(&mut self) -> Result<(), PxfError> {
+        read_value(&mut self.lex, &mut self.current, self.depth, self.limits)?;
+        Ok(())
     }
 }
 

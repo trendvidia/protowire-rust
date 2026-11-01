@@ -21,6 +21,7 @@
 
 use crate::token::{Position, Token, TokenKind};
 
+#[derive(Clone)]
 pub struct Lexer<'a> {
     input: &'a [u8],
     pos: usize,

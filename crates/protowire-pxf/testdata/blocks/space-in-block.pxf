@@ -1,0 +1,6 @@
+@type blocks.v1.Doc
+
+# Accept: block entries on one line, separated by spaces. Binds
+# address.city to "Berlin" and address.zip to "10115".
+
+address = { city = "Berlin" zip = "10115" }
