@@ -1647,21 +1647,6 @@ fn parse_f32_literal(s: &str) -> Option<f32> {
     })
 }
 
-/// Whether `desc` is a `pxf.Secret` of the shape the draft gives it
-/// (§ Well-Known Type Shapes): a singular string `value`, and `hint` and
-/// `fingerprint`, each optional, singular strings. Another message of that
-/// name is an ordinary message, with no literal form.
-pub(crate) fn is_secret(desc: &MessageDescriptor) -> bool {
-    let string_field = |name: &str, required: bool| match desc.get_field_by_name(name) {
-        Some(fd) => fd.kind() == Kind::String && !fd.is_list() && !fd.is_map(),
-        None => !required,
-    };
-    desc.full_name() == "pxf.Secret"
-        && string_field("value", true)
-        && string_field("hint", false)
-        && string_field("fingerprint", false)
-}
-
 fn nullable(fd: &FieldDescriptor) -> bool {
     fd.supports_presence()
         && !fd.is_list()
@@ -2135,6 +2120,21 @@ fn apply_message_default(
             fd.name()
         ),
     ))
+}
+
+/// Whether `desc` is a `pxf.Secret` of the shape the draft gives it
+/// (§ Well-Known Type Shapes): a singular string `value`, and `hint` and
+/// `fingerprint`, each optional, singular strings. Another message of that
+/// name is an ordinary message, with no literal form.
+pub(crate) fn is_secret(desc: &MessageDescriptor) -> bool {
+    let string_field = |name: &str, required: bool| match desc.get_field_by_name(name) {
+        Some(fd) => fd.kind() == Kind::String && !fd.is_list() && !fd.is_map(),
+        None => !required,
+    };
+    desc.full_name() == "pxf.Secret"
+        && string_field("value", true)
+        && string_field("hint", false)
+        && string_field("fingerprint", false)
 }
 
 fn is_wrapper_full_name(full: &str) -> bool {
