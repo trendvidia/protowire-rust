@@ -169,3 +169,11 @@ jobs:
         # The script does its own `cargo build --release -p check-decode`
         # under $RUST_DIR, so no separate build step here.
         run: bash protowire/scripts/cross_security_check.sh
+
+      # crates/protowire-pb/tests/values_table.rs reads a byte copy of the
+      # spec's struct-binding table (protowire#509); a changed row there
+      # must reach this port's golden test.
+      - name: Struct-binding table matches the spec
+        run: >
+          cmp protowire/testdata/values/values.tsv
+          protowire-rust/crates/protowire-pb/testdata/values.tsv

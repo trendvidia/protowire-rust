@@ -11,6 +11,11 @@ format changes.
 
 ## [Unreleased]
 
+### Added
+
+- **`check-decode --format pxf-pb`** ([#89](https://github.com/trendvidia/protowire-rust/issues/89), protowire#509). It decodes a PXF document with `unmarshal_full` and writes the message's PB bytes on stdout, map entries in key order, for the spec's write gate (`cross_write_check.sh`), which compares them with protowire-go's.
+- **A golden test of the spec's struct-binding table** ([#89](https://github.com/trendvidia/protowire-rust/issues/89), protowire#509). `protowire-pb`'s `tests/values_table.rs` writes a `Message` twin of each row of `testdata/values/values.tsv` that holds no big number and compares the bytes; CI checks the vendored table against the spec's. The 15 rows holding a `*big.Int`, `*big.Rat` or `*big.Float` have no twin: `protowire-pb` has no binding for a big number.
+
 ### Changed
 
 - **`pxf::marshal` and `pb::marshal` refuse a message nested past `MaxNestingDepth`** ([#86](https://github.com/trendvidia/protowire-rust/issues/86), protowire#502, draft -01 § Recursion). They wrote a message of any depth, and a reader at the default limit then refused the document. Depth is counted as each decoder counts it: in PXF every `{` or `[` is one descent, in PB every submessage or map entry. `MarshalOptions::max_nesting_depth` (both crates) raises the limit for a writer paired with a raised reader. An Any whose body would be too deep is written as `type_url` and `value` instead of being refused. **Breaking:** `pb::marshal` now returns `Result<Vec<u8>>`; `pb::marshal_with` takes the options, and `Writer::finish_checked` reports a refused value for a hand-driven `Writer`.
