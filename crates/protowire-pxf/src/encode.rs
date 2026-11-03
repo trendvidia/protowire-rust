@@ -13,6 +13,7 @@
 //! lexicographically by their formatted key string, matching the Go and TS
 //! ports byte-for-byte.
 
+use prost::Message as _;
 use prost_reflect::{
     DynamicMessage, FieldDescriptor, Kind, MapKey, MessageDescriptor, ReflectMessage, Value,
 };
@@ -21,10 +22,10 @@ use std::collections::HashSet;
 use crate::annotations::find_null_mask_field;
 use crate::bigfloat::format_big_float;
 use crate::bignum::{format_big_int, format_decimal};
-use crate::decode::{shown_key, TypeResolver};
+use crate::decode::{shown_key, unmarshal_full, TypeResolver, UnmarshalOptions};
 use crate::errors::PxfError;
 use crate::keyed::{ident_safe_entry_name, key_field};
-use crate::limits::MAX_NESTING_DEPTH;
+use crate::limits::{Limits, MAX_NESTING_DEPTH};
 use crate::result::Presence;
 use crate::token::Position;
 
@@ -658,15 +659,34 @@ impl<'a> Encoder<'a> {
         let Some(inner_desc) = resolver.find_message_by_url(&url) else {
             return false;
         };
-        let inner = match DynamicMessage::decode(inner_desc, &bytes[..]) {
+        let inner = match DynamicMessage::decode(inner_desc.clone(), &bytes[..]) {
             Ok(m) => m,
             Err(_) => return false,
         };
 
-        // The body goes to a buffer of its own, so an Any whose value is
-        // too deep to unpack here can still be written as its bytes.
+        // The body goes to a buffer of its own: an Any whose value is too
+        // deep to unpack here, or whose body would not read back as the
+        // same bytes, is written as its own fields instead.
         let out = std::mem::take(&mut self.buf);
         let prior = self.error.take();
+        let saved = self.path_prefix.clone();
+        self.path_prefix = format!("{}{}.", saved, fd.name());
+        self.encode_message(&inner, level + 1);
+        self.path_prefix = saved;
+        let body = std::mem::replace(&mut self.buf, out);
+        let fault = std::mem::replace(&mut self.error, prior);
+        match fault {
+            // The value is too deep to unpack here; its bytes are not.
+            Some(Fault::TooDeep(_)) => return false,
+            Some(f) => {
+                self.error.get_or_insert(f);
+                return true;
+            }
+            None => {}
+        }
+        if !self.any_body_reads_back(&body, &inner_desc, level, &bytes) {
+            return false;
+        }
         self.write_indent(level);
         self.buf.push_str(fd.name());
         self.buf.push_str(" {\n");
@@ -674,23 +694,136 @@ impl<'a> Encoder<'a> {
         self.buf.push_str("@type = ");
         self.buf.push_str(&write_quoted_string(&url));
         self.buf.push('\n');
-        let saved = self.path_prefix.clone();
-        self.path_prefix = format!("{}{}.", saved, fd.name());
-        self.encode_message(&inner, level + 1);
-        self.path_prefix = saved;
+        self.buf.push_str(&body);
         self.write_indent(level);
         self.buf.push_str("}\n");
-        let body = std::mem::replace(&mut self.buf, out);
-        let fault = std::mem::replace(&mut self.error, prior);
-        if matches!(fault, Some(Fault::TooDeep(_))) {
-            return false; // the value is too deep to unpack here; its bytes are not
-        }
-        if let Some(f) = fault {
-            self.error.get_or_insert(f);
-        }
-        self.buf.push_str(&body);
         true
     }
+
+    /// Whether `body`, the entries of an Any block whose own entry sits at
+    /// `level`, decodes to exactly `want`, the bytes of the Any's value
+    /// (draft -01 § Any Blocks, protowire#501). A reader compares an Any by
+    /// its bytes, and a body loses what text cannot say at any level of the
+    /// value: unknown fields, field or map order, an explicitly written
+    /// zero, a Timestamp no literal holds; and a reader's post-decode pass
+    /// fills an unset `@default` or rejects an unset `@required`. So the
+    /// reader decides: the body is decoded as `unmarshal_full` would, with
+    /// the nesting it has left at that depth, re-encoded canonically, and
+    /// compared. Mirrors protowire-go's `anyBodyReadsBack`.
+    fn any_body_reads_back(
+        &self,
+        body: &str,
+        desc: &MessageDescriptor,
+        level: usize,
+        want: &[u8],
+    ) -> bool {
+        // The body's entries sit at level + 1; a document's at 0.
+        let Some(max_nesting_depth) = self.max_depth.checked_sub(level + 1) else {
+            return false;
+        };
+        let options = UnmarshalOptions {
+            type_resolver: self.resolver,
+            limits: Limits {
+                max_nesting_depth,
+                ..Limits::default()
+            },
+            ..Default::default()
+        };
+        let Ok((got, _)) = unmarshal_full(body, desc, options) else {
+            return false;
+        };
+        let mut packed = Vec::with_capacity(want.len());
+        encode_canonical(&got, &mut packed);
+        packed == want
+    }
+}
+
+/// Append `msg`'s wire bytes with map entries in key order, as protobuf-go's
+/// deterministic marshal and protoc write them; prost-reflect keeps a map
+/// in a `HashMap` and writes it in that order, which differs from run to
+/// run. Fields go in number order. Unknown fields are not written: a
+/// message decoded from text has none. Used for an Any's value, which a
+/// reader compares by its bytes, both where the decoder packs a body and
+/// where the encoder checks that one reads back.
+pub(crate) fn encode_canonical(msg: &DynamicMessage, out: &mut Vec<u8>) {
+    let desc = msg.descriptor();
+    let mut fields: Vec<(FieldDescriptor, &Value)> = msg.fields().collect();
+    fields.sort_by_key(|(fd, _)| fd.number());
+    for (fd, value) in fields {
+        match (value, fd.kind()) {
+            (Value::Map(map), Kind::Message(entry_desc)) => {
+                let key_fd = entry_desc.map_entry_key_field();
+                let value_fd = entry_desc.map_entry_value_field();
+                let mut entries: Vec<_> = map.iter().collect();
+                entries.sort_by(|a, b| a.0.cmp(b.0));
+                for (k, v) in entries {
+                    let mut entry = Vec::new();
+                    let mut key = DynamicMessage::new(entry_desc.clone());
+                    key.set_field(&key_fd, Value::from(k.clone()));
+                    // A map entry carries its key and value whether or not
+                    // they are zero, as every protobuf encoder writes it.
+                    write_field_bytes(&key, &key_fd, &mut entry);
+                    match v {
+                        Value::Message(sub) => write_message_bytes(2, sub, &mut entry),
+                        _ => {
+                            let mut val = DynamicMessage::new(entry_desc.clone());
+                            val.set_field(&value_fd, v.clone());
+                            write_field_bytes(&val, &value_fd, &mut entry);
+                        }
+                    }
+                    prost::encoding::encode_key(
+                        fd.number(),
+                        prost::encoding::WireType::LengthDelimited,
+                        out,
+                    );
+                    prost::encoding::encode_varint(entry.len() as u64, out);
+                    out.extend_from_slice(&entry);
+                }
+            }
+            (Value::List(items), Kind::Message(_)) => {
+                for item in items {
+                    if let Value::Message(sub) = item {
+                        write_message_bytes(fd.number(), sub, out);
+                    }
+                }
+            }
+            (Value::Message(sub), _) => write_message_bytes(fd.number(), sub, out),
+            _ => {
+                let mut one = DynamicMessage::new(desc.clone());
+                one.set_field(&fd, value.clone());
+                one.encode_raw(out);
+            }
+        }
+    }
+}
+
+/// Write `field` of `msg` whether or not its value is the default: proto3
+/// leaves a zero out of a message, but a map entry carries its key and
+/// value either way, as every protobuf encoder writes it.
+fn write_field_bytes(msg: &DynamicMessage, field: &FieldDescriptor, out: &mut Vec<u8>) {
+    use prost::encoding::{encode_key, WireType};
+    let before = out.len();
+    msg.encode_raw(out);
+    if out.len() > before {
+        return;
+    }
+    let (wire_type, zero): (WireType, &[u8]) = match field.kind() {
+        Kind::String | Kind::Bytes => (WireType::LengthDelimited, &[0]),
+        Kind::Float | Kind::Fixed32 | Kind::Sfixed32 => (WireType::ThirtyTwoBit, &[0; 4]),
+        Kind::Double | Kind::Fixed64 | Kind::Sfixed64 => (WireType::SixtyFourBit, &[0; 8]),
+        _ => (WireType::Varint, &[0]),
+    };
+    encode_key(field.number(), wire_type, out);
+    out.extend_from_slice(zero);
+}
+
+/// A length-delimited submessage at `number`, written canonically.
+fn write_message_bytes(number: u32, sub: &DynamicMessage, out: &mut Vec<u8>) {
+    let mut body = Vec::new();
+    encode_canonical(sub, &mut body);
+    prost::encoding::encode_key(number, prost::encoding::WireType::LengthDelimited, out);
+    prost::encoding::encode_varint(body.len() as u64, out);
+    out.extend_from_slice(&body);
 }
 
 // ---------------------------------------------------------------------------
