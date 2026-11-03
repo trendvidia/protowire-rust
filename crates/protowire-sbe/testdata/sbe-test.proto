@@ -56,3 +56,27 @@ message WithNarrow {
   uint32 port = 2 [(sbe.encoding) = "uint16"];
   int32 delta = 3 [(sbe.encoding) = "int16"];
 }
+
+// Draft -01 § SBE Annotations (protowire#495): an overlong string is cut on a
+// character boundary, a bytes field at the limit. Mirrors protowire-go's
+// encoding/sbe/utf8_test.go.
+message CutCode {
+  string text = 1 [(sbe.length) = 8];
+}
+
+message CutRow {
+  string tag = 1 [(sbe.length) = 8];
+}
+
+message Cut {
+  option (sbe.template_id) = 5;
+  string text = 1 [(sbe.length) = 8];
+  bytes raw = 2 [(sbe.length) = 8];
+  CutCode code = 3;
+  repeated CutRow rows = 4;
+}
+
+message CutTiny {
+  option (sbe.template_id) = 6;
+  string text = 1 [(sbe.length) = 3];
+}
