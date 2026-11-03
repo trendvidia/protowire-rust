@@ -1378,6 +1378,20 @@ impl<'a> Decoder<'a> {
             self.advance();
             return Ok(true);
         }
+        // A pxf.Secret written as a string literal sets its value alone
+        // (draft -01 § pxf.Secret): `pw = "x"`, in a field, a list element
+        // or a map value. The block form falls through.
+        if full == "pxf.Secret"
+            && is_secret(&desc)
+            && matches!(self.current.kind, TokenKind::String)
+        {
+            let value_fd = desc
+                .get_field_by_name("value")
+                .expect("checked by is_secret");
+            let v = self.consume_scalar(&value_fd)?;
+            target.set_field(&value_fd, v);
+            return Ok(true);
+        }
         if full == "pxf.BigFloat" && matches!(self.current.kind, TokenKind::Int | TokenKind::Float)
         {
             let pos = self.current.pos;
@@ -1631,6 +1645,21 @@ fn parse_f32_literal(s: &str) -> Option<f32> {
     } else {
         f
     })
+}
+
+/// Whether `desc` is a `pxf.Secret` of the shape the draft gives it
+/// (§ Well-Known Type Shapes): a singular string `value`, and `hint` and
+/// `fingerprint`, each optional, singular strings. Another message of that
+/// name is an ordinary message, with no literal form.
+pub(crate) fn is_secret(desc: &MessageDescriptor) -> bool {
+    let string_field = |name: &str, required: bool| match desc.get_field_by_name(name) {
+        Some(fd) => fd.kind() == Kind::String && !fd.is_list() && !fd.is_map(),
+        None => !required,
+    };
+    desc.full_name() == "pxf.Secret"
+        && string_field("value", true)
+        && string_field("hint", false)
+        && string_field("fingerprint", false)
 }
 
 fn nullable(fd: &FieldDescriptor) -> bool {
