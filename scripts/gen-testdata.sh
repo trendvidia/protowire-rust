@@ -136,6 +136,12 @@ buf build --as-file-descriptor-set --exclude-source-info \
 echo "wrote crates/protowire-pxf/testdata/map-keys/bool-keys.binpb (buf)"
 echo "wrote crates/protowire-pxf/testdata/map-keys/bool-keys.binpb (buf)"
 
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/element-defaults-test.proto \
+  -o crates/protowire-pxf/testdata/element-defaults-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/element-defaults-test.binpb (buf)"
+
 # Vendored verbatim from the spec repo's testdata/keyed/ (protowire#116);
 # keep in sync when the spec repo adds fixtures.
 buf build --as-file-descriptor-set --exclude-source-info \

@@ -19,7 +19,7 @@ use prost_reflect::{
 };
 use std::collections::{HashMap, HashSet};
 
-use crate::annotations::{field_annotations, find_null_mask_field};
+use crate::annotations::find_null_mask_field;
 use crate::ast::{
     DatasetDirective, DatasetRow, Directive, ProtoDirective, ProtoShape, Value as AstValue,
 };
@@ -33,6 +33,7 @@ use crate::keyed::{
 use crate::lexer::Lexer;
 use crate::limits::{Limits, MAX_NUMERIC_LITERAL_DIGITS};
 use crate::parser::{find_matching_brace, read_value};
+use crate::post_decode_plan::post_decode_plan;
 use crate::result::Presence;
 use crate::token::{Position, Token, TokenKind};
 
@@ -1673,8 +1674,11 @@ pub(crate) fn shown_key(key: &MapKey) -> String {
 }
 
 /// Validate `(pxf.required)` annotations and apply `(pxf.default)` values to
-/// absent fields. Recurses into present, non-null nested message fields,
-/// matching the Go reference's `postDecode`. The `_null` field itself is
+/// absent fields, recursing into the message bodies the input wrote: present
+/// singular message fields, list elements and map values, each under the path
+/// the decoder recorded its fields at (`items[0].`, `by_key["k"].`). The
+/// draft's rules have no exception for elements (protowire-go#161). `Any`
+/// bodies take the pass when they are decoded. The `_null` field itself is
 /// skipped since it carries metadata, not user data.
 fn post_decode(
     parent: &mut DynamicMessage,
@@ -1684,49 +1688,65 @@ fn post_decode(
 ) -> Result<(), PxfError> {
     let desc = parent.descriptor();
     let pos = Position::new(1, 1);
-    let fields: Vec<FieldDescriptor> = desc.fields().collect();
-    for fd in &fields {
-        if let Some(null_fd) = null_mask_fd {
-            if fd.number() == null_fd.number() {
-                continue;
-            }
+    let plan = post_decode_plan(&desc);
+    for (fd, p) in desc.fields().zip(plan.iter()) {
+        if !p.required && p.default.is_none() && !p.visit {
+            continue; // nothing to check here or below
+        }
+        if null_mask_fd.is_some_and(|null_fd| fd.number() == null_fd.number()) {
+            continue;
         }
         let path = format!("{}{}", path_prefix, fd.name());
         if presence.is_absent(&path) {
-            let annotations = field_annotations(fd);
-            if annotations.required {
+            if p.required {
                 return Err(PxfError::new(
                     pos,
                     format!("required field {:?} is absent", path),
                 ));
             }
-            if let Some(def) = annotations.default {
-                if !oneof_already_chosen(fd, presence, path_prefix) {
-                    apply_default(parent, fd, &def, pos)?;
+            if let Some(def) = &p.default {
+                if !oneof_already_chosen(&fd, presence, path_prefix) {
+                    apply_default(parent, &fd, def, pos)?;
                 }
             }
-            continue;
-        }
-        if presence.is_null(&path) {
-            continue;
-        }
-        if let Kind::Message(inner) = fd.kind() {
-            if !fd.is_list()
-                && !fd.is_map()
-                && !is_wkt_skip_recursion(inner.full_name())
-                && parent.has_field(fd)
-            {
-                let mut sub = match parent.get_field(fd).into_owned() {
-                    Value::Message(m) => m,
-                    _ => continue,
-                };
-                let next_prefix = format!("{}.", path);
-                post_decode(&mut sub, presence, None, &next_prefix)?;
-                parent.set_field(fd, Value::Message(sub));
-            }
+        } else if p.visit && !presence.is_null(&path) && parent.has_field(&fd) {
+            post_decode_bodies(parent.get_field_mut(&fd), presence, &path)?;
         }
     }
     Ok(())
+}
+
+/// Run [`post_decode`] on the message bodies in `value`, a present, non-null
+/// field at `path`: the message itself, each list element, or each map value.
+/// Map values go in key order, so the first error is the same on every run.
+/// A null element or map value is refused while decoding, so none reaches here.
+fn post_decode_bodies(value: &mut Value, presence: &Presence, path: &str) -> Result<(), PxfError> {
+    match value {
+        Value::Message(m) => post_decode(m, presence, None, &format!("{path}.")),
+        Value::List(items) => {
+            for (i, item) in items.iter_mut().enumerate() {
+                if let Value::Message(m) = item {
+                    post_decode(m, presence, None, &format!("{path}[{i}]."))?;
+                }
+            }
+            Ok(())
+        }
+        Value::Map(map) => {
+            let mut bodies: Vec<(String, &mut DynamicMessage)> = map
+                .iter_mut()
+                .filter_map(|(k, v)| match v {
+                    Value::Message(m) => Some((format!("{path}[{}].", shown_key(k)), m)),
+                    _ => None,
+                })
+                .collect();
+            bodies.sort_by(|a, b| a.0.cmp(&b.0));
+            for (prefix, m) in bodies {
+                post_decode(m, presence, None, &prefix)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 /// Reports whether `fd` is a member of a real oneof some *other* member of
@@ -1757,7 +1777,7 @@ fn oneof_already_chosen(fd: &FieldDescriptor, presence: &Presence, path_prefix: 
     chosen
 }
 
-fn is_wkt_skip_recursion(full: &str) -> bool {
+pub(crate) fn is_wkt_skip_recursion(full: &str) -> bool {
     full == "google.protobuf.Timestamp"
         || full == "google.protobuf.Duration"
         || full == "google.protobuf.Any"
