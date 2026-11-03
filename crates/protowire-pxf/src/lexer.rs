@@ -165,7 +165,7 @@ impl<'a> Lexer<'a> {
             _ => {}
         }
 
-        if ch == b'-' || is_digit(ch) {
+        if ch == b'-' || ch == b'+' || is_digit(ch) {
             return self.lex_number(pos);
         }
         if is_ident_start(ch) {
@@ -522,9 +522,25 @@ impl<'a> Lexer<'a> {
     fn lex_number(&mut self, pos: Position) -> Token {
         let start = self.pos;
         let mut neg = false;
-        if self.peek() == b'-' {
-            neg = true;
+        if let sign @ (b'-' | b'+') = self.peek() {
             self.advance();
+            // Draft -01 § Scalar Values: "+inf" and "-inf" are the only
+            // signed identifier literals, and a '+' is valid in nothing
+            // else. They lex as a float, as in the reference.
+            if self.peek() == b'i'
+                && self.peek_at(1) == b'n'
+                && self.peek_at(2) == b'f'
+                && !is_ident_part(self.peek_at(3))
+            {
+                self.pos += 3;
+                self.col += 3;
+                let text = std::str::from_utf8(&self.input[start..self.pos]).unwrap_or("");
+                return Token::new(TokenKind::Float, text, pos);
+            }
+            if sign == b'+' {
+                return Token::new(TokenKind::Illegal, "+", pos);
+            }
+            neg = true;
             if self.pos >= self.input.len() || !is_digit(self.peek()) {
                 return Token::new(TokenKind::Illegal, "-", pos);
             }
