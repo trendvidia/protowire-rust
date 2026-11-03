@@ -12,7 +12,6 @@
 //!
 //! The `Result`-tracking `unmarshal_full` (required/default/_null) lands in D4.
 
-use prost::Message as _;
 use prost_reflect::{
     Cardinality, DescriptorPool, DynamicMessage, FieldDescriptor, Kind, MapKey, MessageDescriptor,
     OneofDescriptor, ReflectMessage, Value,
@@ -1280,7 +1279,9 @@ impl<'a> Decoder<'a> {
         if let Some(presence) = &self.presence {
             post_decode(&mut inner, presence, None, &self.path_prefix)?;
         }
-        let packed = inner.encode_to_vec();
+        // In key order, so the bytes don't depend on the map's hash order.
+        let mut packed = Vec::new();
+        crate::encode::encode_canonical(&inner, &mut packed);
 
         let target_desc = target.descriptor();
         let type_url_fd = target_desc.get_field_by_name("type_url").ok_or_else(|| {
