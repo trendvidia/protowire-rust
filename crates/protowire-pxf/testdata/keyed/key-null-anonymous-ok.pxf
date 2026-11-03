@@ -1,0 +1,10 @@
+@type keyed.v1.Catalog
+
+# Legal: the anonymous form has no entry name to disagree with, so an
+# optional key field may be null. The element's key is absent.
+
+tags = [
+  {
+    name = null
+  }
+]

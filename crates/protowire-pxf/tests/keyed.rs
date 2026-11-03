@@ -70,8 +70,8 @@ fn marshal_with_type(msg: &DynamicMessage, desc: &MessageDescriptor, type_url: &
     .unwrap()
 }
 
-fn children(msg: &DynamicMessage) -> Vec<DynamicMessage> {
-    match msg.get_field_by_name("children").unwrap().into_owned() {
+fn list(msg: &DynamicMessage, field: &str) -> Vec<DynamicMessage> {
+    match msg.get_field_by_name(field).unwrap().into_owned() {
         Value::List(items) => items
             .into_iter()
             .map(|v| match v {
@@ -81,6 +81,10 @@ fn children(msg: &DynamicMessage) -> Vec<DynamicMessage> {
             .collect(),
         other => panic!("{other:?}"),
     }
+}
+
+fn children(msg: &DynamicMessage) -> Vec<DynamicMessage> {
+    list(msg, "children")
 }
 
 fn string_field(m: &DynamicMessage, name: &str) -> String {
@@ -181,6 +185,68 @@ fn anonymous_duplicate_keys_stay_anonymous() {
     );
 }
 
+/// The key takes the entry name, an agreeing assignment stays legal, and an
+/// element in the anonymous form may choose another member of the oneof.
+#[test]
+fn key_in_a_oneof_accepts_what_leaves_the_name_standing() {
+    let data = read("key-oneof-ok.pxf");
+    let desc = desc_of(&data);
+    let msg = decode(&data, &desc);
+    let elems = list(&msg, "choices");
+    assert_eq!(elems.len(), 3);
+    assert_eq!(string_field(&elems[0], "name"), "alpha");
+    assert_eq!(string_field(&elems[1], "name"), "beta");
+    assert!(!elems[2].has_field_by_name("name"));
+    assert_eq!(string_field(&elems[2], "other"), "x");
+    unmarshal_full(&data, &desc, UnmarshalOptions::default()).expect("full decode agrees");
+
+    // One element has no key, so the whole list stays anonymous, and what is
+    // written reads back the same.
+    let out = marshal(&msg, &desc, MarshalOptions::default()).unwrap();
+    assert!(out.contains("choices = ["), "{out}");
+    assert_eq!(decode(&out, &desc).encode_to_vec(), msg.encode_to_vec());
+}
+
+/// With no entry name to disagree with, an optional key may be null.
+#[test]
+fn null_key_is_legal_in_the_anonymous_form() {
+    let data = read("key-null-anonymous-ok.pxf");
+    let desc = desc_of(&data);
+    let elems = list(&decode(&data, &desc), "tags");
+    assert_eq!(elems.len(), 1);
+    assert!(!elems[0].has_field_by_name("name"));
+    let (_, presence) =
+        unmarshal_full(&data, &desc, UnmarshalOptions::default()).expect("full decode");
+    assert!(presence.is_null("tags[0].name"));
+}
+
+/// A binding that isn't a fixture's: the sibling may be bound by a block too,
+/// and the check holds in every spelling of a named entry.
+#[test]
+fn a_named_entry_cannot_undo_its_name_in_any_spelling() {
+    const FDS: &[u8] = include_bytes!("../testdata/keyed-entry-name-test.binpb");
+    let pool = DescriptorPool::decode(FDS).expect("decode keyed-entry-name-test.binpb");
+    let desc = pool.get_message_by_name("keyedname.v1.P").unwrap();
+    for doc in [
+        "km { alpha { detail { label = \"x\" } } }",
+        "km { alpha { detail = { label = \"x\" } } }",
+        "km { alpha { detail = null } }",
+        "km { alpha = { detail { label = \"x\" } } }",
+        "km = { alpha { detail { label = \"x\" } } }",
+        "km { \"al pha\" { detail { label = \"x\" } } }",
+    ] {
+        let err = unmarshal(doc, &desc, UnmarshalOptions::default()).expect_err(doc);
+        assert!(err.msg.contains("shares oneof \"pick\""), "{doc}: {err}");
+    }
+    // Agreeing, and the anonymous form, stay legal.
+    for doc in [
+        "km { alpha { name = \"alpha\" } }",
+        "km = [{ detail { label = \"x\" } }]",
+    ] {
+        unmarshal(doc, &desc, UnmarshalOptions::default()).expect(doc);
+    }
+}
+
 // ---------------- Reject fixtures ----------------
 
 #[test]
@@ -189,6 +255,9 @@ fn reject_fixtures_are_rejected_with_the_reference_wording() {
         ("err-duplicate-key.pxf", "duplicate key \"greeting\" in keyed field \"children\""),
         ("err-duplicate-key-spelling.pxf", "duplicate key \"greeting\" in keyed field \"children\""),
         ("err-key-conflict.pxf", "key field \"id\" = \"farewell\" conflicts with entry name \"greeting\" in keyed field \"children\""),
+        ("err-key-null.pxf", "null on key field \"name\" conflicts with entry name \"alpha\" in keyed field \"tags\""),
+        ("err-key-oneof-sibling.pxf", "field \"other\" shares oneof \"pick\" with key field \"name\", which entry name \"alpha\" already set in keyed field \"choices\""),
+        ("err-key-oneof-sibling-null.pxf", "field \"other\" shares oneof \"pick\" with key field \"name\", which entry name \"alpha\" already set in keyed field \"choices\""),
         ("err-empty-key.pxf", "empty entry name in keyed field \"children\": the empty string is not a valid key"),
         ("err-empty-key-anonymous.pxf", "explicit empty-string assignment to key field \"id\" of keyed field \"children\": the empty string is not a valid key"),
         ("err-quoted-name-unkeyed.pxf", "quoted entry name \"a\" is only valid inside a keyed repeated field's block (draft -01 §3.13)"),

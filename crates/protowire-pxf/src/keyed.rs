@@ -20,7 +20,7 @@
 //! `(pxf.key)` placement check in `schema.rs`. Mirrors the reference's
 //! `encoding/pxf/keyed.go`.
 
-use prost_reflect::{FieldDescriptor, Kind, MessageDescriptor};
+use prost_reflect::{FieldDescriptor, Kind, MessageDescriptor, OneofDescriptor};
 
 use crate::annotations::get_key;
 use crate::ast::{Block, BlockVal, Comment, Document, Entry, Value};
@@ -106,8 +106,8 @@ pub(crate) fn quoted_name_unkeyed_error(pos: Position, name: &str) -> PxfError {
 pub(crate) struct KeyedElemState {
     /// The keyed repeated field's PXF name.
     pub field: String,
-    /// The element message's key field name.
-    pub key_name: String,
+    /// The element message's key field.
+    pub key_fd: FieldDescriptor,
     /// The entry name; meaningful only when `named`.
     pub entry_name: String,
     /// Keyed-block form (true) vs an anonymous list element (false).
@@ -121,7 +121,8 @@ impl KeyedElemState {
                 pos,
                 format!(
                     "explicit empty-string assignment to key field {:?} of keyed field {:?}: the empty string is not a valid key",
-                    self.key_name, self.field
+                    self.key_fd.name(),
+                    self.field
                 ),
             ));
         }
@@ -130,12 +131,64 @@ impl KeyedElemState {
                 pos,
                 format!(
                     "key field {:?} = {:?} conflicts with entry name {:?} in keyed field {:?}",
-                    self.key_name, value, self.entry_name, self.field
+                    self.key_fd.name(),
+                    value,
+                    self.entry_name,
+                    self.field
                 ),
             ));
         }
         Ok(())
     }
+
+    /// Refuse a binding in a named entry's body that would undo the entry
+    /// name, which binds the key field (draft -01 §3.13): `null` on the key
+    /// field, or another member of the key field's oneof, by value or `null`.
+    pub(crate) fn check_binding(
+        &self,
+        fd: &FieldDescriptor,
+        is_null: bool,
+        pos: Position,
+    ) -> Result<(), PxfError> {
+        if !self.named {
+            return Ok(());
+        }
+        if fd.name() == self.key_fd.name() {
+            if !is_null {
+                return Ok(());
+            }
+            return Err(PxfError::new(
+                pos,
+                format!(
+                    "null on key field {:?} conflicts with entry name {:?} in keyed field {:?}",
+                    self.key_fd.name(),
+                    self.entry_name,
+                    self.field
+                ),
+            ));
+        }
+        if let (Some(oo), Some(key_oo)) = (real_oneof(fd), real_oneof(&self.key_fd)) {
+            if oo == key_oo {
+                return Err(PxfError::new(
+                    pos,
+                    format!(
+                        "field {:?} shares oneof {:?} with key field {:?}, which entry name {:?} already set in keyed field {:?}",
+                        fd.name(),
+                        oo.name(),
+                        self.key_fd.name(),
+                        self.entry_name,
+                        self.field
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// `fd`'s oneof, unless it is the synthetic one of a proto3 `optional`.
+fn real_oneof(fd: &FieldDescriptor) -> Option<OneofDescriptor> {
+    fd.containing_oneof().filter(|oo| !oo.is_synthetic())
 }
 
 /// Rewrite `doc` in place to the canonical keyed form of draft -01 §3.13,

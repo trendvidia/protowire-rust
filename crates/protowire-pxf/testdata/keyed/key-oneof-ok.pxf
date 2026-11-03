@@ -1,0 +1,16 @@
+@type keyed.v1.Catalog
+
+# Legal: a key in a oneof takes the entry name, an agreeing assignment
+# stays redundant, and the anonymous form may choose another member.
+
+choices {
+  alpha {}
+  beta {
+    name = "beta"
+  }
+}
+choices = [
+  {
+    other = "x"
+  }
+]

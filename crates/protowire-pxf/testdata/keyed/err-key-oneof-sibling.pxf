@@ -1,0 +1,10 @@
+@type keyed.v1.Catalog
+
+# Key conflict: an entry name binds the key field, so binding another
+# member of the key field's oneof writes two members and MUST be rejected.
+
+choices {
+  alpha {
+    other = "x"
+  }
+}

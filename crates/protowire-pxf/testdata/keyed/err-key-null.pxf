@@ -1,0 +1,10 @@
+@type keyed.v1.Catalog
+
+# Key conflict: an entry name binds the key field, so binding that field
+# to null inside the entry's block disagrees with it and MUST be rejected.
+
+tags {
+  alpha {
+    name = null
+  }
+}
