@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for a Duration past the literal's 292-year limit (draft -01
+// § Durations). Mirrors durationHolder in protowire-go's
+// encoding/pxf/duration_block_test.go.
+syntax = "proto3";
+package durblock;
+
+import "google/protobuf/duration.proto";
+
+message Holder {
+  google.protobuf.Duration dur_field = 1;
+  repeated google.protobuf.Duration list = 2;
+  map<string, google.protobuf.Duration> by_name = 3;
+}

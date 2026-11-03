@@ -1,0 +1,16 @@
+
+û
+google/protobuf/duration.protogoogle.protobuf":
+Duration
+seconds (Rseconds
+nanos (RnanosBƒ
+com.google.protobufBDurationProtoPZ1google.golang.org/protobuf/types/known/durationpbø¢GPBªGoogle.Protobuf.WellKnownTypesbproto3
+Ì
+duration-block-test.protodurblockgoogle/protobuf/duration.proto"ü
+Holder6
+	dur_field (2.google.protobuf.DurationRdurField-
+list (2.google.protobuf.DurationRlist5
+by_name (2.durblock.Holder.ByNameEntryRbyNameT
+ByNameEntry
+key (	Rkey/
+value (2.google.protobuf.DurationRvalue:8bproto3
