@@ -44,7 +44,7 @@ use protowire_pb::wire::{Reader, Result as PbResult, WireType, Writer};
 use protowire_pb::{
     read_message, unmarshal_with as pb_unmarshal, write_map_entry, write_message, Message,
 };
-use protowire_pxf::bigfloat::big_float_value_exponent;
+use protowire_pxf::bigfloat::{big_float_digits, big_float_value_exponent};
 use protowire_pxf::{unmarshal as pxf_unmarshal, UnmarshalOptions};
 
 // --- Hand-mirrored Go-style message impls for adversarial.proto -------------
@@ -385,9 +385,11 @@ impl BigNumHolder {
     /// signs before anything is materialised. This port's `pb` layer
     /// carries no Decimal type and materialises nothing; the bound is
     /// applied here, where a consumer would first read the value.
-    /// A `BigFloat`'s binary exponent is bound by MaxBigFloatExponent the
-    /// same way (protowire#281); a precision of zero is zero, whatever the
-    /// other fields say, so it has none.
+    /// A `BigFloat`'s prec is bound by the digits it implies against
+    /// MaxNumericLiteralDigits, as a precision suffix is (protowire#499),
+    /// and its binary exponent by MaxBigFloatExponent (protowire#281); a
+    /// precision of zero is zero, whatever the other fields say, so it has
+    /// neither.
     fn check_limits(&self, max_digits: usize, max_exponent: usize) -> Result<(), String> {
         if let Some(d) = &self.decimal {
             let max = max_digits as i64;
@@ -399,6 +401,18 @@ impl BigNumHolder {
             }
         }
         if let Some(f) = self.big_float.as_ref().filter(|f| f.prec != 0) {
+            // prec is bounded as a literal's precision suffix is, by the
+            // digits its literal needs (prec 13603 at the default), before
+            // anything is built: a producer widens the mantissa to prec
+            // bits, so 11 bytes at prec 2^31-1 become 256 MiB (#87,
+            // protowire#499). A zero is bounded too; it carries its prec.
+            let digits = big_float_digits(f.prec);
+            if digits > max_digits as u64 {
+                return Err(format!(
+                    "pxf.BigFloat prec {} implies {digits} digits; MaxNumericLiteralDigits={max_digits}",
+                    f.prec
+                ));
+            }
             let exponent = big_float_value_exponent(&f.mantissa, f.exponent);
             if let Some(e) = exponent.filter(|e| e.unsigned_abs() > max_exponent as u64) {
                 return Err(format!(
@@ -416,7 +430,7 @@ impl BigNumHolder {
 /// per-call limits with the crate defaults standing in for the rest.
 /// `MaxBytesLiteralLength` reaches only the PXF decoder, and
 /// `MaxNumericLiteralDigits` the PXF decoder and the pb BigNumHolder's
-/// scale bound, as in the reference.
+/// scale and prec bounds, as in the reference.
 #[derive(Debug, Default, Clone)]
 struct LimitFlags {
     max_message_size: Option<usize>,
