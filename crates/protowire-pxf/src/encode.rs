@@ -22,7 +22,7 @@ use std::collections::HashSet;
 use crate::annotations::find_null_mask_field;
 use crate::bigfloat::format_big_float;
 use crate::bignum::{format_big_int, format_decimal};
-use crate::decode::{shown_key, unmarshal_full, TypeResolver, UnmarshalOptions};
+use crate::decode::{is_secret, shown_key, unmarshal_full, TypeResolver, UnmarshalOptions};
 use crate::errors::PxfError;
 use crate::keyed::{ident_safe_entry_name, key_field};
 use crate::limits::{Limits, MAX_NESTING_DEPTH};
@@ -551,7 +551,10 @@ fn message_shorthand(
     if full == "google.protobuf.Timestamp" {
         return Some(Ok(format_rfc3339_nano(sub)));
     }
-    if full == "google.protobuf.Duration" {
+    // A Duration past the literal's range, a signed 64-bit count of
+    // nanoseconds, is written as a block with its exact seconds and nanos
+    // (draft -01 § Durations).
+    if full == "google.protobuf.Duration" && duration_fits_literal(sub) {
         return Some(Ok(format_go_duration(sub)));
     }
     if is_wrapper_full_name(full) {
@@ -560,6 +563,15 @@ fn message_shorthand(
             .expect("wrapper missing 'value'");
         let v = sub.get_field(&inner_fd).into_owned();
         return Some(Ok(scalar_text(&inner_fd.kind(), &v)));
+    }
+    // A pxf.Secret is its value's string literal, unless it carries a hint
+    // or fingerprint, which the literal would drop (draft -01 § pxf.Secret).
+    if is_secret(mdesc) && !secret_has_metadata(sub) {
+        let value_fd = mdesc
+            .get_field_by_name("value")
+            .expect("checked by is_secret");
+        let v = sub.get_field(&value_fd).into_owned();
+        return Some(Ok(scalar_text(&Kind::String, &v)));
     }
     if full == "pxf.BigInt" {
         let abs = bytes_field(sub, "abs");
@@ -603,6 +615,15 @@ fn message_shorthand(
         return Some(format_big_float(&mantissa, exponent, prec, negative));
     }
     None
+}
+
+/// Whether a `pxf.Secret` sets a `hint` or a `fingerprint`.
+fn secret_has_metadata(secret: &DynamicMessage) -> bool {
+    ["hint", "fingerprint"].iter().any(|name| {
+        secret
+            .get_field_by_name(name)
+            .is_some_and(|v| v.as_str().is_some_and(|s| !s.is_empty()))
+    })
 }
 
 fn bytes_field(msg: &DynamicMessage, name: &str) -> Vec<u8> {
@@ -1040,6 +1061,18 @@ const NANOS_PER_MILLI: i128 = 1_000_000;
 /// `time.Duration.String()`: leading-zero `h`/`m` units omitted, sub-second
 /// durations use the smallest unit (`ns` / `µs` / `ms`) that gives a non-zero
 /// leading digit, and `0s` is the canonical zero.
+/// Whether a Duration's value, seconds × 10^9 + nanos, fits the literal's
+/// signed 64-bit count of nanoseconds.
+fn duration_fits_literal(d: &DynamicMessage) -> bool {
+    let int = |name: &str| match d.get_field_by_name(name).map(|v| v.into_owned()) {
+        Some(Value::I64(n)) => i128::from(n),
+        Some(Value::I32(n)) => i128::from(n),
+        _ => 0,
+    };
+    let total = int("seconds") * 1_000_000_000 + int("nanos");
+    i64::try_from(total).is_ok()
+}
+
 fn format_go_duration(d: &DynamicMessage) -> String {
     let s_fd = d.descriptor().get_field_by_name("seconds");
     let n_fd = d.descriptor().get_field_by_name("nanos");

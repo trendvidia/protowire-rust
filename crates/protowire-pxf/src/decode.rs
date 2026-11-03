@@ -1378,6 +1378,20 @@ impl<'a> Decoder<'a> {
             self.advance();
             return Ok(true);
         }
+        // A pxf.Secret written as a string literal sets its value alone
+        // (draft -01 § pxf.Secret): `pw = "x"`, in a field, a list element
+        // or a map value. The block form falls through.
+        if full == "pxf.Secret"
+            && is_secret(&desc)
+            && matches!(self.current.kind, TokenKind::String)
+        {
+            let value_fd = desc
+                .get_field_by_name("value")
+                .expect("checked by is_secret");
+            let v = self.consume_scalar(&value_fd)?;
+            target.set_field(&value_fd, v);
+            return Ok(true);
+        }
         if full == "pxf.BigFloat" && matches!(self.current.kind, TokenKind::Int | TokenKind::Float)
         {
             let pos = self.current.pos;
@@ -2108,6 +2122,21 @@ fn apply_message_default(
     ))
 }
 
+/// Whether `desc` is a `pxf.Secret` of the shape the draft gives it
+/// (§ Well-Known Type Shapes): a singular string `value`, and `hint` and
+/// `fingerprint`, each optional, singular strings. Another message of that
+/// name is an ordinary message, with no literal form.
+pub(crate) fn is_secret(desc: &MessageDescriptor) -> bool {
+    let string_field = |name: &str, required: bool| match desc.get_field_by_name(name) {
+        Some(fd) => fd.kind() == Kind::String && !fd.is_list() && !fd.is_map(),
+        None => !required,
+    };
+    desc.full_name() == "pxf.Secret"
+        && string_field("value", true)
+        && string_field("hint", false)
+        && string_field("fingerprint", false)
+}
+
 fn is_wrapper_full_name(full: &str) -> bool {
     matches!(
         full,
@@ -2327,6 +2356,14 @@ fn days_from_civil(y: i32, m: u32, d: u32) -> i64 {
 /// Parse a Go-style duration (`1h30m`, `-2.5s`, `100ms`, …) into proto
 /// Duration `seconds` + `nanos`. Both fields share the overall sign per the
 /// proto Duration invariant. Lexer has pre-validated the syntax.
+/// The largest magnitude a duration literal reaches, 2^63 nanoseconds: the
+/// negative bound. The positive one, 2^63 - 1, is checked once the sign is
+/// known.
+const DURATION_LITERAL_MAX_ABS: i128 = 1 << 63;
+
+const OUT_OF_RANGE: &str =
+    "out of range: a duration literal holds a signed 64-bit count of nanoseconds, about 292 years";
+
 fn parse_go_duration(s: &str) -> Result<(i64, i32), String> {
     if s == "0" {
         return Ok((0, 0));
@@ -2383,15 +2420,31 @@ fn parse_go_duration(s: &str) -> Result<(i64, i32), String> {
             (b'h', _) => (3_600_000_000_000, 1),
             _ => return Err("unknown unit".into()),
         };
-        total_nanos += int_part * unit_nanos;
+        // A literal holds a signed 64-bit count of nanoseconds (draft -01
+        // § Durations), so a total past 2^63 is out of range whatever
+        // follows; checked, since the digits are the document's.
+        total_nanos = int_part
+            .checked_mul(unit_nanos)
+            .and_then(|n| n.checked_add(total_nanos))
+            .filter(|&n| n <= DURATION_LITERAL_MAX_ABS)
+            .ok_or(OUT_OF_RANGE)?;
         if frac_len > 0 {
-            let denom: i128 = 10i128.pow(frac_len as u32);
-            total_nanos += (frac_int * unit_nanos) / denom;
+            let frac = 10i128
+                .checked_pow(frac_len as u32)
+                .and_then(|denom| frac_int.checked_mul(unit_nanos).map(|n| n / denom))
+                .ok_or(OUT_OF_RANGE)?;
+            total_nanos = total_nanos
+                .checked_add(frac)
+                .filter(|&n| n <= DURATION_LITERAL_MAX_ABS)
+                .ok_or(OUT_OF_RANGE)?;
         }
         i += unit_len;
     }
     if neg {
         total_nanos = -total_nanos;
+    }
+    if total_nanos > i128::from(i64::MAX) {
+        return Err(OUT_OF_RANGE.into());
     }
     let sign: i128 = if total_nanos < 0 { -1 } else { 1 };
     let abs = total_nanos * sign;
