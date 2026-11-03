@@ -1593,13 +1593,36 @@ fn null_not_allowed(pos: Position, fd: &FieldDescriptor) -> PxfError {
     } else if fd.is_list() {
         format!("null is not allowed on repeated field {name:?}")
     } else if fd.cardinality() == Cardinality::Required {
-        format!("null is not allowed on required field {name:?}: it must be set")
+        if matches!(fd.kind(), Kind::Message(_)) {
+            format!("null is not allowed on required field {name:?}: it must be set")
+        } else {
+            format!(
+                "null is not allowed on scalar field {name:?}: the field is required, so it must be set"
+            )
+        }
     } else {
         format!(
-            "null is not allowed on scalar field {name:?}: declare it optional, or use a wrapper type, to make it nullable"
+            "null is not allowed on scalar field {name:?}: declare it optional, or as a wrapper type (google.protobuf.{}Value or similar), to make it nullable",
+            wrapper_name(&fd.kind())
         )
     };
     PxfError::new(pos, msg)
+}
+
+/// The `google.protobuf` wrapper stem for a scalar kind, for the hint in
+/// [`null_not_allowed`].
+fn wrapper_name(kind: &Kind) -> &'static str {
+    match kind {
+        Kind::Bool => "Bool",
+        Kind::String => "String",
+        Kind::Bytes => "Bytes",
+        Kind::Float => "Float",
+        Kind::Double => "Double",
+        Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => "Int64",
+        Kind::Uint32 | Kind::Fixed32 => "UInt32",
+        Kind::Uint64 | Kind::Fixed64 => "UInt64",
+        _ => "Int32",
+    }
 }
 
 fn is_any_full_name(full: &str) -> bool {
