@@ -126,9 +126,12 @@ fn write_field(
             buf[off..off + 8].copy_from_slice(&f.to_le_bytes());
         }
         SbeEncoding::Char => {
-            let bytes = char_bytes(&ft.fd, &value);
-            let n = ft.size.min(bytes.len());
-            buf[off..off + n].copy_from_slice(&bytes[..n]);
+            let bytes: &[u8] = match (ft.fd.kind(), &value) {
+                (Kind::Bytes, Value::Bytes(b)) => &b[..b.len().min(ft.size)],
+                (_, Value::String(s)) => cut_string(s, ft.size).as_bytes(),
+                _ => &[],
+            };
+            buf[off..off + bytes.len()].copy_from_slice(bytes);
             // Remaining bytes already zero from the initial allocation.
         }
     }
@@ -190,12 +193,19 @@ fn value_as_u64(v: &Value) -> u64 {
     }
 }
 
-fn char_bytes(fd: &FieldDescriptor, value: &Value) -> Vec<u8> {
-    match (fd.kind(), value) {
-        (Kind::Bytes, Value::Bytes(b)) => b.to_vec(),
-        (_, Value::String(s)) => s.as_bytes().to_vec(),
-        _ => Vec::new(),
+/// Shorten `s` to at most `n` bytes without splitting a UTF-8 character
+/// (draft -01 § SBE Annotations, protowire#495): a byte-exact cut can leave
+/// half a character, and a strict decoder then rejects the whole message.
+/// The bytes the cut leaves over stay NUL. A `bytes` field is cut at the
+/// limit instead. Mirrors protowire-go's `cutString`.
+fn cut_string(s: &str, mut n: usize) -> &str {
+    if s.len() <= n {
+        return s;
     }
+    while !s.is_char_boundary(n) {
+        n -= 1;
+    }
+    &s[..n]
 }
 
 fn list_len(msg: &DynamicMessage, fd: &FieldDescriptor) -> usize {

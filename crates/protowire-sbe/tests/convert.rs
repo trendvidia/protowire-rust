@@ -199,7 +199,7 @@ fn proto_to_xml_output_round_trips_through_parse_xml_schema() {
     let schema = parse_xml_schema(&xml).expect("parse");
     assert_eq!(schema.package, "test.v1");
     assert_eq!(schema.id, 1);
-    assert_eq!(schema.messages.len(), 4);
+    assert_eq!(schema.messages.len(), 6);
     let order = schema
         .messages
         .iter()
