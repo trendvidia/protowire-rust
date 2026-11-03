@@ -168,7 +168,12 @@ impl Message for Envelope {
 mod tests {
     use super::*;
     use crate::new_app_error;
-    use protowire_pb::{marshal, unmarshal, unmarshal_with, Error, Limits};
+    use protowire_pb::{unmarshal, unmarshal_with, Error, Limits};
+
+    /// `protowire_pb::marshal` for values well inside the depth limit.
+    fn marshal<M: protowire_pb::Message>(value: &M) -> Vec<u8> {
+        protowire_pb::marshal(value).expect("marshal")
+    }
 
     fn s(v: &str) -> String {
         v.to_string()

@@ -65,7 +65,10 @@ fn dump_vector(name: &str) {
             std::process::exit(3)
         }
     };
-    println!("{}", hex(&protowire_pb::marshal(&env)));
+    println!(
+        "{}",
+        hex(&protowire_pb::marshal(&env).expect("marshal envelope"))
+    );
 }
 
 fn fatal(code: i32, msg: impl std::fmt::Display) -> ! {
@@ -91,7 +94,10 @@ fn dump_envelope() {
         .with_field("amount", "MIN_VALUE", "below minimum", vec!["10.00".into()])
         .with_meta("request_id", "req-123");
 
-    println!("{}", hex(&protowire_pb::marshal(&env)));
+    println!(
+        "{}",
+        hex(&protowire_pb::marshal(&env).expect("marshal envelope"))
+    );
 }
 
 fn dump_fixture(mode: &str, fds_path: &str, message: &str, doc_path: &str) {

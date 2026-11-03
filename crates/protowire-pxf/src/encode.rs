@@ -24,6 +24,7 @@ use crate::bignum::{format_big_int, format_decimal};
 use crate::decode::{shown_key, TypeResolver};
 use crate::errors::PxfError;
 use crate::keyed::{ident_safe_entry_name, key_field};
+use crate::limits::MAX_NESTING_DEPTH;
 use crate::result::Presence;
 use crate::token::Position;
 
@@ -41,6 +42,14 @@ pub struct MarshalOptions<'a> {
     /// `FieldMask`. Paths in this [`Presence`] that are marked null are
     /// emitted as `null` literals.
     pub null_fields: Option<&'a Presence>,
+    /// The deepest document written, counted as a decoder counts it: the
+    /// root is depth 0, and every `{` or `[` is one descent. A message that
+    /// needs more is an error, because a reader at the same limit refuses
+    /// the document (draft -01 § Recursion, protowire#502). An Any past the
+    /// limit is not: it stays as `type_url` and `value`. Defaults to
+    /// [`MAX_NESTING_DEPTH`]; raise it only with
+    /// `UnmarshalOptions::limits.max_nesting_depth` on every reader.
+    pub max_nesting_depth: usize,
 }
 
 impl<'a> Default for MarshalOptions<'a> {
@@ -51,6 +60,7 @@ impl<'a> Default for MarshalOptions<'a> {
             type_url: None,
             type_resolver: None,
             null_fields: None,
+            max_nesting_depth: MAX_NESTING_DEPTH,
         }
     }
 }
@@ -70,8 +80,27 @@ pub fn marshal(
     }
     enc.encode_message(message, 0);
     match enc.error {
-        Some(msg) => Err(PxfError::new(Position::default(), msg)),
+        Some(fault) => Err(PxfError::new(Position::default(), fault.message())),
         None => Ok(enc.buf),
+    }
+}
+
+/// Why `marshal` has no document to return.
+enum Fault {
+    /// A value with no literal.
+    NoLiteral(String),
+    /// A block or list past the writer's `max_nesting_depth`.
+    TooDeep(usize),
+}
+
+impl Fault {
+    fn message(self) -> String {
+        match self {
+            Fault::NoLiteral(msg) => msg,
+            Fault::TooDeep(limit) => {
+                format!("nesting depth exceeds MaxNestingDepth={limit}")
+            }
+        }
     }
 }
 
@@ -87,9 +116,13 @@ struct Encoder<'a> {
     /// a keyed-block entry already carries the key as its entry name
     /// (draft -01 §3.13).
     skip_key_fd: Option<FieldDescriptor>,
-    /// The first value that has no literal. Encoding carries on, writing
-    /// nothing for it, and `marshal` returns this instead of the text.
-    error: Option<String>,
+    /// The deepest level a document may reach.
+    max_depth: usize,
+    /// The first value that has no literal, or the first block past
+    /// `max_depth`. Encoding carries on, writing nothing for it (and not
+    /// descending past the limit), and `marshal` returns this instead of
+    /// the text.
+    error: Option<Fault>,
 }
 
 impl<'a> Encoder<'a> {
@@ -103,8 +136,20 @@ impl<'a> Encoder<'a> {
             null_mask_fd: None,
             path_prefix: String::new(),
             skip_key_fd: None,
+            max_depth: options.max_nesting_depth,
             error: None,
         }
+    }
+
+    /// Whether a block or list whose contents sit at `level` may be
+    /// written; past the limit the refusal is recorded. The level of a body
+    /// is the decoder's depth there (HARDENING.md § Recursion).
+    fn check_depth(&mut self, level: usize) -> bool {
+        if level > self.max_depth {
+            self.error.get_or_insert(Fault::TooDeep(self.max_depth));
+            return false;
+        }
+        true
     }
 
     /// `message_shorthand`, recording a value that has no literal.
@@ -112,7 +157,7 @@ impl<'a> Encoder<'a> {
         match message_shorthand(mdesc, sub)? {
             Ok(text) => Some(text),
             Err(msg) => {
-                self.error.get_or_insert(msg);
+                self.error.get_or_insert(Fault::NoLiteral(msg));
                 Some(String::new())
             }
         }
@@ -191,6 +236,9 @@ impl<'a> Encoder<'a> {
         let desc = parent.descriptor();
         // A pending skip applies to exactly this body.
         let skip_key = self.skip_key_fd.take();
+        if !self.check_depth(level) {
+            return;
+        }
         for fd in desc.fields() {
             if let Some(null_fd) = &self.null_mask_fd {
                 if self.path_prefix.is_empty() && fd.number() == null_fd.number() {
@@ -225,11 +273,14 @@ impl<'a> Encoder<'a> {
                 if !parent.has_field(&fd) {
                     continue;
                 }
-                let sub = match parent.get_field(&fd).into_owned() {
-                    Value::Message(m) => m,
-                    _ => continue,
+                // Borrowed: a clone here would copy the whole subtree at
+                // every level, recursively, before the depth check is
+                // reached.
+                let value = parent.get_field(&fd);
+                let Value::Message(sub) = value.as_ref() else {
+                    continue;
                 };
-                self.encode_message_field(&fd, &sub, level);
+                self.encode_message_field(&fd, sub, level);
                 continue;
             }
 
@@ -271,9 +322,9 @@ impl<'a> Encoder<'a> {
     }
 
     fn encode_list_field(&mut self, parent: &DynamicMessage, fd: &FieldDescriptor, level: usize) {
-        let list = match parent.get_field(fd).into_owned() {
-            Value::List(items) => items,
-            _ => return,
+        let value = parent.get_field(fd);
+        let Value::List(list) = value.as_ref() else {
+            return;
         };
         if list.is_empty() && !self.emit_defaults {
             return;
@@ -284,12 +335,15 @@ impl<'a> Encoder<'a> {
         // otherwise the anonymous list form (elements with absent or
         // duplicate keys can only be represented anonymously).
         if let Some(key_fd) = key_field(fd) {
-            if !list.is_empty() && keyed_form_eligible(&list, &key_fd) {
-                self.encode_keyed_list(fd, &list, &key_fd, level);
+            if !list.is_empty() && keyed_form_eligible(list, &key_fd) {
+                self.encode_keyed_list(fd, list, &key_fd, level);
                 return;
             }
         }
 
+        if !self.check_depth(level + 1) {
+            return;
+        }
         self.write_field_prefix(level, fd.name());
         self.buf.push_str("[\n");
 
@@ -337,6 +391,9 @@ impl<'a> Encoder<'a> {
         key_fd: &FieldDescriptor,
         level: usize,
     ) {
+        if !self.check_depth(level + 1) {
+            return;
+        }
         self.write_indent(level);
         self.buf.push_str(fd.name());
         self.buf.push_str(" {\n");
@@ -365,9 +422,9 @@ impl<'a> Encoder<'a> {
     }
 
     fn encode_map_field(&mut self, parent: &DynamicMessage, fd: &FieldDescriptor, level: usize) {
-        let map = match parent.get_field(fd).into_owned() {
-            Value::Map(m) => m,
-            _ => return,
+        let value = parent.get_field(fd);
+        let Value::Map(map) = value.as_ref() else {
+            return;
         };
         if map.is_empty() && !self.emit_defaults {
             return;
@@ -379,13 +436,14 @@ impl<'a> Encoder<'a> {
         };
         let val_fd = mdesc.map_entry_value_field();
 
+        if !self.check_depth(level + 1) {
+            return;
+        }
         self.write_field_prefix(level, fd.name());
         self.buf.push_str("{\n");
 
-        let mut entries: Vec<(String, MapKey, Value)> = map
-            .into_iter()
-            .map(|(k, v)| (format_map_key(&k), k, v))
-            .collect();
+        let mut entries: Vec<(String, &MapKey, &Value)> =
+            map.iter().map(|(k, v)| (format_map_key(k), k, v)).collect();
         entries.sort_by(|a, b| a.0.cmp(&b.0));
 
         for (key_str, key, val) in entries {
@@ -402,7 +460,7 @@ impl<'a> Encoder<'a> {
                         self.buf.push('\n');
                     } else {
                         self.buf.push_str("{\n");
-                        let saved = self.enter_key(fd.name(), &key);
+                        let saved = self.enter_key(fd.name(), key);
                         self.encode_message(sub, level + 2);
                         self.path_prefix = saved;
                         self.write_indent(level + 1);
@@ -414,7 +472,7 @@ impl<'a> Encoder<'a> {
                     self.buf.push('\n');
                 }
                 _ => {
-                    self.write_scalar_value(&val_fd.kind(), &val);
+                    self.write_scalar_value(&val_fd.kind(), val);
                     self.buf.push('\n');
                 }
             }
@@ -588,7 +646,7 @@ impl<'a> Encoder<'a> {
             Value::String(s) => s,
             _ => return false,
         };
-        if url.is_empty() {
+        if url.is_empty() || level >= self.max_depth {
             return false;
         }
         let bytes = match any_msg.get_field(&value_fd).into_owned() {
@@ -605,6 +663,10 @@ impl<'a> Encoder<'a> {
             Err(_) => return false,
         };
 
+        // The body goes to a buffer of its own, so an Any whose value is
+        // too deep to unpack here can still be written as its bytes.
+        let out = std::mem::take(&mut self.buf);
+        let prior = self.error.take();
         self.write_indent(level);
         self.buf.push_str(fd.name());
         self.buf.push_str(" {\n");
@@ -618,6 +680,15 @@ impl<'a> Encoder<'a> {
         self.path_prefix = saved;
         self.write_indent(level);
         self.buf.push_str("}\n");
+        let body = std::mem::replace(&mut self.buf, out);
+        let fault = std::mem::replace(&mut self.error, prior);
+        if matches!(fault, Some(Fault::TooDeep(_))) {
+            return false; // the value is too deep to unpack here; its bytes are not
+        }
+        if let Some(f) = fault {
+            self.error.get_or_insert(f);
+        }
+        self.buf.push_str(&body);
         true
     }
 }

@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for the producer's MaxNestingDepth (protowire#502).
+// Mirrors marshalDepthProtoSrc in protowire-go's
+// encoding/pxf/marshal_depth_test.go.
+syntax = "proto3";
+package mdepth.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/duration.proto";
+import "pxf/annotations.proto";
+
+message T {
+  T next = 1;
+  repeated T kids = 2;
+  map<string, T> by_key = 3;
+  map<string, int32> scalars = 4;
+  repeated int32 ns = 5;
+  int32 v = 6;
+  repeated T keyed = 7 [(pxf.key) = "id"];
+  string id = 8;
+  google.protobuf.Any payload = 9;
+  google.protobuf.Duration long = 10;
+}

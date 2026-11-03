@@ -18,8 +18,8 @@ pub mod codec;
 pub mod wire;
 
 pub use codec::{
-    marshal, read_message, unmarshal, unmarshal_with, write_map_entry, write_message,
-    MapEntryField, Message,
+    marshal, marshal_with, read_message, unmarshal, unmarshal_with, write_map_entry, write_message,
+    MapEntryField, MarshalOptions, Message,
 };
 pub use wire::{
     Error, Limits, Reader, Result, WireType, Writer, MAX_MESSAGE_SIZE, MAX_NESTING_DEPTH,

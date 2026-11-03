@@ -111,9 +111,26 @@ impl WireType {
     }
 }
 
-#[derive(Debug, Default)]
+/// An output buffer for one message. It also counts how deep it sits, as a
+/// [`Reader`] counts on the way back in: the root is depth 0 and every
+/// submessage or map entry written through [`crate::write_message`] or
+/// [`crate::write_map_entry`] is one descent. A value that would go past
+/// `max_nesting_depth` is not written, and the writer remembers it, so
+/// [`Writer::finish_checked`] (and [`crate::marshal`]) refuse the message
+/// a reader at the same limit would refuse (draft -01 § Recursion,
+/// protowire#502).
+#[derive(Debug)]
 pub struct Writer {
     buf: Vec<u8>,
+    depth: usize,
+    max_depth: usize,
+    exceeded: bool,
+}
+
+impl Default for Writer {
+    fn default() -> Self {
+        Self::with_max_nesting_depth(MAX_NESTING_DEPTH)
+    }
 }
 
 impl Writer {
@@ -124,11 +141,64 @@ impl Writer {
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             buf: Vec::with_capacity(cap),
+            ..Self::default()
         }
     }
 
+    /// A root writer that refuses values nested past `max_nesting_depth`.
+    pub fn with_max_nesting_depth(max_nesting_depth: usize) -> Self {
+        Self {
+            buf: Vec::new(),
+            depth: 0,
+            max_depth: max_nesting_depth,
+            exceeded: false,
+        }
+    }
+
+    /// A writer for a value one descent below this one, or `None`, with
+    /// the refusal recorded here, when that descent passes the limit.
+    pub(crate) fn nested(&mut self) -> Option<Writer> {
+        if self.depth >= self.max_depth {
+            self.exceeded = true;
+            return None;
+        }
+        Some(Writer {
+            buf: Vec::new(),
+            depth: self.depth + 1,
+            max_depth: self.max_depth,
+            exceeded: false,
+        })
+    }
+
+    /// The bytes of a nested writer, or `None`, with the refusal carried
+    /// up, when something under it went past the limit.
+    pub(crate) fn finish_nested(&mut self, inner: Writer) -> Option<Vec<u8>> {
+        if inner.exceeded {
+            self.exceeded = true;
+            return None;
+        }
+        Some(inner.buf)
+    }
+
+    /// Whether a value nested past the limit was refused. The bytes
+    /// [`Writer::finish`] returns then lack it.
+    pub fn depth_exceeded(&self) -> bool {
+        self.exceeded
+    }
+
+    /// The bytes written. They lack any value refused for its depth; see
+    /// [`Writer::finish_checked`].
     pub fn finish(self) -> Vec<u8> {
         self.buf
+    }
+
+    /// The bytes written, or [`Error::DepthExceeded`] if a value nested
+    /// past the limit was refused.
+    pub fn finish_checked(self) -> Result<Vec<u8>> {
+        if self.exceeded {
+            return Err(Error::DepthExceeded(self.max_depth));
+        }
+        Ok(self.buf)
     }
 
     pub fn len(&self) -> usize {
