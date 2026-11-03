@@ -34,6 +34,9 @@ pub struct XmlType {
     pub primitive_type: String,
     pub length: Option<u32>,
     pub description: Option<String>,
+    /// The IANA charset name a `char` type's bytes are in. FIX SBE makes
+    /// US-ASCII the default for a char array.
+    pub character_encoding: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -140,6 +143,7 @@ impl SaxHandler for SchemaBuilder {
                     primitive_type: attrs.get("primitiveType").cloned().unwrap_or_default(),
                     length,
                     description: attrs.get("description").cloned(),
+                    character_encoding: attrs.get("characterEncoding").cloned(),
                 };
                 if parent.as_deref() == Some("composite") {
                     if let Some(idx) = self.current_composite {
