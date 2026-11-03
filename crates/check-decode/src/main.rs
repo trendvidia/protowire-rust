@@ -604,18 +604,106 @@ fn run(
 }
 
 /// The producer's side of the bounds (HARDENING.md § Arbitrary-precision
-/// magnitudes): prost reads the bytes, storing the fields and bounding
-/// nothing, and they are then written as PXF. The hardened decoders are
-/// bypassed on purpose, or the row would be refused before the encoder ran
-/// (protowire#448).
+/// magnitudes, § Recursion): a stock reader reads the bytes, storing the
+/// fields and bounding nothing, and they are then written as PXF. The
+/// hardened decoders are bypassed on purpose, or the row would be refused
+/// before the encoder ran (protowire#448).
+///
+/// The reader allows nesting to [`STOCK_RECURSION_LIMIT`], protobuf-go's
+/// default, rather than prost's fixed 100, so a 101-deep row reaches the
+/// producer, which is what must refuse it (protowire#502). It runs on a
+/// thread with a stack big enough for that depth.
 fn pb_render(input: &Path, schema: &str, proto: &Path) -> Result<(), String> {
     let bytes = std::fs::read(input).map_err(|e| format!("read input: {e}"))?;
     let desc = load_descriptor(proto, schema)?;
-    let msg = DynamicMessage::decode(desc.clone(), bytes.as_slice())
-        .map_err(|e| format!("protobuf runtime: {e}"))?;
-    protowire_pxf::marshal(&msg, &desc, protowire_pxf::MarshalOptions::default())
-        .map(|_| ())
-        .map_err(|e| format!("pxf: {e}"))
+    std::thread::Builder::new()
+        .stack_size(256 << 20)
+        .spawn(move || {
+            let mut msg = DynamicMessage::new(desc.clone());
+            stock_merge(&mut msg, &bytes, 0).map_err(|e| format!("protobuf runtime: {e}"))?;
+            let out = protowire_pxf::marshal(&msg, &desc, protowire_pxf::MarshalOptions::default())
+                .map(|_| ())
+                .map_err(|e| format!("pxf: {e}"));
+            // Dropping a deep message recurses once per level; the process
+            // is about to exit.
+            std::mem::forget(msg);
+            out
+        })
+        .map_err(|e| format!("spawn reader: {e}"))?
+        .join()
+        .map_err(|_| "reader thread panicked".to_string())?
+}
+
+/// protobuf-go's default recursion limit, which its `proto.Unmarshal`
+/// applies where protowire-go's `pb-render` reads.
+const STOCK_RECURSION_LIMIT: usize = 10_000;
+
+/// Merge `buf` into `msg` as prost does, but with the recursion limit at
+/// [`STOCK_RECURSION_LIMIT`]: a message-typed field (a map entry included)
+/// is read here, one level down, and every other field is handed to
+/// prost-reflect's own merge, which never descends.
+fn stock_merge(msg: &mut DynamicMessage, mut buf: &[u8], depth: usize) -> Result<(), String> {
+    use prost::encoding::{decode_key, decode_varint, skip_field, DecodeContext, WireType as PW};
+    use prost::Message as _;
+    use prost_reflect::{Kind, ReflectMessage, Value};
+
+    if depth > STOCK_RECURSION_LIMIT {
+        return Err("recursion limit reached".into());
+    }
+    let desc = msg.descriptor();
+    while !buf.is_empty() {
+        let start = buf;
+        let (tag, wire_type) = decode_key(&mut buf).map_err(|e| e.to_string())?;
+        let fd = desc.get_field(tag);
+        let sub_desc = match (&fd, wire_type) {
+            (Some(fd), PW::LengthDelimited) => match fd.kind() {
+                Kind::Message(m) => Some(m),
+                _ => None,
+            },
+            _ => None,
+        };
+        let (Some(fd), Some(sub_desc)) = (fd, sub_desc) else {
+            skip_field(wire_type, tag, &mut buf, DecodeContext::default())
+                .map_err(|e| e.to_string())?;
+            let field = &start[..start.len() - buf.len()];
+            msg.merge(field).map_err(|e| e.to_string())?;
+            continue;
+        };
+        let len = decode_varint(&mut buf).map_err(|e| e.to_string())?;
+        let len = usize::try_from(len)
+            .ok()
+            .filter(|&n| n <= buf.len())
+            .ok_or("length exceeds buffer")?;
+        let (body, rest) = buf.split_at(len);
+        buf = rest;
+        if fd.is_map() {
+            let mut entry = DynamicMessage::new(sub_desc.clone());
+            stock_merge(&mut entry, body, depth + 1)?;
+            // An absent key or value is its field's default, as in prost.
+            let key_fd = sub_desc.map_entry_key_field();
+            let value_fd = sub_desc.map_entry_value_field();
+            let key = entry
+                .take_field(&key_fd)
+                .unwrap_or_else(|| Value::default_value_for_field(&key_fd))
+                .into_map_key()
+                .ok_or("map key of no key type")?;
+            let value = entry
+                .take_field(&value_fd)
+                .unwrap_or_else(|| Value::default_value_for_field(&value_fd));
+            if let Value::Map(map) = msg.get_field_mut(&fd) {
+                map.insert(key, value);
+            }
+        } else if fd.is_list() {
+            let mut elem = DynamicMessage::new(sub_desc);
+            stock_merge(&mut elem, body, depth + 1)?;
+            if let Value::List(list) = msg.get_field_mut(&fd) {
+                list.push(Value::Message(elem));
+            }
+        } else if let Value::Message(sub) = msg.get_field_mut(&fd) {
+            stock_merge(sub, body, depth + 1)?;
+        }
+    }
+    Ok(())
 }
 
 fn pxf_decode(input: &Path, schema: &str, proto: &Path, limits: &LimitFlags) -> Result<(), String> {

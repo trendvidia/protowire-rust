@@ -46,11 +46,37 @@ pub trait Message: Sized + Default {
     ) -> Result<()>;
 }
 
-/// Encode a message to a byte vector.
-pub fn marshal<M: Message>(value: &M) -> Vec<u8> {
-    let mut w = Writer::new();
+/// The options of one encode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MarshalOptions {
+    /// The deepest value written, counted as a decoder counts it: the root
+    /// is depth 0, and every submessage or map entry is one descent. A
+    /// message that needs more is an error, because a reader at the same
+    /// limit refuses it (draft -01 § Recursion, protowire#502). Raise it
+    /// only with [`Limits::max_nesting_depth`] on every reader.
+    pub max_nesting_depth: usize,
+}
+
+impl Default for MarshalOptions {
+    fn default() -> Self {
+        Self {
+            max_nesting_depth: crate::wire::MAX_NESTING_DEPTH,
+        }
+    }
+}
+
+/// Encode a message to a byte vector. A value nested deeper than
+/// [`crate::wire::MAX_NESTING_DEPTH`] is [`Error::DepthExceeded`], since
+/// [`unmarshal`] would refuse it; [`marshal_with`] sets another limit.
+pub fn marshal<M: Message>(value: &M) -> Result<Vec<u8>> {
+    marshal_with(value, MarshalOptions::default())
+}
+
+/// [`marshal`] under the given [`MarshalOptions`].
+pub fn marshal_with<M: Message>(value: &M, options: MarshalOptions) -> Result<Vec<u8>> {
+    let mut w = Writer::with_max_nesting_depth(options.max_nesting_depth);
     value.encode_to(&mut w);
-    w.finish()
+    w.finish_checked()
 }
 
 /// Decode a message from a byte slice under the default [`Limits`].
@@ -78,11 +104,15 @@ pub fn unmarshal_with<M: Message>(data: &[u8], limits: Limits) -> Result<M> {
     Ok(msg)
 }
 
-/// Write a nested message at `field_number` as a length-delimited blob.
+/// Write a nested message at `field_number` as a length-delimited blob. It
+/// is one descent: past the writer's limit nothing is written and the
+/// writer records the refusal (see [`Writer::finish_checked`]).
 pub fn write_message<M: Message>(w: &mut Writer, field_number: u32, msg: &M) {
-    let mut inner = Writer::new();
+    let Some(mut inner) = w.nested() else { return };
     msg.encode_to(&mut inner);
-    let bytes = inner.finish();
+    let Some(bytes) = w.finish_nested(inner) else {
+        return;
+    };
     w.tag(field_number, WireType::LengthDelimited);
     w.varint(bytes.len() as u64);
     w.raw(&bytes);
@@ -165,9 +195,11 @@ impl MapEntryField for f64 {
 impl<M: Message> MapEntryField for M {
     const WIRE_TYPE: WireType = WireType::LengthDelimited;
     fn write_to(&self, w: &mut Writer) {
-        let mut inner = Writer::new();
+        let Some(mut inner) = w.nested() else { return };
         self.encode_to(&mut inner);
-        let bytes = inner.finish();
+        let Some(bytes) = w.finish_nested(inner) else {
+            return;
+        };
         w.varint(bytes.len() as u64);
         w.raw(&bytes);
     }
@@ -187,12 +219,16 @@ pub fn write_map_entry<K: MapEntryField + ?Sized, V: MapEntryField + ?Sized>(
     key: &K,
     value: &V,
 ) {
-    let mut entry = Writer::new();
+    // The entry is one descent, whatever its value's type, as a reader
+    // counts it (protowire#449).
+    let Some(mut entry) = w.nested() else { return };
     entry.tag(1, K::WIRE_TYPE);
     key.write_to(&mut entry);
     entry.tag(2, V::WIRE_TYPE);
     value.write_to(&mut entry);
-    let bytes = entry.finish();
+    let Some(bytes) = w.finish_nested(entry) else {
+        return;
+    };
     w.tag(field_number, WireType::LengthDelimited);
     w.varint(bytes.len() as u64);
     w.raw(&bytes);
@@ -239,6 +275,11 @@ pub fn read_message<M: Message>(r: &mut Reader<'_>) -> Result<M> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// [`super::marshal`] for values well inside the depth limit.
+    fn marshal<M: Message>(value: &M) -> Vec<u8> {
+        super::marshal(value).expect("marshal")
+    }
     use std::collections::BTreeMap;
 
     /// A map entry carries both fields, zero-valued or not (protowire#295).

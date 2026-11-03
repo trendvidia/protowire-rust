@@ -15,4 +15,5 @@ path = "src/main.rs"
 protowire-pxf = { workspace = true }
 protowire-pb = { workspace = true }
 protowire-sbe = { workspace = true }
+prost = { workspace = true }
 prost-reflect = { workspace = true }
