@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for float and double literals (draft -01 § Scalar Values):
+// the identifiers inf, +inf, -inf, nan, and a number that rounds to an
+// infinity, which is rejected.
+syntax = "proto3";
+package floatlit.v1;
+
+import "pxf/annotations.proto";
+
+message F {
+  double d = 1;
+  float f = 2;
+  repeated double ds = 3;
+  repeated float fs = 4;
+  map<string, double> md = 5;
+}
+
+message Defaults {
+  double d_nan = 1 [(pxf.default) = "nan"];
+  float f_neg_inf = 2 [(pxf.default) = "-inf"];
+  double d_pos_inf = 3 [(pxf.default) = "+inf"];
+}
+
+message BadDefault {
+  double d = 1 [(pxf.default) = "1e400"];
+}

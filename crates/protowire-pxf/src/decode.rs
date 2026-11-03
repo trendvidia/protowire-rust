@@ -207,6 +207,17 @@ struct Decoder<'a> {
 }
 
 impl<'a> Decoder<'a> {
+    /// Whether the current token can be a float or double: a number, or
+    /// the unsigned identifiers `inf` and `nan` (the signed `+inf` and
+    /// `-inf` lex as floats).
+    fn at_float_literal(&self) -> bool {
+        match self.current.kind {
+            TokenKind::Float | TokenKind::Int => true,
+            TokenKind::Ident => matches!(self.current.value.as_str(), "inf" | "nan"),
+            _ => false,
+        }
+    }
+
     fn new(
         input: &'a str,
         discard_unknown: bool,
@@ -1472,24 +1483,24 @@ impl<'a> Decoder<'a> {
                 Ok(Value::U64(n))
             }
             Kind::Float => {
-                if !matches!(self.current.kind, TokenKind::Float | TokenKind::Int) {
+                if !self.at_float_literal() {
                     return Err(
                         self.err_at(pos, format!("expected number for field {:?}", fd.name()))
                     );
                 }
-                let f: f32 = self.current.value.parse().map_err(|_| {
+                let f = parse_f32_literal(&self.current.value).ok_or_else(|| {
                     self.err_at(pos, format!("invalid float: {}", self.current.value))
                 })?;
                 self.advance();
                 Ok(Value::F32(f))
             }
             Kind::Double => {
-                if !matches!(self.current.kind, TokenKind::Float | TokenKind::Int) {
+                if !self.at_float_literal() {
                     return Err(
                         self.err_at(pos, format!("expected number for field {:?}", fd.name()))
                     );
                 }
-                let f: f64 = self.current.value.parse().map_err(|_| {
+                let f = parse_f64_literal(&self.current.value).ok_or_else(|| {
                     self.err_at(pos, format!("invalid double: {}", self.current.value))
                 })?;
                 self.advance();
@@ -1578,6 +1589,49 @@ impl<'a> Decoder<'a> {
 /// member or a proto2 `optional` field. A required field would be invalid
 /// in binary unset, and a scalar without presence has no unset state, so
 /// `null` would read back as its zero value.
+/// The canonical quiet NaNs, the one encoding a decoder may store for the
+/// literal `nan` (draft -01 § Scalar Values, protowire-java#161).
+const CANONICAL_NAN_64: u64 = 0x7FF8_0000_0000_0000;
+const CANONICAL_NAN_32: u32 = 0x7FC0_0000;
+
+/// Whether `s` spells an infinity outright, as `inf`, `+inf` or `-inf`
+/// (and the spellings Go's `strconv.ParseFloat` also takes, which a
+/// `(pxf.default)` string may use), rather than rounding to one.
+fn spells_infinity(s: &str) -> bool {
+    let unsigned = s.strip_prefix(['+', '-']).unwrap_or(s);
+    unsigned.eq_ignore_ascii_case("inf") || unsigned.eq_ignore_ascii_case("infinity")
+}
+
+/// A double literal (draft -01 § Scalar Values): a number in IEEE 754 range,
+/// or one of the identifiers `inf`, `+inf`, `-inf`, `nan`. A number that
+/// rounds to an infinity is `None`, as is anything else that is not a
+/// float; `nan` is stored as the canonical quiet NaN.
+fn parse_f64_literal(s: &str) -> Option<f64> {
+    let f: f64 = s.parse().ok()?;
+    if f.is_infinite() && !spells_infinity(s) {
+        return None;
+    }
+    Some(if f.is_nan() {
+        f64::from_bits(CANONICAL_NAN_64)
+    } else {
+        f
+    })
+}
+
+/// [`parse_f64_literal`] for a float field, rounding the literal to 32 bits
+/// once, as Go's `strconv.ParseFloat(s, 32)` does.
+fn parse_f32_literal(s: &str) -> Option<f32> {
+    let f: f32 = s.parse().ok()?;
+    if f.is_infinite() && !spells_infinity(s) {
+        return None;
+    }
+    Some(if f.is_nan() {
+        f32::from_bits(CANONICAL_NAN_32)
+    } else {
+        f
+    })
+}
+
 fn nullable(fd: &FieldDescriptor) -> bool {
     fd.supports_presence()
         && !fd.is_list()
@@ -1928,8 +1982,12 @@ fn parse_scalar_default(fd: &FieldDescriptor, def: &str, pos: Position) -> Resul
         Kind::Uint64 | Kind::Fixed64 => {
             Value::U64(def.parse().map_err(|_| err(pos, "uint64", def, name))?)
         }
-        Kind::Float => Value::F32(def.parse().map_err(|_| err(pos, "float", def, name))?),
-        Kind::Double => Value::F64(def.parse().map_err(|_| err(pos, "double", def, name))?),
+        Kind::Float => {
+            Value::F32(parse_f32_literal(def).ok_or_else(|| err(pos, "float", def, name))?)
+        }
+        Kind::Double => {
+            Value::F64(parse_f64_literal(def).ok_or_else(|| err(pos, "double", def, name))?)
+        }
         Kind::Bytes => Value::Bytes(
             decode_base64(def)
                 .ok_or_else(|| err(pos, "bytes", def, name))?
