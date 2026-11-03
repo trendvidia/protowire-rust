@@ -11,6 +11,10 @@ format changes.
 
 ## [Unreleased]
 
+### Changed
+
+- **A named keyed entry can't undo its entry name** ([#82](https://github.com/trendvidia/protowire-rust/issues/82), protowire#480). The entry name binds the key field, so inside a named entry `null` on the key field, and any binding of another member of the key field's oneof, are now decode errors. The sibling case used to replace the key without a word. The anonymous form and an agreeing `name = "alpha"` stay legal.
+
 ### Fixed
 
 - **`Presence` reports a keyed entry's name as setting the key field** (protowire-go#214). `kd { alpha {} }` now reports `kd[0].name` as set, nested entries too (`kn[0].inner[0].name`).

@@ -136,8 +136,7 @@ pub fn get_default(fd: &FieldDescriptor) -> Option<String> {
 /// The `(pxf.key)` annotation value — the name of the element message's
 /// key field for a keyed repeated field (draft -01 §3.13) — or `None`
 /// when the field carries none. Placement is checked at bind time by
-/// [`crate::validate_descriptor`]; the keyed surface form itself
-/// (protowire-rust#20) is not implemented in this port yet.
+/// [`crate::validate_descriptor`].
 pub fn get_key(fd: &FieldDescriptor) -> Option<String> {
     let pool = fd.parent_pool();
     let ext = pool.get_extension_by_name(PXF_KEY)?;

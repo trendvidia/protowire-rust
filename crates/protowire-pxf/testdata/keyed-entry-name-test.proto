@@ -16,6 +16,7 @@ message P {
   repeated InOneof ko = 3 [(pxf.key) = "name"];
   repeated Nests kn = 4 [(pxf.key) = "name"];
   google.protobuf.Any payload = 5;
+  repeated InOneofWithMessage km = 6 [(pxf.key) = "name"];
 }
 
 message WithDefault {
@@ -30,6 +31,14 @@ message InOneof {
   oneof pick {
     string name = 1;
     string other = 2 [(pxf.default) = "other-dflt"];
+  }
+}
+
+// The key's oneof sibling is a message, so it can be bound by block.
+message InOneofWithMessage {
+  oneof pick {
+    string name = 1;
+    Element detail = 2;
   }
 }
 

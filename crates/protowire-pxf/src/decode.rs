@@ -728,6 +728,9 @@ impl<'a> Decoder<'a> {
                             ));
                         }
                     };
+                    if let Some(ke) = &ke {
+                        ke.check_binding(&fd, matches!(self.current.kind, TokenKind::Null), pos)?;
+                    }
                     check_bound(&fd, &mut bound, pos)?;
                     self.check_oneof(&fd, &mut set_oneofs, pos)?;
                     if matches!(self.current.kind, TokenKind::Null) {
@@ -739,7 +742,7 @@ impl<'a> Decoder<'a> {
                         continue;
                     }
                     if let Some(ke) = &ke {
-                        if fd.name() == ke.key_name
+                        if fd.name() == ke.key_fd.name()
                             && matches!(self.current.kind, TokenKind::String)
                         {
                             // Explicit assignment to the element's key field:
@@ -815,6 +818,9 @@ impl<'a> Decoder<'a> {
                                 key
                             ),
                         ));
+                    }
+                    if let Some(ke) = &ke {
+                        ke.check_binding(&fd, false, pos)?;
                     }
                     check_bound(&fd, &mut bound, pos)?;
                     self.check_oneof(&fd, &mut set_oneofs, pos)?;
@@ -973,7 +979,7 @@ impl<'a> Decoder<'a> {
                         if let Some(key_fd) = &key_fd {
                             self.keyed_elem = Some(KeyedElemState {
                                 field: fd.name().to_string(),
-                                key_name: key_fd.name().to_string(),
+                                key_fd: key_fd.clone(),
                                 entry_name: String::new(),
                                 named: false,
                             });
@@ -1087,7 +1093,7 @@ impl<'a> Decoder<'a> {
             sub.set_field(key_fd, Value::String(name.clone()));
             self.keyed_elem = Some(KeyedElemState {
                 field: fd.name().to_string(),
-                key_name: key_fd.name().to_string(),
+                key_fd: key_fd.clone(),
                 entry_name: name,
                 named: true,
             });

@@ -26,6 +26,8 @@ All fixtures bind against [`keyed.proto`](keyed.proto) (package
 | `anonymous-equivalence.pxf` | Anonymous list form decodes to exactly the same message as `roundtrip-keyed.pxf`; fmt canonicalizes it to the keyed form. |
 | `redundant-key-ok.pxf` | An agreeing explicit key-field assignment inside a named entry is legal; fmt drops it. |
 | `anonymous-duplicate-ok.pxf` | Duplicate keys decode fine in anonymous form and MUST stay anonymous on encode/fmt. |
+| `key-oneof-ok.pxf` | A key in a oneof takes the entry name, an agreeing assignment stays legal, and the anonymous form may choose another member. |
+| `key-null-anonymous-ok.pxf` | With no entry name to disagree with, an optional key field may be null in the anonymous form. |
 
 ## fmt canonicalization pairs
 
@@ -51,6 +53,9 @@ The expected files are also fmt fixed points: formatting an
 | `err-duplicate-key.pxf` | Duplicate entry names in one keyed block (decode error; diagnostic in tolerant mode). |
 | `err-duplicate-key-spelling.pxf` | `greeting` vs `"greeting"` — duplicate detection compares unquoted values. |
 | `err-key-conflict.pxf` | Explicit key-field assignment disagrees with the entry name. |
+| `err-key-null.pxf` | `null` on the key field inside a named entry disagrees with the entry name. |
+| `err-key-oneof-sibling.pxf` | Another member of the key field's oneof, bound inside a named entry, writes two members. |
+| `err-key-oneof-sibling-null.pxf` | The same with `null`, which also chooses that member. |
 | `err-empty-key.pxf` | `""` as a quoted entry name — the empty string is never a valid key. |
 | `err-empty-key-anonymous.pxf` | Explicit empty-string key-field value in anonymous form. |
 | `err-quoted-name-unkeyed.pxf` | Quoted entry name outside a keyed repeated field's block — parses, but the schema layer rejects it. |

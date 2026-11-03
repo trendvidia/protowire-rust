@@ -1,0 +1,10 @@
+@type keyed.v1.Catalog
+
+# Key conflict: null on another member of the key field's oneof chooses
+# that member, so it writes two members and MUST be rejected.
+
+choices {
+  alpha {
+    other = null
+  }
+}

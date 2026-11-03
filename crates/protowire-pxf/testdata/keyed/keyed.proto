@@ -8,7 +8,9 @@
 // self-recursion); Deployment.regions exercises keys that are not
 // identifier-safe and therefore require the quoted entry-name form;
 // Doc.items is a plain (un-keyed) repeated message field used by the
-// quoted-name-outside-keyed-context schema-error fixture.
+// quoted-name-outside-keyed-context schema-error fixture; Catalog.choices
+// and Catalog.tags have a key field that a block could undo, a oneof member
+// and an optional field.
 
 syntax = "proto3";
 package keyed.v1;
@@ -39,4 +41,20 @@ message Plain {
 
 message Doc {
   repeated Plain items = 1;
+}
+
+message Choice {
+  oneof pick {
+    string name = 1;
+    string other = 2;
+  }
+}
+
+message Tag {
+  optional string name = 1;
+}
+
+message Catalog {
+  repeated Choice choices = 1 [(pxf.key) = "name"];
+  repeated Tag tags = 2 [(pxf.key) = "name"];
 }
