@@ -11,6 +11,11 @@
 //! - **absent**: not mentioned in the input — eligible for `(pxf.default)`
 //!   application and `(pxf.required)` validation
 //!
+//! A path through a list element or a map value carries its index or key:
+//! `items[0].name`, `by_id["a"].label`, `by_num[7].label`. An entry name of
+//! a keyed repeated field counts as setting the key field: `kd { alpha {} }`
+//! reports `kd[0].name` as set.
+//!
 //! Renamed from the upstream `Result` to avoid collision with `std::result::Result`.
 //!
 //! Also surfaces the document-root directives the decoder saw (PXF v0.72+):

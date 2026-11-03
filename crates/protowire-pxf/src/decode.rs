@@ -149,7 +149,14 @@ fn unmarshal_inner(
         post_decode(&mut msg, &presence, null_mask_fd.as_ref(), "")?;
         // Mirror null paths into the root's _null FieldMask, if any.
         if let Some(null_mask_fd) = null_mask_fd {
-            let mut paths: Vec<String> = presence.null_paths().map(|s| s.to_string()).collect();
+            // A FieldMask path names fields, not list elements or map
+            // entries, so a null inside one stays in Presence only
+            // (protowire-go#170). `[` is in no field name.
+            let mut paths: Vec<String> = presence
+                .null_paths()
+                .filter(|p| !p.contains('['))
+                .map(|s| s.to_string())
+                .collect();
             if !paths.is_empty() {
                 paths.sort();
                 let inner_desc = match null_mask_fd.kind() {
@@ -254,6 +261,31 @@ impl<'a> Decoder<'a> {
 
     fn into_presence(self) -> Presence {
         self.presence.expect("presence not requested")
+    }
+
+    /// Extend the presence path for the `i`th element of a list, `name[i].`,
+    /// returning the path to restore once the body is decoded. Every
+    /// descent into a message body extends it, so the marks made inside
+    /// land on the message they belong to, never on its parent, where they
+    /// would satisfy the parent's `(pxf.required)` or keep its
+    /// `(pxf.default)` off.
+    fn enter_index(&mut self, name: &str, i: usize) -> String {
+        if self.presence.is_none() {
+            return String::new();
+        }
+        let saved = std::mem::take(&mut self.path_prefix);
+        self.path_prefix = format!("{saved}{name}[{i}].");
+        saved
+    }
+
+    /// [`Self::enter_index`] for the value of map key `key`: `name["k"].`.
+    fn enter_key(&mut self, name: &str, key: &MapKey) -> String {
+        if self.presence.is_none() {
+            return String::new();
+        }
+        let saved = std::mem::take(&mut self.path_prefix);
+        self.path_prefix = format!("{saved}{name}[{}].", shown_key(key));
+        saved
     }
 
     fn mark_present(&mut self, fd: &FieldDescriptor) {
@@ -946,7 +978,9 @@ impl<'a> Decoder<'a> {
                                 named: false,
                             });
                         }
+                        let saved = self.enter_index(fd.name(), elems.len());
                         self.decode_fields(&mut sub, true)?;
+                        self.path_prefix = saved;
                     }
                     Value::Message(sub)
                 }
@@ -1057,7 +1091,12 @@ impl<'a> Decoder<'a> {
                 entry_name: name,
                 named: true,
             });
+            let saved = self.enter_index(fd.name(), elems.len());
+            // The entry name supplies the key field, so the document counts
+            // as having set it (protowire-go#214).
+            self.mark_present(key_fd);
             self.decode_fields(&mut sub, true)?;
+            self.path_prefix = saved;
             elems.push(Value::Message(sub));
         }
         self.leave();
@@ -1172,7 +1211,9 @@ impl<'a> Decoder<'a> {
                         return Err(self.err("expected '{' for map message value"));
                     }
                     self.advance();
+                    let saved = self.enter_key(fd.name(), &key);
                     self.decode_fields(&mut sub, true)?;
+                    self.path_prefix = saved;
                 }
                 Value::Message(sub)
             } else if matches!(val_fd.kind(), Kind::Enum(_)) {
@@ -1589,8 +1630,9 @@ fn check_bound(
     ))
 }
 
-/// A map key as an error shows it: a string quoted, anything else bare.
-fn shown_key(key: &MapKey) -> String {
+/// A map key as an error or a presence path shows it: a string quoted,
+/// anything else bare.
+pub(crate) fn shown_key(key: &MapKey) -> String {
     match key {
         MapKey::Bool(v) => v.to_string(),
         MapKey::I32(v) => v.to_string(),
