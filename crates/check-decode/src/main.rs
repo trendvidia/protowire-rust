@@ -9,7 +9,7 @@
 //! Contract:
 //!
 //! ```text
-//! check-decode --format <pxf|pb|sbe|envelope> \
+//! check-decode --format <pxf|pxf-pb|pb|pb-render|sbe|envelope> \
 //!              --schema <fully.qualified.MessageType> \
 //!              --proto  <path-to-adversarial.proto> \
 //!              --input  <path> \
@@ -20,6 +20,10 @@
 //! Exit 2 → usage error
 //! Other  → bug in the decoder (panic / abort / OOM / hang / ...)
 //! ```
+//!
+//! `pxf-pb` also writes the message's PB bytes on stdout, map entries in
+//! key order, for the write gate (`protowire/scripts/cross_write_check.sh`,
+//! protowire#509).
 //!
 //! `--limit NAME=VALUE`, repeatable, lowers a HARDENING limit for this run
 //! so the corpus can prove a 64 MiB cap with a 2 KiB fixture
@@ -589,6 +593,10 @@ fn run(
             let proto = proto.ok_or_else(|| "--proto required for format=pxf".to_string())?;
             pxf_decode(input, schema, proto, limits)
         }
+        "pxf-pb" => {
+            let proto = proto.ok_or_else(|| "--proto required for format=pxf-pb".to_string())?;
+            pxf_pb(input, schema, proto, limits)
+        }
         "pb" => pb_decode(input, schema, limits),
         "pb-render" => {
             let proto = proto.ok_or_else(|| "--proto required for format=pb-render".to_string())?;
@@ -716,6 +724,114 @@ fn pxf_decode(input: &Path, schema: &str, proto: &Path, limits: &LimitFlags) -> 
     pxf_unmarshal(&text, &desc, options)
         .map(|_| ())
         .map_err(|e| format!("pxf: {e}"))
+}
+
+/// The PB bytes for a PXF document, on stdout, for the write gate
+/// (`protowire/scripts/cross_write_check.sh`, protowire#509). It decodes
+/// with [`protowire_pxf::unmarshal_full`], which validates `(pxf.required)`
+/// and applies `(pxf.default)`, as protowire-go's harness does, and writes
+/// map entries in key order, as Go's deterministic writer puts them;
+/// prost-reflect writes a map in its `HashMap`'s order.
+fn pxf_pb(input: &Path, schema: &str, proto: &Path, limits: &LimitFlags) -> Result<(), String> {
+    use std::io::Write as _;
+    let text = std::fs::read_to_string(input).map_err(|e| format!("read input: {e}"))?;
+    let desc = load_descriptor(proto, schema)?;
+    let options = UnmarshalOptions {
+        limits: limits.pxf(),
+        ..Default::default()
+    };
+    let (msg, _) =
+        protowire_pxf::unmarshal_full(&text, &desc, options).map_err(|e| format!("pxf: {e}"))?;
+    let mut out = Vec::new();
+    deterministic::encode(&msg, &mut out);
+    std::io::stdout()
+        .write_all(&out)
+        .map_err(|e| format!("write stdout: {e}"))
+}
+
+/// protobuf-go's deterministic marshal, for a [`DynamicMessage`]: fields in
+/// number order, map entries in key order (false before true, integers by
+/// value, strings by UTF-8 bytes, which is `MapKey`'s order), each entry
+/// carrying its key and value whether or not they are zero, and unknown
+/// fields last.
+mod deterministic {
+    use prost::encoding::{encode_key, encode_varint, WireType};
+    use prost::Message as _;
+    use prost_reflect::{DynamicMessage, FieldDescriptor, Kind, ReflectMessage, Value};
+
+    pub fn encode(msg: &DynamicMessage, out: &mut Vec<u8>) {
+        let desc = msg.descriptor();
+        let mut fields: Vec<(FieldDescriptor, &Value)> = msg.fields().collect();
+        fields.sort_by_key(|(fd, _)| fd.number());
+        for (fd, value) in fields {
+            match (value, fd.kind()) {
+                (Value::Map(map), Kind::Message(entry_desc)) => {
+                    let key_fd = entry_desc.map_entry_key_field();
+                    let value_fd = entry_desc.map_entry_value_field();
+                    let mut entries: Vec<_> = map.iter().collect();
+                    entries.sort_by(|a, b| a.0.cmp(b.0));
+                    for (k, v) in entries {
+                        let mut entry = Vec::new();
+                        let mut key = DynamicMessage::new(entry_desc.clone());
+                        key.set_field(&key_fd, Value::from(k.clone()));
+                        field_always(&key, &key_fd, &mut entry);
+                        match v {
+                            Value::Message(sub) => message(2, sub, &mut entry),
+                            _ => {
+                                let mut val = DynamicMessage::new(entry_desc.clone());
+                                val.set_field(&value_fd, v.clone());
+                                field_always(&val, &value_fd, &mut entry);
+                            }
+                        }
+                        encode_key(fd.number(), WireType::LengthDelimited, out);
+                        encode_varint(entry.len() as u64, out);
+                        out.extend_from_slice(&entry);
+                    }
+                }
+                (Value::List(items), Kind::Message(_)) => {
+                    for item in items {
+                        if let Value::Message(sub) = item {
+                            message(fd.number(), sub, out);
+                        }
+                    }
+                }
+                (Value::Message(sub), _) => message(fd.number(), sub, out),
+                _ => {
+                    let mut one = DynamicMessage::new(desc.clone());
+                    one.set_field(&fd, value.clone());
+                    one.encode_raw(out);
+                }
+            }
+        }
+        for unknown in msg.unknown_fields() {
+            unknown.encode(out);
+        }
+    }
+
+    fn message(number: u32, sub: &DynamicMessage, out: &mut Vec<u8>) {
+        let mut body = Vec::new();
+        encode(sub, &mut body);
+        encode_key(number, WireType::LengthDelimited, out);
+        encode_varint(body.len() as u64, out);
+        out.extend_from_slice(&body);
+    }
+
+    /// A map entry's key or value, written even when it is zero.
+    fn field_always(msg: &DynamicMessage, field: &FieldDescriptor, out: &mut Vec<u8>) {
+        let before = out.len();
+        msg.encode_raw(out);
+        if out.len() > before {
+            return;
+        }
+        let (wire_type, zero): (WireType, &[u8]) = match field.kind() {
+            Kind::String | Kind::Bytes => (WireType::LengthDelimited, &[0]),
+            Kind::Float | Kind::Fixed32 | Kind::Sfixed32 => (WireType::ThirtyTwoBit, &[0; 4]),
+            Kind::Double | Kind::Fixed64 | Kind::Sfixed64 => (WireType::SixtyFourBit, &[0; 8]),
+            _ => (WireType::Varint, &[0]),
+        };
+        encode_key(field.number(), wire_type, out);
+        out.extend_from_slice(zero);
+    }
 }
 
 fn pb_decode(input: &Path, schema: &str, limits: &LimitFlags) -> Result<(), String> {
