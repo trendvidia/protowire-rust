@@ -133,12 +133,6 @@ buf build --as-file-descriptor-set --exclude-source-info \
 
 echo "wrote crates/protowire-pxf/testdata/marshal-depth-test.binpb (buf)"
 
-buf build --as-file-descriptor-set --exclude-source-info \
-  --path crates/protowire-pxf/testdata/float-literals-test.proto \
-  -o crates/protowire-pxf/testdata/float-literals-test.binpb
-
-echo "wrote crates/protowire-pxf/testdata/float-literals-test.binpb (buf)"
-
 # Vendored verbatim from the spec repo's testdata/map-keys/ (protowire#284);
 # keep in sync when the spec repo adds fixtures.
 buf build --as-file-descriptor-set --exclude-source-info \
@@ -213,6 +207,12 @@ buf build --as-file-descriptor-set --exclude-source-info \
   -o crates/protowire-pxf/testdata/any/any.binpb
 
 echo "wrote crates/protowire-pxf/testdata/any/any.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/float-literals-test.proto \
+  -o crates/protowire-pxf/testdata/float-literals-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/float-literals-test.binpb (buf)"
 
 # Vendored verbatim from the spec repo's testdata/bigfloat/ (protowire#406);
 # keep in sync when the spec repo adds fixtures. Its .binpb files are PB
