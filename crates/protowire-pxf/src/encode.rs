@@ -551,7 +551,10 @@ fn message_shorthand(
     if full == "google.protobuf.Timestamp" {
         return Some(Ok(format_rfc3339_nano(sub)));
     }
-    if full == "google.protobuf.Duration" {
+    // A Duration past the literal's range, a signed 64-bit count of
+    // nanoseconds, is written as a block with its exact seconds and nanos
+    // (draft -01 § Durations).
+    if full == "google.protobuf.Duration" && duration_fits_literal(sub) {
         return Some(Ok(format_go_duration(sub)));
     }
     if is_wrapper_full_name(full) {
@@ -1040,6 +1043,18 @@ const NANOS_PER_MILLI: i128 = 1_000_000;
 /// `time.Duration.String()`: leading-zero `h`/`m` units omitted, sub-second
 /// durations use the smallest unit (`ns` / `µs` / `ms`) that gives a non-zero
 /// leading digit, and `0s` is the canonical zero.
+/// Whether a Duration's value, seconds × 10^9 + nanos, fits the literal's
+/// signed 64-bit count of nanoseconds.
+fn duration_fits_literal(d: &DynamicMessage) -> bool {
+    let int = |name: &str| match d.get_field_by_name(name).map(|v| v.into_owned()) {
+        Some(Value::I64(n)) => i128::from(n),
+        Some(Value::I32(n)) => i128::from(n),
+        _ => 0,
+    };
+    let total = int("seconds") * 1_000_000_000 + int("nanos");
+    i64::try_from(total).is_ok()
+}
+
 fn format_go_duration(d: &DynamicMessage) -> String {
     let s_fd = d.descriptor().get_field_by_name("seconds");
     let n_fd = d.descriptor().get_field_by_name("nanos");

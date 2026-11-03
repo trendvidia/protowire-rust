@@ -50,6 +50,12 @@ buf build --as-file-descriptor-set --exclude-source-info \
 echo "wrote crates/protowire-pxf/testdata/group-placement-test.binpb (buf)"
 
 buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/duration-block-test.proto \
+  -o crates/protowire-pxf/testdata/duration-block-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/duration-block-test.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
   --path crates/protowire-pxf/testdata/placement-accepted-test.proto \
   -o crates/protowire-pxf/testdata/placement-accepted-test.binpb
 
