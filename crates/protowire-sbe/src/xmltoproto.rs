@@ -37,6 +37,7 @@ fn generate_proto(schema: &XmlSchema) -> String {
                 primitive_type: name.to_string(),
                 length: None,
                 description: None,
+                character_encoding: None,
             },
         );
     }
@@ -103,8 +104,9 @@ fn write_proto_composite(c: &XmlComposite) -> String {
     let mut out = format!("message {} {{\n", c.name);
     let mut field_num = 1u32;
     for t in &c.types {
-        let (proto_type, opts) = resolve_type_to_proto(&t.primitive_type, t.length.unwrap_or(0));
+        let (proto_type, opts, note) = resolve_type_to_proto(t);
         let name = camel_to_snake(&t.name);
+        write_note(&mut out, "  ", &note);
         if !opts.is_empty() {
             let _ = writeln!(out, "  {} {} = {} [{}];", proto_type, name, field_num, opts);
         } else {
@@ -167,12 +169,19 @@ fn write_proto_field(
         return format!("{}{} {} = {};\n", indent, f.r#type, name, f.id);
     }
     if let Some(t) = type_map.get(&f.r#type) {
-        let (proto_type, opts) = resolve_type_to_proto(&t.primitive_type, t.length.unwrap_or(0));
-        return if !opts.is_empty() {
-            format!("{}{} {} = {} [{}];\n", indent, proto_type, name, f.id, opts)
+        let (proto_type, opts, note) = resolve_type_to_proto(t);
+        let mut out = String::new();
+        write_note(&mut out, indent, &note);
+        if !opts.is_empty() {
+            let _ = writeln!(
+                out,
+                "{}{} {} = {} [{}];",
+                indent, proto_type, name, f.id, opts
+            );
         } else {
-            format!("{}{} {} = {};\n", indent, proto_type, name, f.id)
-        };
+            let _ = writeln!(out, "{}{} {} = {};", indent, proto_type, name, f.id);
+        }
+        return out;
     }
     // Unknown type — pass through so the user's protoc surfaces the error.
     format!("{}{} {} = {};\n", indent, f.r#type, name, f.id)
@@ -207,7 +216,72 @@ fn write_proto_group(
     out
 }
 
-fn resolve_type_to_proto(primitive_type: &str, length: u32) -> (String, String) {
+/// Map an SBE type to a proto type and its field options, plus a note for
+/// the line above the field when there is one. A `char` array is a
+/// `string` only when its `characterEncoding` is UTF-8 compatible; a proto
+/// string holds UTF-8 alone and a decoder refuses one that is not, so text
+/// in another encoding is carried as `bytes` of the same `(sbe.length)`
+/// rather than failing at run time (draft -01 § Character Encoding,
+/// protowire#494). Mirrors protowire-go#248.
+fn resolve_type_to_proto(t: &XmlType) -> (String, String, String) {
+    if t.primitive_type == "char" {
+        let len = t.length.filter(|&n| n > 0).unwrap_or(1);
+        let opts = format!("(sbe.length) = {len}");
+        let encoding = t.character_encoding.as_deref().unwrap_or("");
+        if !is_utf8_compatible(encoding) {
+            let note = format!(
+                "SBE characterEncoding {encoding:?} is not UTF-8 compatible, so this field is bytes."
+            );
+            return ("bytes".into(), opts, note);
+        }
+        return ("string".into(), opts, String::new());
+    }
+    let (proto_type, opts) = resolve_primitive_to_proto(&t.primitive_type);
+    (proto_type, opts, String::new())
+}
+
+/// Write `note` as a comment line, if there is one.
+fn write_note(out: &mut String, indent: &str, note: &str) {
+    if !note.is_empty() {
+        let _ = writeln!(out, "{indent}// {note}");
+    }
+}
+
+/// Whether every string in a char array of the named encoding is valid
+/// UTF-8: none named (FIX SBE's default is US-ASCII), a US-ASCII name, or a
+/// UTF-8 name. Names are IANA charset names and their registered aliases,
+/// compared ignoring case and punctuation.
+fn is_utf8_compatible(encoding: &str) -> bool {
+    let name: String = encoding
+        .trim()
+        .chars()
+        .filter(|c| !matches!(c, '-' | '_' | '.' | ':' | ' '))
+        .flat_map(char::to_lowercase)
+        .collect();
+    matches!(
+        name.as_str(),
+        // None named.
+        ""
+            // US-ASCII and its IANA aliases.
+            | "usascii"
+            | "ascii"
+            | "ansix341968"
+            | "ansix341986"
+            | "iso646us"
+            | "isoir6"
+            | "iso646irv1991"
+            | "us"
+            | "ibm367"
+            | "cp367"
+            | "csascii"
+            // UTF-8.
+            | "utf8"
+            | "csutf8"
+    )
+}
+
+/// Map an SBE primitive type other than `char`.
+fn resolve_primitive_to_proto(primitive_type: &str) -> (String, String) {
     match primitive_type {
         "int8" => ("int32".into(), r#"(sbe.encoding) = "int8""#.into()),
         "int16" => ("int32".into(), r#"(sbe.encoding) = "int16""#.into()),
@@ -219,10 +293,6 @@ fn resolve_type_to_proto(primitive_type: &str, length: u32) -> (String, String) 
         "uint64" => ("uint64".into(), String::new()),
         "float" => ("float".into(), String::new()),
         "double" => ("double".into(), String::new()),
-        "char" => {
-            let len = if length > 0 { length } else { 1 };
-            ("string".into(), format!("(sbe.length) = {}", len))
-        }
         other => (other.to_string(), String::new()),
     }
 }

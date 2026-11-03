@@ -186,6 +186,14 @@ buf build --as-file-descriptor-set --exclude-source-info \
 
 echo "wrote crates/protowire-sbe/testdata/sbe-test.binpb (buf)"
 
+# char-encoding.proto is xml_to_proto's output for char-encoding.xml, kept
+# so it can be compiled here; tests/char_encoding.rs fails if the two drift.
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-sbe/testdata/char-encoding.proto \
+  -o crates/protowire-sbe/testdata/char-encoding.binpb
+
+echo "wrote crates/protowire-sbe/testdata/char-encoding.binpb (buf)"
+
 buf build --as-file-descriptor-set --exclude-source-info \
   --path crates/protowire-pxf/testdata/bench-test.proto \
   -o crates/protowire-pxf/testdata/bench-test.binpb
