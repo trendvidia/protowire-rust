@@ -1,0 +1,73 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for element_defaults.rs and the presence oracle:
+// (pxf.default) and (pxf.required) apply in every message body a document
+// writes (protowire-go#161). Same schema as the reference's
+// element_defaults_test.go.
+syntax = "proto3";
+package elemdefaults.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/wrappers.proto";
+import "pxf/annotations.proto";
+
+message P {
+  repeated Item items = 1;
+  map<string, Item> by_key = 2;
+  repeated Item keyed = 3 [(pxf.key) = "id"];
+  google.protobuf.Any payload = 4;
+  Item one = 5;
+  google.protobuf.FieldMask _null = 15;
+  map<int32, Item> by_num = 16;
+}
+
+message Item {
+  string id = 1;
+  string label = 2 [(pxf.default) = "item-dflt"];
+  Deep deep = 3;
+  repeated Leaf leaves = 4;
+  google.protobuf.Any inner = 5;
+  oneof pick {
+    string pick_s = 6 [(pxf.default) = "pick-dflt"];
+    int32 pick_i = 7;
+  }
+  google.protobuf.StringValue w = 8 [(pxf.default) = "w-dflt"];
+}
+
+message Deep {
+  int32 n = 1 [(pxf.required) = true];
+  optional int32 r = 2;
+}
+
+message Strict {
+  optional int32 r = 1 [(pxf.required) = true];
+}
+
+message Q {
+  repeated Strict strict = 1;
+}
+
+// No annotation of its own, and Any fields only: what an Any body names is
+// the only source of defaults.
+message S {
+  google.protobuf.Any payload = 1;
+  repeated google.protobuf.Any anys = 2;
+}
+
+// No _null mask and no annotation of its own.
+message R {
+  repeated Item items = 1;
+  map<string, Item> by_key = 2;
+}
+
+message Leaf {
+  string tag = 1 [(pxf.default) = "leaf-dflt"];
+}
+
+// Recursive, and annotated only below the recursion.
+message Tree {
+  repeated Tree kids = 1;
+  map<string, Tree> named = 2;
+  Leaf leaf = 3;
+}

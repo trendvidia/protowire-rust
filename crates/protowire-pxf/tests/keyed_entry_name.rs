@@ -6,10 +6,6 @@
 //! `keyed_entry_name_presence_test.go`, and pins the paths that report it:
 //! each list element and map value has its own, and nothing marked inside
 //! one lands on the parent.
-//!
-//! The port does not yet run the `(pxf.default)` / `(pxf.required)` pass
-//! inside list elements, so the reference's tests of an anonymous element
-//! taking a default have no counterpart here.
 
 use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor, Value};
 use protowire_pxf::{
@@ -132,6 +128,30 @@ fn anonymous_element_does_not_mark_the_key() {
     let (_, presence) =
         unmarshal_full("kd = [{}]", &p(), UnmarshalOptions::default()).expect("decodes");
     assert!(presence.is_absent("kd[0].name"));
+}
+
+/// The default still fills an element the anonymous form leaves keyless, and
+/// required still catches it: only an entry name counts as supplying the key.
+#[test]
+fn anonymous_element_takes_the_default() {
+    let (m, _) = unmarshal_full("kd = [{}]", &p(), UnmarshalOptions::default()).expect("decodes");
+    assert_eq!(text(&elem(&m, "kd", 0), "name"), "dflt");
+
+    let err = unmarshal_full("kr = [{}]", &p(), UnmarshalOptions::default())
+        .expect_err("key is required")
+        .to_string();
+    assert!(
+        err.contains(r#"required field "kr[0].name" is absent"#),
+        "{err}"
+    );
+}
+
+/// The other members of the key's oneof see the key as chosen.
+#[test]
+fn oneof_sibling_default_stays_off() {
+    let (m, _) =
+        unmarshal_full("ko { alpha {} }", &p(), UnmarshalOptions::default()).expect("decodes");
+    assert!(!elem(&m, "ko", 0).has_field_by_name("other"));
 }
 
 #[test]

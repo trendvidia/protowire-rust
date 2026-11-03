@@ -20,6 +20,7 @@ pub mod keyed;
 pub mod lexer;
 pub mod limits;
 pub mod parser;
+mod post_decode_plan;
 pub mod result;
 pub mod schema;
 pub mod token;

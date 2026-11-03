@@ -1,0 +1,67 @@
+# What protowire-go at f8a01b1 does with each document of presence-cases.tsv.
+# Produced by scripts/gen-presence-oracle.sh. Do not edit.
+# Columns: descriptor set, message, document, then for UnmarshalFull and for
+# Unmarshal in turn: OK, pb hex, sorted null paths; or ERR, the error, empty.
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{}]	OK	0a2012096974656d2d64666c7442080a06772d64666c7432097069636b2d64666c74		OK	0a00	
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{ label = "x" }, {}]	OK	0a1812017842080a06772d64666c7432097069636b2d64666c740a2012096974656d2d64666c7442080a06772d64666c7432097069636b2d64666c74		OK	0a031201780a00	
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{ pick_i = 3 }]	OK	0a1712096974656d2d64666c7442080a06772d64666c743803		OK	0a023803	
+element-defaults-test.binpb	elemdefaults.v1.P	by_key = { "k": {} }	OK	12250a016b122012096974656d2d64666c7442080a06772d64666c7432097069636b2d64666c74		OK	12050a016b1200	
+element-defaults-test.binpb	elemdefaults.v1.P	keyed { a {} }	OK	1a230a016112096974656d2d64666c7442080a06772d64666c7432097069636b2d64666c74		OK	1a030a0161	
+element-defaults-test.binpb	elemdefaults.v1.P	keyed = [{}]	OK	1a2012096974656d2d64666c7442080a06772d64666c7432097069636b2d64666c74		OK	1a00	
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{ leaves = [{}, { tag = "t" }] }]	OK	0a3212096974656d2d64666c74220b0a096c6561662d64666c7422030a017442080a06772d64666c7432097069636b2d64666c74		OK	0a07220022030a0174	
+element-defaults-test.binpb	elemdefaults.v1.P	by_key = { "k": { leaves = [{}] } }	OK	12320a016b122d12096974656d2d64666c74220b0a096c6561662d64666c7442080a06772d64666c7432097069636b2d64666c74		OK	12070a016b12022200	
+element-defaults-test.binpb	elemdefaults.v1.P	one { leaves = [{}] }	OK	2a2d12096974656d2d64666c74220b0a096c6561662d64666c7442080a06772d64666c7432097069636b2d64666c74		OK	2a022200	
+element-defaults-test.binpb	elemdefaults.v1.P	by_num = { 2: {} 10: {} }	OK	8201240802122012096974656d2d64666c7442080a06772d64666c7432097069636b2d64666c74820124080a122012096974656d2d64666c7442080a06772d64666c7432097069636b2d64666c74		OK	82010408021200820104080a1200	
+element-defaults-test.binpb	elemdefaults.v1.P	payload { @type = "elemdefaults.v1.Item" leaves = [{}] }	OK	22450a14656c656d64656661756c74732e76312e4974656d122d12096974656d2d64666c74220b0a096c6561662d64666c7442080a06772d64666c7432097069636b2d64666c74		OK	221a0a14656c656d64656661756c74732e76312e4974656d12022200	
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{ inner = { @type = "elemdefaults.v1.Leaf" } }]	OK	0a4512096974656d2d64666c742a230a14656c656d64656661756c74732e76312e4c656166120b0a096c6561662d64666c7442080a06772d64666c7432097069636b2d64666c74		OK	0a182a160a14656c656d64656661756c74732e76312e4c656166	
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{ deep { n = 1 } }, { deep {} }]	ERR	1:1: required field "items[1].deep.n" is absent		OK	0a041a0208010a021a00	
+element-defaults-test.binpb	elemdefaults.v1.P	by_key = { "k": { deep {} } }	ERR	1:1: required field "by_key[\"k\"].deep.n" is absent		OK	12070a016b12021a00	
+element-defaults-test.binpb	elemdefaults.v1.P	keyed { a { deep {} } }	ERR	1:1: required field "keyed[0].deep.n" is absent		OK	1a050a01611a00	
+element-defaults-test.binpb	elemdefaults.v1.P	payload { @type = "elemdefaults.v1.Item" deep {} }	ERR	1:1: required field "payload.deep.n" is absent		OK	221a0a14656c656d64656661756c74732e76312e4974656d12021a00	
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{ inner = { @type = "elemdefaults.v1.Deep" } }]	ERR	1:1: required field "items[0].inner.n" is absent		OK	0a182a160a14656c656d64656661756c74732e76312e44656570	
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{ deep = null }]	OK	0a2012096974656d2d64666c7442080a06772d64666c7432097069636b2d64666c74	items[0].deep	OK	0a00	
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{ w = null label = null }]	ERR	1:29: null is not allowed on scalar field "label": declare it optional, or as a wrapper type (google.protobuf.StringValue or similar), to make it nullable		ERR	1:29: null is not allowed on scalar field "label": declare it optional, or as a wrapper type (google.protobuf.StringValue or similar), to make it nullable	
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{ w = "y" }]	OK	0a1b12096974656d2d64666c7442030a017932097069636b2d64666c74		OK	0a0542030a0179	
+element-defaults-test.binpb	elemdefaults.v1.P	by_key = { "b": { deep {} } "a": { deep {} } }	ERR	1:1: required field "by_key[\"a\"].deep.n" is absent		OK	12070a016112021a0012070a016212021a00	
+element-defaults-test.binpb	elemdefaults.v1.P	by_num = { 10: { deep {} } 9: { deep {} } }	ERR	1:1: required field "by_num[10].deep.n" is absent		OK	820106080912021a00820106080a12021a00	
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{}] items = [{ deep {} }]	ERR	1:1: required field "items[1].deep.n" is absent		OK	0a000a021a00	
+element-defaults-test.binpb	elemdefaults.v1.P	items = [{ label = "x" }]	OK	0a1812017842080a06772d64666c7432097069636b2d64666c74		OK	0a03120178	
+element-defaults-test.binpb	elemdefaults.v1.P	one { deep {} }	ERR	1:1: required field "one.deep.n" is absent		OK	2a021a00	
+element-defaults-test.binpb	elemdefaults.v1.P	one = null	OK	7a050a036f6e65	one	OK		
+element-defaults-test.binpb	elemdefaults.v1.P	items = []	OK			OK		
+element-defaults-test.binpb	elemdefaults.v1.P	by_key = {}	OK			OK		
+element-defaults-test.binpb	elemdefaults.v1.P		OK			OK		
+element-defaults-test.binpb	elemdefaults.v1.Q	strict = [{ r = 1 }, {}]	ERR	1:1: required field "strict[1].r" is absent		OK	0a0208010a00	
+element-defaults-test.binpb	elemdefaults.v1.Q	strict = [{ r = null }]	OK	0a00	strict[0].r	OK	0a00	
+element-defaults-test.binpb	elemdefaults.v1.Q	strict = [{ r = 1 }]	OK	0a020801		OK	0a020801	
+element-defaults-test.binpb	elemdefaults.v1.S	payload { @type = "elemdefaults.v1.Leaf" } anys = [{ @type = "elemdefaults.v1.Leaf" }]	OK	0a230a14656c656d64656661756c74732e76312e4c656166120b0a096c6561662d64666c7412230a14656c656d64656661756c74732e76312e4c656166120b0a096c6561662d64666c74		OK	0a160a14656c656d64656661756c74732e76312e4c65616612160a14656c656d64656661756c74732e76312e4c656166	
+element-defaults-test.binpb	elemdefaults.v1.R	items = [{ pick_i = 1 }] by_key = { "k": { leaves = [{}] } }	OK	0a1712096974656d2d64666c7442080a06772d64666c74380112320a016b122d12096974656d2d64666c74220b0a096c6561662d64666c7442080a06772d64666c7432097069636b2d64666c74		OK	0a02380112070a016b12022200	
+element-defaults-test.binpb	elemdefaults.v1.Tree	kids = [{ kids = [{ leaf {} }] }]	OK	0a0f0a0d1a0b0a096c6561662d64666c74		OK	0a040a021a00	
+element-defaults-test.binpb	elemdefaults.v1.Tree	named = { "a": { kids = [{}] } }	OK	12070a016112020a00		OK	12070a016112020a00	
+keyed-entry-name-test.binpb	keyedname.v1.P	kd = [{}]	OK	0a060a0464666c74		OK	0a00	
+keyed-entry-name-test.binpb	keyedname.v1.P	kr = [{}]	ERR	1:1: required field "kr[0].name" is absent		OK	1200	
+keyed-entry-name-test.binpb	keyedname.v1.P	kr { alpha {} }	OK	12070a05616c706861		OK	12070a05616c706861	
+keyed-entry-name-test.binpb	keyedname.v1.P	kd { alpha {} }	OK	0a070a05616c706861		OK	0a070a05616c706861	
+keyed-entry-name-test.binpb	keyedname.v1.P	ko { alpha {} }	OK	1a070a05616c706861		OK	1a070a05616c706861	
+keyed-entry-name-test.binpb	keyedname.v1.P	ko = [{}]	OK	1a0c120a6f746865722d64666c74		OK	1a00	
+keyed-entry-name-test.binpb	keyedname.v1.P	ko = [{ name = "x" }]	OK	1a030a0178		OK	1a030a0178	
+keyed-entry-name-test.binpb	keyedname.v1.P	kn { a { inner = [{}] } }	OK	220b0a016112060a0464666c74		OK	22050a01611200	
+keyed-entry-name-test.binpb	keyedname.v1.P	kn { a { inner { b {} } } }	OK	22080a016112030a0162		OK	22080a016112030a0162	
+keyed-entry-name-test.binpb	keyedname.v1.P	kn = [{ inner = [{}, { name = "x" }] }]	OK	220d12060a0464666c7412030a0178		OK	2207120012030a0178	
+keyed-entry-name-test.binpb	keyedname.v1.P	ko { alpha { other = "x" } }	ERR	1:14: field "other" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "ko"		ERR	1:14: field "other" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "ko"	
+keyed-entry-name-test.binpb	keyedname.v1.P	ko { alpha { other = null } }	ERR	1:14: field "other" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "ko"		ERR	1:14: field "other" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "ko"	
+keyed-entry-name-test.binpb	keyedname.v1.P	ko { alpha { name = "alpha" } }	OK	1a070a05616c706861		OK	1a070a05616c706861	
+keyed-entry-name-test.binpb	keyedname.v1.P	ko { alpha { name = "beta" } }	ERR	1:21: key field "name" = "beta" conflicts with entry name "alpha" in keyed field "ko"		ERR	1:21: key field "name" = "beta" conflicts with entry name "alpha" in keyed field "ko"	
+keyed-entry-name-test.binpb	keyedname.v1.P	km { alpha { detail { label = "x" } } }	ERR	1:14: field "detail" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "km"		ERR	1:14: field "detail" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "km"	
+keyed-entry-name-test.binpb	keyedname.v1.P	km { alpha { detail = null } }	ERR	1:14: field "detail" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "km"		ERR	1:14: field "detail" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "km"	
+keyed-entry-name-test.binpb	keyedname.v1.P	km = [{ detail { label = "x" } }]	OK	32051203120178		OK	32051203120178	
+keyed-entry-name-test.binpb	keyedname.v1.Shadow	items = [{ label = "x" }]	ERR	1:1: required field "name" is absent		OK	1a03120178	
+keyed-entry-name-test.binpb	keyedname.v1.Shadow	name = "r" items = [{ label = "x" }]	OK	0a0172120b736861646f772d64666c741a03120178		OK	0a01721a03120178	
+keyed/keyed.binpb	keyed.v1.Catalog	tags { alpha { name = null } }	ERR	1:16: null on key field "name" conflicts with entry name "alpha" in keyed field "tags"		ERR	1:16: null on key field "name" conflicts with entry name "alpha" in keyed field "tags"	
+keyed/keyed.binpb	keyed.v1.Catalog	tags = [{ name = null }]	OK	1200	tags[0].name	OK	1200	
+keyed/keyed.binpb	keyed.v1.Catalog	tags { alpha {} }	OK	12070a05616c706861		OK	12070a05616c706861	
+keyed/keyed.binpb	keyed.v1.Catalog	tags { alpha { name = "alpha" } }	OK	12070a05616c706861		OK	12070a05616c706861	
+keyed/keyed.binpb	keyed.v1.Catalog	choices { alpha { other = "x" } }	ERR	1:19: field "other" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "choices"		ERR	1:19: field "other" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "choices"	
+keyed/keyed.binpb	keyed.v1.Catalog	choices { alpha { other = null } }	ERR	1:19: field "other" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "choices"		ERR	1:19: field "other" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "choices"	
+keyed/keyed.binpb	keyed.v1.Catalog	choices { alpha {} beta { name = "beta" } } choices = [{ other = "x" }]	OK	0a070a05616c7068610a060a04626574610a03120178		OK	0a070a05616c7068610a060a04626574610a03120178	
+keyed/keyed.binpb	keyed.v1.Catalog	choices = [{ name = null }]	OK	0a00	choices[0].name	OK	0a00	

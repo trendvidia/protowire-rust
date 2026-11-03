@@ -129,6 +129,12 @@ are vendored verbatim from `testdata/` in the spec repo, each run by a
 `prost-reflect` 0.16.5 refuses `syntax = "editions"`, and
 `editions_schemas_still_do_not_load` fails the day that changes.
 
+`tests/presence_oracle.rs` holds defaults, required and keyed entry names
+against protowire-go itself: `testdata/conformance/presence-oracle.tsv` is
+what the reference did with each document of `presence-cases.tsv`. Add a
+document there and run `scripts/gen-presence-oracle.sh`, which needs the
+sibling `../protowire-go`.
+
 ## TS pitfalls that may transfer
 
 - The shared `test.proto` is intentionally NOT modified for port-specific

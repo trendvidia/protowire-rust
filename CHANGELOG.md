@@ -15,6 +15,8 @@ format changes.
 
 - **A named keyed entry can't undo its entry name** ([#82](https://github.com/trendvidia/protowire-rust/issues/82), protowire#480). The entry name binds the key field, so inside a named entry `null` on the key field, and any binding of another member of the key field's oneof, are now decode errors. The sibling case used to replace the key without a word. The anonymous form and an agreeing `name = "alpha"` stay legal.
 
+- **`(pxf.default)` and `(pxf.required)` apply in every message body** ([#80](https://github.com/trendvidia/protowire-rust/issues/80), protowire-go#161, protowire#352). `unmarshal_full` used to stop at repeated and map fields, so annotations inside a list element, keyed entry or map value did nothing. They apply there now, at any depth, and in `@dataset` cells through `bind_row`. A document with a required field missing from an element, which used to decode, is rejected with the element's path (`required field "kr[0].name" is absent`), and an unset field in an element takes its default.
+
 ### Fixed
 
 - **`Presence` reports a keyed entry's name as setting the key field** (protowire-go#214). `kd { alpha {} }` now reports `kd[0].name` as set, nested entries too (`kn[0].inner[0].name`).

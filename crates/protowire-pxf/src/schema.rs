@@ -291,7 +291,7 @@ fn file_violations(fd: &FileDescriptor) -> Arc<[Violation]> {
 // the callers for whom re-walking is noise, having just paid milliseconds
 // to compile. Callers with a fixed schema set never approach the bound.
 // Descriptors are immutable, so a cached result never goes stale.
-const MAX_CACHED_DESCRIPTORS: usize = 4096;
+pub(crate) const MAX_CACHED_DESCRIPTORS: usize = 4096;
 
 /// A cached result together with the descriptor that keeps its key's
 /// address alive and confirms a hit.
