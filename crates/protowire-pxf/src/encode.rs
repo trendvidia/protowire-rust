@@ -22,7 +22,7 @@ use std::collections::HashSet;
 use crate::annotations::find_null_mask_field;
 use crate::bigfloat::format_big_float;
 use crate::bignum::{format_big_int, format_decimal};
-use crate::decode::{shown_key, unmarshal_full, TypeResolver, UnmarshalOptions};
+use crate::decode::{is_secret, shown_key, unmarshal_full, TypeResolver, UnmarshalOptions};
 use crate::errors::PxfError;
 use crate::keyed::{ident_safe_entry_name, key_field};
 use crate::limits::{Limits, MAX_NESTING_DEPTH};
@@ -561,6 +561,15 @@ fn message_shorthand(
         let v = sub.get_field(&inner_fd).into_owned();
         return Some(Ok(scalar_text(&inner_fd.kind(), &v)));
     }
+    // A pxf.Secret is its value's string literal, unless it carries a hint
+    // or fingerprint, which the literal would drop (draft -01 § pxf.Secret).
+    if is_secret(mdesc) && !secret_has_metadata(sub) {
+        let value_fd = mdesc
+            .get_field_by_name("value")
+            .expect("checked by is_secret");
+        let v = sub.get_field(&value_fd).into_owned();
+        return Some(Ok(scalar_text(&Kind::String, &v)));
+    }
     if full == "pxf.BigInt" {
         let abs = bytes_field(sub, "abs");
         let negative = bool_field(sub, "negative");
@@ -603,6 +612,15 @@ fn message_shorthand(
         return Some(format_big_float(&mantissa, exponent, prec, negative));
     }
     None
+}
+
+/// Whether a `pxf.Secret` sets a `hint` or a `fingerprint`.
+fn secret_has_metadata(secret: &DynamicMessage) -> bool {
+    ["hint", "fingerprint"].iter().any(|name| {
+        secret
+            .get_field_by_name(name)
+            .is_some_and(|v| v.as_str().is_some_and(|s| !s.is_empty()))
+    })
 }
 
 fn bytes_field(msg: &DynamicMessage, name: &str) -> Vec<u8> {
