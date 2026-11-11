@@ -381,3 +381,71 @@ fn round_trip_decode_encode_decode_preserves_message() {
         "wire mismatch\n{text}"
     );
 }
+
+// ---------------- field order ----------------
+
+/// A message whose declaration order differs from its number order, as the
+/// spec's text case `Annotated.set` has it: a oneof numbered 13 and 14 is
+/// declared before fields 9, 10 and 11. protowire-go writes fields in
+/// declaration order (protoreflect's `Fields()`).
+fn declared_out_of_number_order() -> MessageDescriptor {
+    use prost_types::{
+        field_descriptor_proto::{Label, Type},
+        DescriptorProto, FieldDescriptorProto, FileDescriptorProto, FileDescriptorSet,
+        OneofDescriptorProto,
+    };
+    let field = |name: &str, number: i32, oneof: Option<i32>| FieldDescriptorProto {
+        name: Some(name.into()),
+        number: Some(number),
+        label: Some(Label::Optional as i32),
+        r#type: Some(Type::Int32 as i32),
+        oneof_index: oneof,
+        ..Default::default()
+    };
+    let file = FileDescriptorProto {
+        name: Some("order.proto".into()),
+        package: Some("order.v1".into()),
+        syntax: Some("proto3".into()),
+        message_type: vec![DescriptorProto {
+            name: Some("M".into()),
+            field: vec![
+                field("first", 1, None),
+                field("a", 13, Some(0)),
+                field("other", 14, Some(0)),
+                field("plain", 9, None),
+                field("last", 2, None),
+            ],
+            oneof_decl: vec![OneofDescriptorProto {
+                name: Some("o".into()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+        ..Default::default()
+    };
+    let fds = FileDescriptorSet { file: vec![file] };
+    DescriptorPool::from_file_descriptor_set(fds)
+        .unwrap()
+        .get_message_by_name("order.v1.M")
+        .unwrap()
+}
+
+#[test]
+fn fields_are_written_in_declaration_order() {
+    let d = declared_out_of_number_order();
+    let m = unmarshal(
+        "last = 5\nplain = 4\na = 3\nfirst = 1\n",
+        &d,
+        UnmarshalOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        marshal(&m, &d, MarshalOptions::default()).unwrap(),
+        "first = 1\na = 3\nplain = 4\nlast = 5\n"
+    );
+    // The binary form stays in number order.
+    assert_eq!(
+        m.encode_to_vec(),
+        vec![0x08, 0x01, 0x10, 0x05, 0x48, 0x04, 0x68, 0x03]
+    );
+}

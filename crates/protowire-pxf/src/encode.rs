@@ -240,7 +240,7 @@ impl<'a> Encoder<'a> {
         if !self.check_depth(level) {
             return;
         }
-        for fd in desc.fields() {
+        for fd in declaration_order(&desc) {
             if let Some(null_fd) = &self.null_mask_fd {
                 if self.path_prefix.is_empty() && fd.number() == null_fd.number() {
                     continue;
@@ -894,6 +894,17 @@ fn format_float_f64(f: f64) -> String {
         return if f > 0.0 { "inf" } else { "-inf" }.to_string();
     }
     format!("{}", f)
+}
+
+/// `desc`'s fields in the order the schema declares them, as protowire-go
+/// writes them (protoreflect's `Fields()`). prost-reflect's `fields()` goes
+/// in number order, which moves a field declared after a higher-numbered
+/// one, such as a oneof numbered past the fields that follow it.
+fn declaration_order(desc: &MessageDescriptor) -> impl Iterator<Item = FieldDescriptor> + '_ {
+    desc.descriptor_proto()
+        .field
+        .iter()
+        .filter_map(|f| desc.get_field(f.number() as u32))
 }
 
 const B64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
