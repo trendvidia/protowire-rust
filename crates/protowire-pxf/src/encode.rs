@@ -258,7 +258,7 @@ impl<'a> Encoder<'a> {
                 continue;
             }
 
-            if !self.emit_defaults && !parent.has_field(&fd) {
+            if !self.emit_defaults && !parent.has_field(&fd) && !is_negative_zero(parent, &fd) {
                 continue;
             }
 
@@ -894,6 +894,22 @@ fn format_float_f64(f: f64) -> String {
         return if f > 0.0 { "inf" } else { "-inf" }.to_string();
     }
     go_shortest_g(&format!("{f:e}"))
+}
+
+/// Whether `fd` holds a float or double negative zero that `has_field`
+/// reports unset. prost-reflect compares a proto3 scalar with its default
+/// by `==`, and `-0.0 == 0.0`, so a decoded `-0` looks absent although the
+/// message keeps it. protobuf-go compares the bits, so protowire-go writes
+/// `f = -0`; leaving it out would read back as `+0`.
+fn is_negative_zero(parent: &DynamicMessage, fd: &FieldDescriptor) -> bool {
+    if fd.is_list() || fd.is_map() {
+        return false;
+    }
+    match parent.get_field(fd).as_ref() {
+        Value::F64(v) => *v == 0.0 && v.is_sign_negative(),
+        Value::F32(v) => *v == 0.0 && v.is_sign_negative(),
+        _ => false,
+    }
 }
 
 /// Lays out a finite float as Go's `strconv.FormatFloat(f, 'g', -1, bits)`
