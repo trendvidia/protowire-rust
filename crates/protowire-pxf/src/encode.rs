@@ -107,7 +107,7 @@ impl Fault {
                 format!("pxf: nesting depth exceeds MaxNestingDepth={limit}")
             }
             Fault::RequiredUnset(field) => {
-                format!("{field} is unset, and the field is (pxf.required)")
+                format!("pxf: {field} is unset, and the field is (pxf.required)")
             }
         }
     }
