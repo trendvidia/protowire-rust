@@ -52,7 +52,6 @@ use protowire_pb::wire::{Reader, Result as PbResult, WireType, Writer};
 use protowire_pb::{
     read_message, unmarshal_with as pb_unmarshal, write_map_entry, write_message, Message,
 };
-use protowire_pxf::bigfloat::{big_float_digits, big_float_value_exponent};
 use protowire_pxf::{unmarshal as pxf_unmarshal, UnmarshalOptions};
 
 // --- Hand-mirrored Go-style message impls for adversarial.proto -------------
@@ -255,113 +254,16 @@ impl Message for BigIntHolder {
     }
 }
 
-// Mirror of pxf/bignum.proto (protowire#279): the arbitrary-precision
-// carriers, so the corpus can prove the digit cap on a field only the cap
-// rejects, and bound Decimal.scale on the PB wire.
-
-#[derive(Default, Debug)]
-struct BigIntMsg {
-    abs: Vec<u8>,
-    negative: bool,
-}
-impl Message for BigIntMsg {
-    fn encode_to(&self, w: &mut Writer) {
-        if !self.abs.is_empty() {
-            w.tag(1, WireType::LengthDelimited);
-            w.bytes(&self.abs);
-        }
-        if self.negative {
-            w.tag(2, WireType::Varint);
-            w.varint(1);
-        }
-    }
-    fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> PbResult<()> {
-        match num {
-            1 => self.abs = r.bytes()?,
-            2 => self.negative = r.varint()? != 0,
-            _ => r.skip(wt)?,
-        }
-        Ok(())
-    }
-}
-
-#[derive(Default, Debug)]
-struct DecimalMsg {
-    unscaled: Vec<u8>,
-    scale: i32,
-    negative: bool,
-}
-impl Message for DecimalMsg {
-    fn encode_to(&self, w: &mut Writer) {
-        if !self.unscaled.is_empty() {
-            w.tag(1, WireType::LengthDelimited);
-            w.bytes(&self.unscaled);
-        }
-        if self.scale != 0 {
-            w.tag(2, WireType::Varint);
-            w.varint_i32(self.scale);
-        }
-        if self.negative {
-            w.tag(3, WireType::Varint);
-            w.varint(1);
-        }
-    }
-    fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> PbResult<()> {
-        match num {
-            1 => self.unscaled = r.bytes()?,
-            // proto3 int32: a negative scale arrives as a 10-byte
-            // sign-extended varint; truncating to i32 recovers it.
-            2 => self.scale = r.varint()? as i32,
-            3 => self.negative = r.varint()? != 0,
-            _ => r.skip(wt)?,
-        }
-        Ok(())
-    }
-}
-
-#[derive(Default, Debug)]
-struct BigFloatMsg {
-    mantissa: Vec<u8>,
-    exponent: i32,
-    prec: u32,
-    negative: bool,
-}
-impl Message for BigFloatMsg {
-    fn encode_to(&self, w: &mut Writer) {
-        if !self.mantissa.is_empty() {
-            w.tag(1, WireType::LengthDelimited);
-            w.bytes(&self.mantissa);
-        }
-        if self.exponent != 0 {
-            w.tag(2, WireType::Varint);
-            w.varint_i32(self.exponent);
-        }
-        if self.prec != 0 {
-            w.tag(3, WireType::Varint);
-            w.varint(u64::from(self.prec));
-        }
-        if self.negative {
-            w.tag(4, WireType::Varint);
-            w.varint(1);
-        }
-    }
-    fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> PbResult<()> {
-        match num {
-            1 => self.mantissa = r.bytes()?,
-            2 => self.exponent = r.varint()? as i32,
-            3 => self.prec = r.varint()? as u32,
-            4 => self.negative = r.varint()? != 0,
-            _ => r.skip(wt)?,
-        }
-        Ok(())
-    }
-}
+// adversarial.v1.BigNumHolder, through protowire-pb's big-number types
+// (#142): reading one checks Decimal.scale and BigFloat's prec and binary
+// exponent under the call's Limits, as protowire-go's pb.Unmarshal does, so
+// the corpus holds the library to the bounds rather than this harness.
 
 #[derive(Default, Debug)]
 struct BigNumHolder {
-    big_int: Option<BigIntMsg>,
-    decimal: Option<DecimalMsg>,
-    big_float: Option<BigFloatMsg>,
+    big_int: Option<protowire_pb::BigInt>,
+    decimal: Option<protowire_pb::Decimal>,
+    big_float: Option<protowire_pb::BigFloat>,
 }
 impl Message for BigNumHolder {
     fn encode_to(&self, w: &mut Writer) {
@@ -381,52 +283,6 @@ impl Message for BigNumHolder {
             2 => self.decimal = Some(read_message(r)?),
             3 => self.big_float = Some(read_message(r)?),
             _ => r.skip(wt)?,
-        }
-        Ok(())
-    }
-}
-
-impl BigNumHolder {
-    /// HARDENING § Mandatory limits: `pxf.Decimal.scale` is a digit count
-    /// and a decoder that materialises the value computes 10^scale from
-    /// it, so its magnitude is bound by MaxNumericLiteralDigits on both
-    /// signs before anything is materialised. This port's `pb` layer
-    /// carries no Decimal type and materialises nothing; the bound is
-    /// applied here, where a consumer would first read the value.
-    /// A `BigFloat`'s prec is bound by the digits it implies against
-    /// MaxNumericLiteralDigits, as a precision suffix is (protowire#499),
-    /// and its binary exponent by MaxBigFloatExponent (protowire#281); a
-    /// precision of zero is zero, whatever the other fields say, so it has
-    /// neither.
-    fn check_limits(&self, max_digits: usize, max_exponent: usize) -> Result<(), String> {
-        if let Some(d) = &self.decimal {
-            let max = max_digits as i64;
-            if i64::from(d.scale) > max || i64::from(d.scale) < -max {
-                return Err(format!(
-                    "pxf.Decimal scale {} exceeds MaxNumericLiteralDigits={}",
-                    d.scale, max
-                ));
-            }
-        }
-        if let Some(f) = self.big_float.as_ref().filter(|f| f.prec != 0) {
-            // prec is bounded as a literal's precision suffix is, by the
-            // digits its literal needs (prec 13603 at the default), before
-            // anything is built: a producer widens the mantissa to prec
-            // bits, so 11 bytes at prec 2^31-1 become 256 MiB (#87,
-            // protowire#499). A zero is bounded too; it carries its prec.
-            let digits = big_float_digits(f.prec);
-            if digits > max_digits as u64 {
-                return Err(format!(
-                    "pxf.BigFloat prec {} implies {digits} digits; MaxNumericLiteralDigits={max_digits}",
-                    f.prec
-                ));
-            }
-            let exponent = big_float_value_exponent(&f.mantissa, f.exponent);
-            if let Some(e) = exponent.filter(|e| e.unsigned_abs() > max_exponent as u64) {
-                return Err(format!(
-                    "pxf.BigFloat binary exponent {e} exceeds MaxBigFloatExponent={max_exponent}"
-                ));
-            }
         }
         Ok(())
     }
@@ -498,6 +354,12 @@ impl LimitFlags {
             max_message_size: self.max_message_size.unwrap_or(d.max_message_size),
             max_nesting_depth: self.max_nesting_depth.unwrap_or(d.max_nesting_depth),
             max_repeated_count: self.max_repeated_count.unwrap_or(d.max_repeated_count),
+            max_numeric_literal_digits: self
+                .max_numeric_literal_digits
+                .unwrap_or(d.max_numeric_literal_digits),
+            max_big_float_exponent: self
+                .max_big_float_exponent
+                .unwrap_or(d.max_big_float_exponent),
         }
     }
 
@@ -507,16 +369,6 @@ impl LimitFlags {
             max_message_size: self.max_message_size.unwrap_or(d.max_message_size),
             max_repeated_count: self.max_repeated_count.unwrap_or(d.max_repeated_count),
         }
-    }
-
-    fn max_big_float_exponent(&self) -> usize {
-        self.max_big_float_exponent
-            .unwrap_or(protowire_pxf::MAX_BIG_FLOAT_EXPONENT)
-    }
-
-    fn max_digits(&self) -> usize {
-        self.max_numeric_literal_digits
-            .unwrap_or(protowire_pxf::MAX_NUMERIC_LITERAL_DIGITS)
     }
 }
 
@@ -871,11 +723,8 @@ fn pb_decode(input: &Path, schema: &str, limits: &LimitFlags) -> Result<(), Stri
             .map(|_| ())
             .map_err(|e| format!("pb: {e}")),
         "adversarial.v1.BigNumHolder" => pb_unmarshal::<BigNumHolder>(&bytes, lim)
-            .map_err(|e| format!("pb: {e}"))
-            .and_then(|m| {
-                m.check_limits(limits.max_digits(), limits.max_big_float_exponent())
-                    .map_err(|e| format!("pb: {e}"))
-            }),
+            .map(|_| ())
+            .map_err(|e| format!("pb: {e}")),
         other => Err(format!("unknown schema for pb: {other}")),
     }
 }

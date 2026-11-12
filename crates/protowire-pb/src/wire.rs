@@ -27,6 +27,17 @@ pub const MAX_MESSAGE_SIZE: usize = 64 << 20;
 /// [`Reader::check_repeated`]) rather than pushing directly.
 pub const MAX_REPEATED_COUNT: usize = MAX_MESSAGE_SIZE;
 
+/// HARDENING.md `MaxNumericLiteralDigits` — bounds the magnitude of a
+/// `pxf.Decimal`'s scale (a digit count) and the digits a `pxf.BigFloat`'s
+/// prec implies (prec 13603 at the default), as protowire-go's
+/// `pb.MaxNumericLiteralDigits` does (protowire#279, #499).
+pub const MAX_NUMERIC_LITERAL_DIGITS: usize = 4096;
+
+/// HARDENING.md `MaxBigFloatExponent` — bounds the magnitude of a
+/// `pxf.BigFloat` value's binary exponent, as protowire-go's
+/// `pb.MaxBigFloatExponent` does (protowire#281).
+pub const MAX_BIG_FLOAT_EXPONENT: usize = 16384;
+
 /// The per-call limits of one decode (draft -01 § Mandatory Limits: every
 /// limit but `MaxVarintBytes` is "configurable per call by the calling
 /// application"). The default is the HARDENING constants; lower a field
@@ -40,6 +51,11 @@ pub struct Limits {
     pub max_nesting_depth: usize,
     /// [`MAX_REPEATED_COUNT`]: elements of a repeated or map field.
     pub max_repeated_count: usize,
+    /// [`MAX_NUMERIC_LITERAL_DIGITS`]: a `pxf.Decimal`'s scale and the
+    /// digits a `pxf.BigFloat`'s prec implies ([`crate::big`]).
+    pub max_numeric_literal_digits: usize,
+    /// [`MAX_BIG_FLOAT_EXPONENT`]: a `pxf.BigFloat` value's binary exponent.
+    pub max_big_float_exponent: usize,
 }
 
 impl Default for Limits {
@@ -48,6 +64,8 @@ impl Default for Limits {
             max_message_size: MAX_MESSAGE_SIZE,
             max_nesting_depth: MAX_NESTING_DEPTH,
             max_repeated_count: MAX_REPEATED_COUNT,
+            max_numeric_literal_digits: MAX_NUMERIC_LITERAL_DIGITS,
+            max_big_float_exponent: MAX_BIG_FLOAT_EXPONENT,
         }
     }
 }
@@ -82,6 +100,10 @@ pub enum Error {
     MessageTooLarge { len: usize, max: usize },
     #[error("repeated field exceeds MaxRepeatedCount={0}")]
     RepeatedCountExceeded(usize),
+    /// A big number ([`crate::big`]) that a limit refuses, or that has no
+    /// wire form; the text is protowire-go's.
+    #[error("{0}")]
+    BigNumber(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -125,6 +147,9 @@ pub struct Writer {
     depth: usize,
     max_depth: usize,
     exceeded: bool,
+    /// The first value refused for something other than its depth, which
+    /// [`Writer::finish_checked`] returns.
+    refused: Option<Error>,
 }
 
 impl Default for Writer {
@@ -152,6 +177,7 @@ impl Writer {
             depth: 0,
             max_depth: max_nesting_depth,
             exceeded: false,
+            refused: None,
         }
     }
 
@@ -167,17 +193,29 @@ impl Writer {
             depth: self.depth + 1,
             max_depth: self.max_depth,
             exceeded: false,
+            refused: None,
         })
     }
 
     /// The bytes of a nested writer, or `None`, with the refusal carried
     /// up, when something under it went past the limit.
     pub(crate) fn finish_nested(&mut self, inner: Writer) -> Option<Vec<u8>> {
+        if let Some(err) = inner.refused {
+            self.refused.get_or_insert(err);
+        }
         if inner.exceeded {
             self.exceeded = true;
             return None;
         }
         Some(inner.buf)
+    }
+
+    /// Refuse the message being written: [`Writer::finish_checked`] (and
+    /// [`crate::marshal`]) return `err`, the first one recorded, instead of
+    /// the bytes. For a value a `Message` impl cannot write, such as a
+    /// [`crate::big::Decimal`] whose scale a reader would refuse.
+    pub fn refuse(&mut self, err: Error) {
+        self.refused.get_or_insert(err);
     }
 
     /// Whether a value nested past the limit was refused. The bytes
@@ -192,9 +230,13 @@ impl Writer {
         self.buf
     }
 
-    /// The bytes written, or [`Error::DepthExceeded`] if a value nested
+    /// The bytes written, or the refusal: the first error passed to
+    /// [`Writer::refuse`], or [`Error::DepthExceeded`] if a value nested
     /// past the limit was refused.
     pub fn finish_checked(self) -> Result<Vec<u8>> {
+        if let Some(err) = self.refused {
+            return Err(err);
+        }
         if self.exceeded {
             return Err(Error::DepthExceeded(self.max_depth));
         }
