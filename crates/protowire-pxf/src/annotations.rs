@@ -149,11 +149,13 @@ pub fn get_key(fd: &FieldDescriptor) -> Option<String> {
 
 /// Returns the `_null` field if the message has one of type
 /// `google.protobuf.FieldMask`. Both the field name and the message type
-/// must match — a stray `_null` of any other type is ignored.
+/// must match — a stray `_null` of any other type is ignored, and so is one
+/// whose `FieldMask` lacks the type's `repeated string paths` (draft -01
+/// §wkt-shapes).
 pub fn find_null_mask_field(desc: &MessageDescriptor) -> Option<FieldDescriptor> {
     let fd = desc.get_field_by_name("_null")?;
     if let Kind::Message(inner) = fd.kind() {
-        if inner.full_name() == "google.protobuf.FieldMask" {
+        if crate::wkt::dispatch_name(&inner) == "google.protobuf.FieldMask" {
             return Some(fd);
         }
     }

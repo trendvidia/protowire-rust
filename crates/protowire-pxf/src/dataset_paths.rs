@@ -148,7 +148,7 @@ pub(crate) fn check_column_paths(
                     "@dataset column {c:?}: {at:?} is not a message field"
                 ));
             };
-            if is_literal_type(inner.full_name()) {
+            if is_literal_type(crate::wkt::dispatch_name(&inner)) {
                 return Some(format!(
                     "@dataset column {c:?}: {at:?} is a {}, which is written as a literal; a column path cannot go into it (draft §3.4.4)",
                     inner.full_name()

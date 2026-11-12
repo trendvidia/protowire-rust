@@ -1,0 +1,695 @@
+# What protowire-go at f2baa11 does with each case of wkt-shape-cases.tsv.
+# Produced by scripts/gen-wkt-shape-oracle.sh. Do not edit.
+# Rows: id, op, document, verdict. fds: the case's descriptor set in hex.
+# validate: the count and the violations, "[kind] text" joined by " | ".
+# unmarshal, unmarshal-skip, full, full-skip (Unmarshal or UnmarshalFull, with
+# SkipValidate or not): OK, pb hex, sorted null paths; or ERR or PANIC, the text.
+# marshal: H with each message field holding an empty message; OK and the text,
+# or ERR or PANIC and the text. Tabs, newlines and backslashes are escaped.
+secret-other	fds		0ad4010a07702e70726f746f1203707866221e0a0653656372657412140a056f7468657218012001280952056f74686572229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
+secret-other	validate		1	[well-known type shape] p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)
+secret-other	unmarshal	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+secret-other	unmarshal-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+secret-other	full	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+secret-other	full-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+secret-other	unmarshal	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+secret-other	unmarshal-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+secret-other	full	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+secret-other	full-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+secret-other	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+secret-other	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-other	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+secret-other	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-other	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+secret-int	fds		0ad4010a07702e70726f746f1203707866221e0a0653656372657412140a0576616c7565180120012805520576616c7565229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
+secret-int	validate		1	[well-known type shape] p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)
+secret-int	unmarshal	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-int	unmarshal-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+secret-int	full	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-int	full-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+secret-int	unmarshal	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-int	unmarshal-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+secret-int	full	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-int	full-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+secret-int	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-int	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-int	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-int	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-int	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+secret-repeated	fds		0ad4010a07702e70726f746f1203707866221e0a0653656372657412140a0576616c7565180120032809520576616c7565229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
+secret-repeated	validate		1	[well-known type shape] p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)
+secret-repeated	unmarshal	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)	
+secret-repeated	unmarshal-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+secret-repeated	full	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)	
+secret-repeated	full-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+secret-repeated	unmarshal	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)	
+secret-repeated	unmarshal-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+secret-repeated	full	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)	
+secret-repeated	full-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+secret-repeated	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)	
+secret-repeated	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-repeated	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)	
+secret-repeated	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-repeated	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+secret-hint-int	fds		0ae8010a07702e70726f746f120370786622320a0653656372657412140a0576616c7565180120012809520576616c756512120a0468696e74180220012805520468696e74229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
+secret-hint-int	validate		1	[well-known type shape] p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)
+secret-hint-int	unmarshal	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-hint-int	unmarshal-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+secret-hint-int	full	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-hint-int	full-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+secret-hint-int	unmarshal	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-hint-int	unmarshal-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+secret-hint-int	full	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-hint-int	full-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+secret-hint-int	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-hint-int	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-hint-int	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)	
+secret-hint-int	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-hint-int	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+secret-fingerprint-bytes	fds		0af6010a07702e70726f746f120370786622400a0653656372657412140a0576616c7565180120012809520576616c756512200a0b66696e6765727072696e7418032001280c520b66696e6765727072696e74229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
+secret-fingerprint-bytes	validate		1	[well-known type shape] p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)
+secret-fingerprint-bytes	unmarshal	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)	
+secret-fingerprint-bytes	unmarshal-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+secret-fingerprint-bytes	full	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)	
+secret-fingerprint-bytes	full-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+secret-fingerprint-bytes	unmarshal	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)	
+secret-fingerprint-bytes	unmarshal-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+secret-fingerprint-bytes	full	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)	
+secret-fingerprint-bytes	full-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+secret-fingerprint-bytes	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)	
+secret-fingerprint-bytes	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-fingerprint-bytes	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)	
+secret-fingerprint-bytes	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-fingerprint-bytes	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+bigint-other	fds		0ad4010a07702e70726f746f1203707866221e0a06426967496e7412140a056f7468657218012001280952056f74686572229b010a0148121b0a02707718012001280b320b2e7078662e426967496e745202707712190a016c18022003280b320b2e7078662e426967496e7452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e426967496e74520576616c75653a023801620670726f746f33
+bigint-other	validate		1	[well-known type shape] p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "abs" (draft -01 §wkt-shapes)
+bigint-other	unmarshal	pw = 5	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "abs" (draft -01 §wkt-shapes)	
+bigint-other	unmarshal-skip	pw = 5	ERR	1:6: expected '{' for message field "pw", got integer ("5")	
+bigint-other	full	pw = 5	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "abs" (draft -01 §wkt-shapes)	
+bigint-other	full-skip	pw = 5	ERR	1:6: expected '{' for message field "pw", got integer ("5")	
+bigint-other	unmarshal	l = [ 5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "abs" (draft -01 §wkt-shapes)	
+bigint-other	unmarshal-skip	l = [ 5 ]	ERR	1:7: expected '{' for repeated message element, got integer ("5")	
+bigint-other	full	l = [ 5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "abs" (draft -01 §wkt-shapes)	
+bigint-other	full-skip	l = [ 5 ]	ERR	1:7: expected '{' for repeated message element, got integer ("5")	
+bigint-other	unmarshal	m = { "k": 5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "abs" (draft -01 §wkt-shapes)	
+bigint-other	unmarshal-skip	m = { "k": 5 }	ERR	1:12: expected '{' for map message value, got integer ("5")	
+bigint-other	full	m = { "k": 5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "abs" (draft -01 §wkt-shapes)	
+bigint-other	full-skip	m = { "k": 5 }	ERR	1:12: expected '{' for map message value, got integer ("5")	
+bigint-other	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+bigint-abs-int	fds		0aec010a07702e70726f746f120370786622360a06426967496e7412100a036162731801200128055203616273121a0a086e6567617469766518022001280852086e65676174697665229b010a0148121b0a02707718012001280b320b2e7078662e426967496e745202707712190a016c18022003280b320b2e7078662e426967496e7452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e426967496e74520576616c75653a023801620670726f746f33
+bigint-abs-int	validate		1	[well-known type shape] p.proto: message "pxf.BigInt" redefines a well-known type: field "abs" is int32, and must be bytes (draft -01 §wkt-shapes)
+bigint-abs-int	unmarshal	pw = 5	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: field "abs" is int32, and must be bytes (draft -01 §wkt-shapes)	
+bigint-abs-int	unmarshal-skip	pw = 5	ERR	1:6: expected '{' for message field "pw", got integer ("5")	
+bigint-abs-int	full	pw = 5	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: field "abs" is int32, and must be bytes (draft -01 §wkt-shapes)	
+bigint-abs-int	full-skip	pw = 5	ERR	1:6: expected '{' for message field "pw", got integer ("5")	
+bigint-abs-int	unmarshal	l = [ 5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: field "abs" is int32, and must be bytes (draft -01 §wkt-shapes)	
+bigint-abs-int	unmarshal-skip	l = [ 5 ]	ERR	1:7: expected '{' for repeated message element, got integer ("5")	
+bigint-abs-int	full	l = [ 5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: field "abs" is int32, and must be bytes (draft -01 §wkt-shapes)	
+bigint-abs-int	full-skip	l = [ 5 ]	ERR	1:7: expected '{' for repeated message element, got integer ("5")	
+bigint-abs-int	unmarshal	m = { "k": 5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: field "abs" is int32, and must be bytes (draft -01 §wkt-shapes)	
+bigint-abs-int	unmarshal-skip	m = { "k": 5 }	ERR	1:12: expected '{' for map message value, got integer ("5")	
+bigint-abs-int	full	m = { "k": 5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: field "abs" is int32, and must be bytes (draft -01 §wkt-shapes)	
+bigint-abs-int	full-skip	m = { "k": 5 }	ERR	1:12: expected '{' for map message value, got integer ("5")	
+bigint-abs-int	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+bigint-no-negative	fds		0ad0010a07702e70726f746f1203707866221a0a06426967496e7412100a0361627318012001280c5203616273229b010a0148121b0a02707718012001280b320b2e7078662e426967496e745202707712190a016c18022003280b320b2e7078662e426967496e7452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e426967496e74520576616c75653a023801620670726f746f33
+bigint-no-negative	validate		1	[well-known type shape] p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "negative" (draft -01 §wkt-shapes)
+bigint-no-negative	unmarshal	pw = 5	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "negative" (draft -01 §wkt-shapes)	
+bigint-no-negative	unmarshal-skip	pw = 5	ERR	1:6: expected '{' for message field "pw", got integer ("5")	
+bigint-no-negative	full	pw = 5	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "negative" (draft -01 §wkt-shapes)	
+bigint-no-negative	full-skip	pw = 5	ERR	1:6: expected '{' for message field "pw", got integer ("5")	
+bigint-no-negative	unmarshal	l = [ 5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "negative" (draft -01 §wkt-shapes)	
+bigint-no-negative	unmarshal-skip	l = [ 5 ]	ERR	1:7: expected '{' for repeated message element, got integer ("5")	
+bigint-no-negative	full	l = [ 5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "negative" (draft -01 §wkt-shapes)	
+bigint-no-negative	full-skip	l = [ 5 ]	ERR	1:7: expected '{' for repeated message element, got integer ("5")	
+bigint-no-negative	unmarshal	m = { "k": 5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "negative" (draft -01 §wkt-shapes)	
+bigint-no-negative	unmarshal-skip	m = { "k": 5 }	ERR	1:12: expected '{' for map message value, got integer ("5")	
+bigint-no-negative	full	m = { "k": 5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "negative" (draft -01 §wkt-shapes)	
+bigint-no-negative	full-skip	m = { "k": 5 }	ERR	1:12: expected '{' for map message value, got integer ("5")	
+bigint-no-negative	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+decimal-other	fds		0ad8010a07702e70726f746f1203707866221f0a07446563696d616c12140a056f7468657218012001280952056f74686572229e010a0148121c0a02707718012001280b320c2e7078662e446563696d616c52027077121a0a016c18022003280b320c2e7078662e446563696d616c52016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a420a064d456e74727912100a036b657918012001280952036b657912220a0576616c756518022001280b320c2e7078662e446563696d616c520576616c75653a023801620670726f746f33
+decimal-other	validate		1	[well-known type shape] p.proto: message "pxf.Decimal" redefines a well-known type: it has no field "unscaled" (draft -01 §wkt-shapes)
+decimal-other	unmarshal	pw = 1.5	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: it has no field "unscaled" (draft -01 §wkt-shapes)	
+decimal-other	unmarshal-skip	pw = 1.5	ERR	1:6: expected '{' for message field "pw", got float ("1.5")	
+decimal-other	full	pw = 1.5	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: it has no field "unscaled" (draft -01 §wkt-shapes)	
+decimal-other	full-skip	pw = 1.5	ERR	1:6: expected '{' for message field "pw", got float ("1.5")	
+decimal-other	unmarshal	l = [ 1.5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: it has no field "unscaled" (draft -01 §wkt-shapes)	
+decimal-other	unmarshal-skip	l = [ 1.5 ]	ERR	1:7: expected '{' for repeated message element, got float ("1.5")	
+decimal-other	full	l = [ 1.5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: it has no field "unscaled" (draft -01 §wkt-shapes)	
+decimal-other	full-skip	l = [ 1.5 ]	ERR	1:7: expected '{' for repeated message element, got float ("1.5")	
+decimal-other	unmarshal	m = { "k": 1.5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: it has no field "unscaled" (draft -01 §wkt-shapes)	
+decimal-other	unmarshal-skip	m = { "k": 1.5 }	ERR	1:12: expected '{' for map message value, got float ("1.5")	
+decimal-other	full	m = { "k": 1.5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: it has no field "unscaled" (draft -01 §wkt-shapes)	
+decimal-other	full-skip	m = { "k": 1.5 }	ERR	1:12: expected '{' for map message value, got float ("1.5")	
+decimal-other	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+decimal-scale-int64	fds		0a90020a07702e70726f746f120370786622570a07446563696d616c121a0a08756e7363616c656418012001280c5208756e7363616c656412140a057363616c6518022001280352057363616c65121a0a086e6567617469766518032001280852086e65676174697665229e010a0148121c0a02707718012001280b320c2e7078662e446563696d616c52027077121a0a016c18022003280b320c2e7078662e446563696d616c52016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a420a064d456e74727912100a036b657918012001280952036b657912220a0576616c756518022001280b320c2e7078662e446563696d616c520576616c75653a023801620670726f746f33
+decimal-scale-int64	validate		1	[well-known type shape] p.proto: message "pxf.Decimal" redefines a well-known type: field "scale" is int64, and must be int32 (draft -01 §wkt-shapes)
+decimal-scale-int64	unmarshal	pw = 1.5	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: field "scale" is int64, and must be int32 (draft -01 §wkt-shapes)	
+decimal-scale-int64	unmarshal-skip	pw = 1.5	ERR	1:6: expected '{' for message field "pw", got float ("1.5")	
+decimal-scale-int64	full	pw = 1.5	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: field "scale" is int64, and must be int32 (draft -01 §wkt-shapes)	
+decimal-scale-int64	full-skip	pw = 1.5	ERR	1:6: expected '{' for message field "pw", got float ("1.5")	
+decimal-scale-int64	unmarshal	l = [ 1.5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: field "scale" is int64, and must be int32 (draft -01 §wkt-shapes)	
+decimal-scale-int64	unmarshal-skip	l = [ 1.5 ]	ERR	1:7: expected '{' for repeated message element, got float ("1.5")	
+decimal-scale-int64	full	l = [ 1.5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: field "scale" is int64, and must be int32 (draft -01 §wkt-shapes)	
+decimal-scale-int64	full-skip	l = [ 1.5 ]	ERR	1:7: expected '{' for repeated message element, got float ("1.5")	
+decimal-scale-int64	unmarshal	m = { "k": 1.5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: field "scale" is int64, and must be int32 (draft -01 §wkt-shapes)	
+decimal-scale-int64	unmarshal-skip	m = { "k": 1.5 }	ERR	1:12: expected '{' for map message value, got float ("1.5")	
+decimal-scale-int64	full	m = { "k": 1.5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.Decimal" redefines a well-known type: field "scale" is int64, and must be int32 (draft -01 §wkt-shapes)	
+decimal-scale-int64	full-skip	m = { "k": 1.5 }	ERR	1:12: expected '{' for map message value, got float ("1.5")	
+decimal-scale-int64	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+bigfloat-other	fds		0adc010a07702e70726f746f120370786622200a08426967466c6f617412140a056f7468657218012001280952056f7468657222a1010a0148121d0a02707718012001280b320d2e7078662e426967466c6f617452027077121b0a016c18022003280b320d2e7078662e426967466c6f617452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a430a064d456e74727912100a036b657918012001280952036b657912230a0576616c756518022001280b320d2e7078662e426967466c6f6174520576616c75653a023801620670726f746f33
+bigfloat-other	validate		1	[well-known type shape] p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "mantissa" (draft -01 §wkt-shapes)
+bigfloat-other	unmarshal	pw = 1.5	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "mantissa" (draft -01 §wkt-shapes)	
+bigfloat-other	unmarshal-skip	pw = 1.5	ERR	1:6: expected '{' for message field "pw", got float ("1.5")	
+bigfloat-other	full	pw = 1.5	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "mantissa" (draft -01 §wkt-shapes)	
+bigfloat-other	full-skip	pw = 1.5	ERR	1:6: expected '{' for message field "pw", got float ("1.5")	
+bigfloat-other	unmarshal	l = [ 1.5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "mantissa" (draft -01 §wkt-shapes)	
+bigfloat-other	unmarshal-skip	l = [ 1.5 ]	ERR	1:7: expected '{' for repeated message element, got float ("1.5")	
+bigfloat-other	full	l = [ 1.5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "mantissa" (draft -01 §wkt-shapes)	
+bigfloat-other	full-skip	l = [ 1.5 ]	ERR	1:7: expected '{' for repeated message element, got float ("1.5")	
+bigfloat-other	unmarshal	m = { "k": 1.5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "mantissa" (draft -01 §wkt-shapes)	
+bigfloat-other	unmarshal-skip	m = { "k": 1.5 }	ERR	1:12: expected '{' for map message value, got float ("1.5")	
+bigfloat-other	full	m = { "k": 1.5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "mantissa" (draft -01 §wkt-shapes)	
+bigfloat-other	full-skip	m = { "k": 1.5 }	ERR	1:12: expected '{' for map message value, got float ("1.5")	
+bigfloat-other	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+bigfloat-no-prec	fds		0a9a020a07702e70726f746f1203707866225e0a08426967466c6f6174121a0a086d616e746973736118012001280c52086d616e7469737361121a0a086578706f6e656e7418022001280552086578706f6e656e74121a0a086e6567617469766518042001280852086e6567617469766522a1010a0148121d0a02707718012001280b320d2e7078662e426967466c6f617452027077121b0a016c18022003280b320d2e7078662e426967466c6f617452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a430a064d456e74727912100a036b657918012001280952036b657912230a0576616c756518022001280b320d2e7078662e426967466c6f6174520576616c75653a023801620670726f746f33
+bigfloat-no-prec	validate		1	[well-known type shape] p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "prec" (draft -01 §wkt-shapes)
+bigfloat-no-prec	unmarshal	pw = 1.5	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "prec" (draft -01 §wkt-shapes)	
+bigfloat-no-prec	unmarshal-skip	pw = 1.5	ERR	1:6: expected '{' for message field "pw", got float ("1.5")	
+bigfloat-no-prec	full	pw = 1.5	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "prec" (draft -01 §wkt-shapes)	
+bigfloat-no-prec	full-skip	pw = 1.5	ERR	1:6: expected '{' for message field "pw", got float ("1.5")	
+bigfloat-no-prec	unmarshal	l = [ 1.5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "prec" (draft -01 §wkt-shapes)	
+bigfloat-no-prec	unmarshal-skip	l = [ 1.5 ]	ERR	1:7: expected '{' for repeated message element, got float ("1.5")	
+bigfloat-no-prec	full	l = [ 1.5 ]	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "prec" (draft -01 §wkt-shapes)	
+bigfloat-no-prec	full-skip	l = [ 1.5 ]	ERR	1:7: expected '{' for repeated message element, got float ("1.5")	
+bigfloat-no-prec	unmarshal	m = { "k": 1.5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "prec" (draft -01 §wkt-shapes)	
+bigfloat-no-prec	unmarshal-skip	m = { "k": 1.5 }	ERR	1:12: expected '{' for map message value, got float ("1.5")	
+bigfloat-no-prec	full	m = { "k": 1.5 }	ERR	PXF schema violations:\n  p.proto: message "pxf.BigFloat" redefines a well-known type: it has no field "prec" (draft -01 §wkt-shapes)	
+bigfloat-no-prec	full-skip	m = { "k": 1.5 }	ERR	1:12: expected '{' for map message value, got float ("1.5")	
+bigfloat-no-prec	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+timestamp-other	fds		0a9c020a07702e70726f746f120f676f6f676c652e70726f746f62756622210a0954696d657374616d7012140a056f7468657218012001280952056f7468657222d4010a0148122a0a02707718012001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d705202707712280a016c18022003280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d7052016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a500a064d456e74727912100a036b657918012001280952036b657912300a0576616c756518022001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d70520576616c75653a023801620670726f746f33
+timestamp-other	validate		1	[well-known type shape] p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)
+timestamp-other	unmarshal	pw = 2026-01-01T00:00:00Z	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+timestamp-other	unmarshal-skip	pw = 2026-01-01T00:00:00Z	ERR	1:6: expected '{' for message field "pw", got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-other	full	pw = 2026-01-01T00:00:00Z	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+timestamp-other	full-skip	pw = 2026-01-01T00:00:00Z	ERR	1:6: expected '{' for message field "pw", got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-other	unmarshal	l = [ 2026-01-01T00:00:00Z ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+timestamp-other	unmarshal-skip	l = [ 2026-01-01T00:00:00Z ]	ERR	1:7: expected '{' for repeated message element, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-other	full	l = [ 2026-01-01T00:00:00Z ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+timestamp-other	full-skip	l = [ 2026-01-01T00:00:00Z ]	ERR	1:7: expected '{' for repeated message element, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-other	unmarshal	m = { "k": 2026-01-01T00:00:00Z }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+timestamp-other	unmarshal-skip	m = { "k": 2026-01-01T00:00:00Z }	ERR	1:12: expected '{' for map message value, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-other	full	m = { "k": 2026-01-01T00:00:00Z }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+timestamp-other	full-skip	m = { "k": 2026-01-01T00:00:00Z }	ERR	1:12: expected '{' for map message value, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-other	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+timestamp-int32-seconds	fds		0ab6020a07702e70726f746f120f676f6f676c652e70726f746f627566223b0a0954696d657374616d7012180a077365636f6e647318012001280552077365636f6e647312140a056e616e6f7318022001280552056e616e6f7322d4010a0148122a0a02707718012001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d705202707712280a016c18022003280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d7052016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a500a064d456e74727912100a036b657918012001280952036b657912300a0576616c756518022001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d70520576616c75653a023801620670726f746f33
+timestamp-int32-seconds	validate		1	[well-known type shape] p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "seconds" is int32, and must be int64 (draft -01 §wkt-shapes)
+timestamp-int32-seconds	unmarshal	pw = 2026-01-01T00:00:00Z	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "seconds" is int32, and must be int64 (draft -01 §wkt-shapes)	
+timestamp-int32-seconds	unmarshal-skip	pw = 2026-01-01T00:00:00Z	ERR	1:6: expected '{' for message field "pw", got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-int32-seconds	full	pw = 2026-01-01T00:00:00Z	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "seconds" is int32, and must be int64 (draft -01 §wkt-shapes)	
+timestamp-int32-seconds	full-skip	pw = 2026-01-01T00:00:00Z	ERR	1:6: expected '{' for message field "pw", got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-int32-seconds	unmarshal	l = [ 2026-01-01T00:00:00Z ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "seconds" is int32, and must be int64 (draft -01 §wkt-shapes)	
+timestamp-int32-seconds	unmarshal-skip	l = [ 2026-01-01T00:00:00Z ]	ERR	1:7: expected '{' for repeated message element, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-int32-seconds	full	l = [ 2026-01-01T00:00:00Z ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "seconds" is int32, and must be int64 (draft -01 §wkt-shapes)	
+timestamp-int32-seconds	full-skip	l = [ 2026-01-01T00:00:00Z ]	ERR	1:7: expected '{' for repeated message element, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-int32-seconds	unmarshal	m = { "k": 2026-01-01T00:00:00Z }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "seconds" is int32, and must be int64 (draft -01 §wkt-shapes)	
+timestamp-int32-seconds	unmarshal-skip	m = { "k": 2026-01-01T00:00:00Z }	ERR	1:12: expected '{' for map message value, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-int32-seconds	full	m = { "k": 2026-01-01T00:00:00Z }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "seconds" is int32, and must be int64 (draft -01 §wkt-shapes)	
+timestamp-int32-seconds	full-skip	m = { "k": 2026-01-01T00:00:00Z }	ERR	1:12: expected '{' for map message value, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-int32-seconds	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+timestamp-no-nanos	fds		0aa0020a07702e70726f746f120f676f6f676c652e70726f746f62756622250a0954696d657374616d7012180a077365636f6e647318012001280352077365636f6e647322d4010a0148122a0a02707718012001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d705202707712280a016c18022003280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d7052016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a500a064d456e74727912100a036b657918012001280952036b657912300a0576616c756518022001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d70520576616c75653a023801620670726f746f33
+timestamp-no-nanos	validate		1	[well-known type shape] p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "nanos" (draft -01 §wkt-shapes)
+timestamp-no-nanos	unmarshal	pw = 2026-01-01T00:00:00Z	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "nanos" (draft -01 §wkt-shapes)	
+timestamp-no-nanos	unmarshal-skip	pw = 2026-01-01T00:00:00Z	ERR	1:6: expected '{' for message field "pw", got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-no-nanos	full	pw = 2026-01-01T00:00:00Z	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "nanos" (draft -01 §wkt-shapes)	
+timestamp-no-nanos	full-skip	pw = 2026-01-01T00:00:00Z	ERR	1:6: expected '{' for message field "pw", got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-no-nanos	unmarshal	l = [ 2026-01-01T00:00:00Z ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "nanos" (draft -01 §wkt-shapes)	
+timestamp-no-nanos	unmarshal-skip	l = [ 2026-01-01T00:00:00Z ]	ERR	1:7: expected '{' for repeated message element, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-no-nanos	full	l = [ 2026-01-01T00:00:00Z ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "nanos" (draft -01 §wkt-shapes)	
+timestamp-no-nanos	full-skip	l = [ 2026-01-01T00:00:00Z ]	ERR	1:7: expected '{' for repeated message element, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-no-nanos	unmarshal	m = { "k": 2026-01-01T00:00:00Z }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "nanos" (draft -01 §wkt-shapes)	
+timestamp-no-nanos	unmarshal-skip	m = { "k": 2026-01-01T00:00:00Z }	ERR	1:12: expected '{' for map message value, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-no-nanos	full	m = { "k": 2026-01-01T00:00:00Z }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: it has no field "nanos" (draft -01 §wkt-shapes)	
+timestamp-no-nanos	full-skip	m = { "k": 2026-01-01T00:00:00Z }	ERR	1:12: expected '{' for map message value, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-no-nanos	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+timestamp-repeated-nanos	fds		0ab6020a07702e70726f746f120f676f6f676c652e70726f746f627566223b0a0954696d657374616d7012180a077365636f6e647318012001280352077365636f6e647312140a056e616e6f7318022003280552056e616e6f7322d4010a0148122a0a02707718012001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d705202707712280a016c18022003280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d7052016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a500a064d456e74727912100a036b657918012001280952036b657912300a0576616c756518022001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d70520576616c75653a023801620670726f746f33
+timestamp-repeated-nanos	validate		1	[well-known type shape] p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "nanos" has the wrong cardinality (draft -01 §wkt-shapes)
+timestamp-repeated-nanos	unmarshal	pw = 2026-01-01T00:00:00Z	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "nanos" has the wrong cardinality (draft -01 §wkt-shapes)	
+timestamp-repeated-nanos	unmarshal-skip	pw = 2026-01-01T00:00:00Z	ERR	1:6: expected '{' for message field "pw", got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-repeated-nanos	full	pw = 2026-01-01T00:00:00Z	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "nanos" has the wrong cardinality (draft -01 §wkt-shapes)	
+timestamp-repeated-nanos	full-skip	pw = 2026-01-01T00:00:00Z	ERR	1:6: expected '{' for message field "pw", got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-repeated-nanos	unmarshal	l = [ 2026-01-01T00:00:00Z ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "nanos" has the wrong cardinality (draft -01 §wkt-shapes)	
+timestamp-repeated-nanos	unmarshal-skip	l = [ 2026-01-01T00:00:00Z ]	ERR	1:7: expected '{' for repeated message element, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-repeated-nanos	full	l = [ 2026-01-01T00:00:00Z ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "nanos" has the wrong cardinality (draft -01 §wkt-shapes)	
+timestamp-repeated-nanos	full-skip	l = [ 2026-01-01T00:00:00Z ]	ERR	1:7: expected '{' for repeated message element, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-repeated-nanos	unmarshal	m = { "k": 2026-01-01T00:00:00Z }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "nanos" has the wrong cardinality (draft -01 §wkt-shapes)	
+timestamp-repeated-nanos	unmarshal-skip	m = { "k": 2026-01-01T00:00:00Z }	ERR	1:12: expected '{' for map message value, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-repeated-nanos	full	m = { "k": 2026-01-01T00:00:00Z }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Timestamp" redefines a well-known type: field "nanos" has the wrong cardinality (draft -01 §wkt-shapes)	
+timestamp-repeated-nanos	full-skip	m = { "k": 2026-01-01T00:00:00Z }	ERR	1:12: expected '{' for map message value, got timestamp ("2026-01-01T00:00:00Z")	
+timestamp-repeated-nanos	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+duration-other	fds		0a98020a07702e70726f746f120f676f6f676c652e70726f746f62756622200a084475726174696f6e12140a056f7468657218012001280952056f7468657222d1010a014812290a02707718012001280b32192e676f6f676c652e70726f746f6275662e4475726174696f6e5202707712270a016c18022003280b32192e676f6f676c652e70726f746f6275662e4475726174696f6e52016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a4f0a064d456e74727912100a036b657918012001280952036b6579122f0a0576616c756518022001280b32192e676f6f676c652e70726f746f6275662e4475726174696f6e520576616c75653a023801620670726f746f33
+duration-other	validate		1	[well-known type shape] p.proto: message "google.protobuf.Duration" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)
+duration-other	unmarshal	pw = 5s	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+duration-other	unmarshal-skip	pw = 5s	ERR	1:6: expected '{' for message field "pw", got duration ("5s")	
+duration-other	full	pw = 5s	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+duration-other	full-skip	pw = 5s	ERR	1:6: expected '{' for message field "pw", got duration ("5s")	
+duration-other	unmarshal	l = [ 5s ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+duration-other	unmarshal-skip	l = [ 5s ]	ERR	1:7: expected '{' for repeated message element, got duration ("5s")	
+duration-other	full	l = [ 5s ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+duration-other	full-skip	l = [ 5s ]	ERR	1:7: expected '{' for repeated message element, got duration ("5s")	
+duration-other	unmarshal	m = { "k": 5s }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+duration-other	unmarshal-skip	m = { "k": 5s }	ERR	1:12: expected '{' for map message value, got duration ("5s")	
+duration-other	full	m = { "k": 5s }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: it has no field "seconds" (draft -01 §wkt-shapes)	
+duration-other	full-skip	m = { "k": 5s }	ERR	1:12: expected '{' for map message value, got duration ("5s")	
+duration-other	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+duration-sint64	fds		0ab2020a07702e70726f746f120f676f6f676c652e70726f746f627566223a0a084475726174696f6e12180a077365636f6e647318012001281252077365636f6e647312140a056e616e6f7318022001280552056e616e6f7322d1010a014812290a02707718012001280b32192e676f6f676c652e70726f746f6275662e4475726174696f6e5202707712270a016c18022003280b32192e676f6f676c652e70726f746f6275662e4475726174696f6e52016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a4f0a064d456e74727912100a036b657918012001280952036b6579122f0a0576616c756518022001280b32192e676f6f676c652e70726f746f6275662e4475726174696f6e520576616c75653a023801620670726f746f33
+duration-sint64	validate		1	[well-known type shape] p.proto: message "google.protobuf.Duration" redefines a well-known type: field "seconds" is sint64, and must be int64 (draft -01 §wkt-shapes)
+duration-sint64	unmarshal	pw = 5s	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: field "seconds" is sint64, and must be int64 (draft -01 §wkt-shapes)	
+duration-sint64	unmarshal-skip	pw = 5s	ERR	1:6: expected '{' for message field "pw", got duration ("5s")	
+duration-sint64	full	pw = 5s	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: field "seconds" is sint64, and must be int64 (draft -01 §wkt-shapes)	
+duration-sint64	full-skip	pw = 5s	ERR	1:6: expected '{' for message field "pw", got duration ("5s")	
+duration-sint64	unmarshal	l = [ 5s ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: field "seconds" is sint64, and must be int64 (draft -01 §wkt-shapes)	
+duration-sint64	unmarshal-skip	l = [ 5s ]	ERR	1:7: expected '{' for repeated message element, got duration ("5s")	
+duration-sint64	full	l = [ 5s ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: field "seconds" is sint64, and must be int64 (draft -01 §wkt-shapes)	
+duration-sint64	full-skip	l = [ 5s ]	ERR	1:7: expected '{' for repeated message element, got duration ("5s")	
+duration-sint64	unmarshal	m = { "k": 5s }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: field "seconds" is sint64, and must be int64 (draft -01 §wkt-shapes)	
+duration-sint64	unmarshal-skip	m = { "k": 5s }	ERR	1:12: expected '{' for map message value, got duration ("5s")	
+duration-sint64	full	m = { "k": 5s }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Duration" redefines a well-known type: field "seconds" is sint64, and must be int64 (draft -01 §wkt-shapes)	
+duration-sint64	full-skip	m = { "k": 5s }	ERR	1:12: expected '{' for map message value, got duration ("5s")	
+duration-sint64	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+stringvalue-other	fds		0aa4020a07702e70726f746f120f676f6f676c652e70726f746f62756622230a0b537472696e6756616c756512140a056f7468657218012001280952056f7468657222da010a0148122c0a02707718012001280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c756552027077122a0a016c18022003280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c756552016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a520a064d456e74727912100a036b657918012001280952036b657912320a0576616c756518022001280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c7565520576616c75653a023801620670726f746f33
+stringvalue-other	validate		1	[well-known type shape] p.proto: message "google.protobuf.StringValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)
+stringvalue-other	unmarshal	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+stringvalue-other	unmarshal-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+stringvalue-other	full	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+stringvalue-other	full-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+stringvalue-other	unmarshal	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+stringvalue-other	unmarshal-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+stringvalue-other	full	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+stringvalue-other	full-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+stringvalue-other	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+stringvalue-other	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+stringvalue-other	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+stringvalue-other	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+stringvalue-other	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+stringvalue-int	fds		0aa4020a07702e70726f746f120f676f6f676c652e70726f746f62756622230a0b537472696e6756616c756512140a0576616c7565180120012805520576616c756522da010a0148122c0a02707718012001280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c756552027077122a0a016c18022003280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c756552016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a520a064d456e74727912100a036b657918012001280952036b657912320a0576616c756518022001280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c7565520576616c75653a023801620670726f746f33
+stringvalue-int	validate		1	[well-known type shape] p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)
+stringvalue-int	unmarshal	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+stringvalue-int	unmarshal-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+stringvalue-int	full	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+stringvalue-int	full-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+stringvalue-int	unmarshal	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+stringvalue-int	unmarshal-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+stringvalue-int	full	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+stringvalue-int	full-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+stringvalue-int	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+stringvalue-int	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+stringvalue-int	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
+stringvalue-int	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+stringvalue-int	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+stringvalue-map	fds		0a88030a07702e70726f746f120f676f6f676c652e70726f746f6275662286010a0b537472696e6756616c7565123d0a0576616c756518012003280b32272e676f6f676c652e70726f746f6275662e537472696e6756616c75652e56616c7565456e747279520576616c75651a380a0a56616c7565456e74727912100a036b657918012001280952036b657912140a0576616c7565180220012809520576616c75653a02380122da010a0148122c0a02707718012001280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c756552027077122a0a016c18022003280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c756552016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a520a064d456e74727912100a036b657918012001280952036b657912320a0576616c756518022001280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c7565520576616c75653a023801620670726f746f33
+stringvalue-map	validate		1	[well-known type shape] p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is message, and must be string (draft -01 §wkt-shapes)
+stringvalue-map	unmarshal	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is message, and must be string (draft -01 §wkt-shapes)	
+stringvalue-map	unmarshal-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+stringvalue-map	full	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is message, and must be string (draft -01 §wkt-shapes)	
+stringvalue-map	full-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")	
+stringvalue-map	unmarshal	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is message, and must be string (draft -01 §wkt-shapes)	
+stringvalue-map	unmarshal-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+stringvalue-map	full	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is message, and must be string (draft -01 §wkt-shapes)	
+stringvalue-map	full-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")	
+stringvalue-map	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is message, and must be string (draft -01 §wkt-shapes)	
+stringvalue-map	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+stringvalue-map	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.StringValue" redefines a well-known type: field "value" is message, and must be string (draft -01 §wkt-shapes)	
+stringvalue-map	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+stringvalue-map	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+int32value-string	fds		0aa0020a07702e70726f746f120f676f6f676c652e70726f746f62756622220a0a496e74333256616c756512140a0576616c7565180120012809520576616c756522d7010a0148122b0a02707718012001280b321b2e676f6f676c652e70726f746f6275662e496e74333256616c75655202707712290a016c18022003280b321b2e676f6f676c652e70726f746f6275662e496e74333256616c756552016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a510a064d456e74727912100a036b657918012001280952036b657912310a0576616c756518022001280b321b2e676f6f676c652e70726f746f6275662e496e74333256616c7565520576616c75653a023801620670726f746f33
+int32value-string	validate		1	[well-known type shape] p.proto: message "google.protobuf.Int32Value" redefines a well-known type: field "value" is string, and must be int32 (draft -01 §wkt-shapes)
+int32value-string	unmarshal	pw = 5	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Int32Value" redefines a well-known type: field "value" is string, and must be int32 (draft -01 §wkt-shapes)	
+int32value-string	unmarshal-skip	pw = 5	ERR	1:6: expected '{' for message field "pw", got integer ("5")	
+int32value-string	full	pw = 5	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Int32Value" redefines a well-known type: field "value" is string, and must be int32 (draft -01 §wkt-shapes)	
+int32value-string	full-skip	pw = 5	ERR	1:6: expected '{' for message field "pw", got integer ("5")	
+int32value-string	unmarshal	l = [ 5 ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Int32Value" redefines a well-known type: field "value" is string, and must be int32 (draft -01 §wkt-shapes)	
+int32value-string	unmarshal-skip	l = [ 5 ]	ERR	1:7: expected '{' for repeated message element, got integer ("5")	
+int32value-string	full	l = [ 5 ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Int32Value" redefines a well-known type: field "value" is string, and must be int32 (draft -01 §wkt-shapes)	
+int32value-string	full-skip	l = [ 5 ]	ERR	1:7: expected '{' for repeated message element, got integer ("5")	
+int32value-string	unmarshal	m = { "k": 5 }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Int32Value" redefines a well-known type: field "value" is string, and must be int32 (draft -01 §wkt-shapes)	
+int32value-string	unmarshal-skip	m = { "k": 5 }	ERR	1:12: expected '{' for map message value, got integer ("5")	
+int32value-string	full	m = { "k": 5 }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Int32Value" redefines a well-known type: field "value" is string, and must be int32 (draft -01 §wkt-shapes)	
+int32value-string	full-skip	m = { "k": 5 }	ERR	1:12: expected '{' for map message value, got integer ("5")	
+int32value-string	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+boolvalue-other	fds		0a9c020a07702e70726f746f120f676f6f676c652e70726f746f62756622210a09426f6f6c56616c756512140a056f7468657218012001280952056f7468657222d4010a0148122a0a02707718012001280b321a2e676f6f676c652e70726f746f6275662e426f6f6c56616c75655202707712280a016c18022003280b321a2e676f6f676c652e70726f746f6275662e426f6f6c56616c756552016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a500a064d456e74727912100a036b657918012001280952036b657912300a0576616c756518022001280b321a2e676f6f676c652e70726f746f6275662e426f6f6c56616c7565520576616c75653a023801620670726f746f33
+boolvalue-other	validate		1	[well-known type shape] p.proto: message "google.protobuf.BoolValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)
+boolvalue-other	unmarshal	pw = true	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BoolValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+boolvalue-other	unmarshal-skip	pw = true	ERR	1:6: expected '{' for message field "pw", got bool ("true")	
+boolvalue-other	full	pw = true	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BoolValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+boolvalue-other	full-skip	pw = true	ERR	1:6: expected '{' for message field "pw", got bool ("true")	
+boolvalue-other	unmarshal	l = [ true ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BoolValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+boolvalue-other	unmarshal-skip	l = [ true ]	ERR	1:7: expected '{' for repeated message element, got bool ("true")	
+boolvalue-other	full	l = [ true ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BoolValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+boolvalue-other	full-skip	l = [ true ]	ERR	1:7: expected '{' for repeated message element, got bool ("true")	
+boolvalue-other	unmarshal	m = { "k": true }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BoolValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+boolvalue-other	unmarshal-skip	m = { "k": true }	ERR	1:12: expected '{' for map message value, got bool ("true")	
+boolvalue-other	full	m = { "k": true }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BoolValue" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+boolvalue-other	full-skip	m = { "k": true }	ERR	1:12: expected '{' for map message value, got bool ("true")	
+boolvalue-other	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+bytesvalue-string	fds		0aa0020a07702e70726f746f120f676f6f676c652e70726f746f62756622220a0a427974657356616c756512140a0576616c7565180120012809520576616c756522d7010a0148122b0a02707718012001280b321b2e676f6f676c652e70726f746f6275662e427974657356616c75655202707712290a016c18022003280b321b2e676f6f676c652e70726f746f6275662e427974657356616c756552016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a510a064d456e74727912100a036b657918012001280952036b657912310a0576616c756518022001280b321b2e676f6f676c652e70726f746f6275662e427974657356616c7565520576616c75653a023801620670726f746f33
+bytesvalue-string	validate		1	[well-known type shape] p.proto: message "google.protobuf.BytesValue" redefines a well-known type: field "value" is string, and must be bytes (draft -01 §wkt-shapes)
+bytesvalue-string	unmarshal	pw = b"aGk="	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BytesValue" redefines a well-known type: field "value" is string, and must be bytes (draft -01 §wkt-shapes)	
+bytesvalue-string	unmarshal-skip	pw = b"aGk="	ERR	1:6: expected '{' for message field "pw", got bytes ("aGk=")	
+bytesvalue-string	full	pw = b"aGk="	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BytesValue" redefines a well-known type: field "value" is string, and must be bytes (draft -01 §wkt-shapes)	
+bytesvalue-string	full-skip	pw = b"aGk="	ERR	1:6: expected '{' for message field "pw", got bytes ("aGk=")	
+bytesvalue-string	unmarshal	l = [ b"aGk=" ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BytesValue" redefines a well-known type: field "value" is string, and must be bytes (draft -01 §wkt-shapes)	
+bytesvalue-string	unmarshal-skip	l = [ b"aGk=" ]	ERR	1:7: expected '{' for repeated message element, got bytes ("aGk=")	
+bytesvalue-string	full	l = [ b"aGk=" ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BytesValue" redefines a well-known type: field "value" is string, and must be bytes (draft -01 §wkt-shapes)	
+bytesvalue-string	full-skip	l = [ b"aGk=" ]	ERR	1:7: expected '{' for repeated message element, got bytes ("aGk=")	
+bytesvalue-string	unmarshal	m = { "k": b"aGk=" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BytesValue" redefines a well-known type: field "value" is string, and must be bytes (draft -01 §wkt-shapes)	
+bytesvalue-string	unmarshal-skip	m = { "k": b"aGk=" }	ERR	1:12: expected '{' for map message value, got bytes ("aGk=")	
+bytesvalue-string	full	m = { "k": b"aGk=" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.BytesValue" redefines a well-known type: field "value" is string, and must be bytes (draft -01 §wkt-shapes)	
+bytesvalue-string	full-skip	m = { "k": b"aGk=" }	ERR	1:12: expected '{' for map message value, got bytes ("aGk=")	
+bytesvalue-string	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+doublevalue-float	fds		0aa4020a07702e70726f746f120f676f6f676c652e70726f746f62756622230a0b446f75626c6556616c756512140a0576616c7565180120012802520576616c756522da010a0148122c0a02707718012001280b321c2e676f6f676c652e70726f746f6275662e446f75626c6556616c756552027077122a0a016c18022003280b321c2e676f6f676c652e70726f746f6275662e446f75626c6556616c756552016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a520a064d456e74727912100a036b657918012001280952036b657912320a0576616c756518022001280b321c2e676f6f676c652e70726f746f6275662e446f75626c6556616c7565520576616c75653a023801620670726f746f33
+doublevalue-float	validate		1	[well-known type shape] p.proto: message "google.protobuf.DoubleValue" redefines a well-known type: field "value" is float, and must be double (draft -01 §wkt-shapes)
+doublevalue-float	unmarshal	pw = 1.5	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.DoubleValue" redefines a well-known type: field "value" is float, and must be double (draft -01 §wkt-shapes)	
+doublevalue-float	unmarshal-skip	pw = 1.5	ERR	1:6: expected '{' for message field "pw", got float ("1.5")	
+doublevalue-float	full	pw = 1.5	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.DoubleValue" redefines a well-known type: field "value" is float, and must be double (draft -01 §wkt-shapes)	
+doublevalue-float	full-skip	pw = 1.5	ERR	1:6: expected '{' for message field "pw", got float ("1.5")	
+doublevalue-float	unmarshal	l = [ 1.5 ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.DoubleValue" redefines a well-known type: field "value" is float, and must be double (draft -01 §wkt-shapes)	
+doublevalue-float	unmarshal-skip	l = [ 1.5 ]	ERR	1:7: expected '{' for repeated message element, got float ("1.5")	
+doublevalue-float	full	l = [ 1.5 ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.DoubleValue" redefines a well-known type: field "value" is float, and must be double (draft -01 §wkt-shapes)	
+doublevalue-float	full-skip	l = [ 1.5 ]	ERR	1:7: expected '{' for repeated message element, got float ("1.5")	
+doublevalue-float	unmarshal	m = { "k": 1.5 }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.DoubleValue" redefines a well-known type: field "value" is float, and must be double (draft -01 §wkt-shapes)	
+doublevalue-float	unmarshal-skip	m = { "k": 1.5 }	ERR	1:12: expected '{' for map message value, got float ("1.5")	
+doublevalue-float	full	m = { "k": 1.5 }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.DoubleValue" redefines a well-known type: field "value" is float, and must be double (draft -01 §wkt-shapes)	
+doublevalue-float	full-skip	m = { "k": 1.5 }	ERR	1:12: expected '{' for map message value, got float ("1.5")	
+doublevalue-float	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+any-other	fds		0a84020a07702e70726f746f120f676f6f676c652e70726f746f627566221b0a03416e7912140a056f7468657218012001280952056f7468657222c2010a014812240a02707718012001280b32142e676f6f676c652e70726f746f6275662e416e795202707712220a016c18022003280b32142e676f6f676c652e70726f746f6275662e416e7952016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a4a0a064d456e74727912100a036b657918012001280952036b6579122a0a0576616c756518022001280b32142e676f6f676c652e70726f746f6275662e416e79520576616c75653a023801620670726f746f33
+any-other	validate		1	[well-known type shape] p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)
+any-other	unmarshal	pw = { @type = "x" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	unmarshal-skip	pw = { @type = "x" }	ERR	1:8: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-other	full	pw = { @type = "x" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	full-skip	pw = { @type = "x" }	ERR	1:8: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-other	unmarshal	l = [ { @type = "x" } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	unmarshal-skip	l = [ { @type = "x" } ]	ERR	1:9: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-other	full	l = [ { @type = "x" } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	full-skip	l = [ { @type = "x" } ]	ERR	1:9: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-other	unmarshal	m = { "k": { @type = "x" } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	unmarshal-skip	m = { "k": { @type = "x" } }	ERR	1:14: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-other	full	m = { "k": { @type = "x" } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	full-skip	m = { "k": { @type = "x" } }	ERR	1:14: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-other	unmarshal	pw = { }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	unmarshal-skip	pw = { }	OK	0a00	
+any-other	full	pw = { }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	full-skip	pw = { }	OK	0a00	
+any-other	unmarshal	l = [ { } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	unmarshal-skip	l = [ { } ]	OK	1200	
+any-other	full	l = [ { } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	full-skip	l = [ { } ]	OK	1200	
+any-other	unmarshal	m = { "k": { } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	unmarshal-skip	m = { "k": { } }	OK	1a050a016b1200	
+any-other	full	m = { "k": { } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "type_url" (draft -01 §wkt-shapes)	
+any-other	full-skip	m = { "k": { } }	OK	1a050a016b1200	
+any-other	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+any-no-value	fds		0a89020a07702e70726f746f120f676f6f676c652e70726f746f62756622200a03416e7912190a08747970655f75726c18012001280952077479706555726c22c2010a014812240a02707718012001280b32142e676f6f676c652e70726f746f6275662e416e795202707712220a016c18022003280b32142e676f6f676c652e70726f746f6275662e416e7952016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a4a0a064d456e74727912100a036b657918012001280952036b6579122a0a0576616c756518022001280b32142e676f6f676c652e70726f746f6275662e416e79520576616c75653a023801620670726f746f33
+any-no-value	validate		1	[well-known type shape] p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)
+any-no-value	unmarshal	pw = { @type = "x" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	unmarshal-skip	pw = { @type = "x" }	ERR	1:8: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-no-value	full	pw = { @type = "x" }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	full-skip	pw = { @type = "x" }	ERR	1:8: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-no-value	unmarshal	l = [ { @type = "x" } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	unmarshal-skip	l = [ { @type = "x" } ]	ERR	1:9: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-no-value	full	l = [ { @type = "x" } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	full-skip	l = [ { @type = "x" } ]	ERR	1:9: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-no-value	unmarshal	m = { "k": { @type = "x" } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	unmarshal-skip	m = { "k": { @type = "x" } }	ERR	1:14: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-no-value	full	m = { "k": { @type = "x" } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	full-skip	m = { "k": { @type = "x" } }	ERR	1:14: @type is allowed only as the first entry of a block bound to google.protobuf.Any (draft -01 "Any Blocks")	
+any-no-value	unmarshal	pw = { }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	unmarshal-skip	pw = { }	OK	0a00	
+any-no-value	full	pw = { }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	full-skip	pw = { }	OK	0a00	
+any-no-value	unmarshal	l = [ { } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	unmarshal-skip	l = [ { } ]	OK	1200	
+any-no-value	full	l = [ { } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	full-skip	l = [ { } ]	OK	1200	
+any-no-value	unmarshal	m = { "k": { } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	unmarshal-skip	m = { "k": { } }	OK	1a050a016b1200	
+any-no-value	full	m = { "k": { } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.Any" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
+any-no-value	full-skip	m = { "k": { } }	OK	1a050a016b1200	
+any-no-value	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+fieldmask-other	fds		0a9c020a07702e70726f746f120f676f6f676c652e70726f746f62756622210a094669656c644d61736b12140a056f7468657218012001280952056f7468657222d4010a0148122a0a02707718012001280b321a2e676f6f676c652e70726f746f6275662e4669656c644d61736b5202707712280a016c18022003280b321a2e676f6f676c652e70726f746f6275662e4669656c644d61736b52016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a500a064d456e74727912100a036b657918012001280952036b657912300a0576616c756518022001280b321a2e676f6f676c652e70726f746f6275662e4669656c644d61736b520576616c75653a023801620670726f746f33
+fieldmask-other	validate		1	[well-known type shape] p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)
+fieldmask-other	unmarshal	pw = { }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)	
+fieldmask-other	unmarshal-skip	pw = { }	OK	0a00	
+fieldmask-other	full	pw = { }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)	
+fieldmask-other	full-skip	pw = { }	OK	0a00	
+fieldmask-other	unmarshal	l = [ { } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)	
+fieldmask-other	unmarshal-skip	l = [ { } ]	OK	1200	
+fieldmask-other	full	l = [ { } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)	
+fieldmask-other	full-skip	l = [ { } ]	OK	1200	
+fieldmask-other	unmarshal	m = { "k": { } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)	
+fieldmask-other	unmarshal-skip	m = { "k": { } }	OK	1a050a016b1200	
+fieldmask-other	full	m = { "k": { } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)	
+fieldmask-other	full-skip	m = { "k": { } }	OK	1a050a016b1200	
+fieldmask-other	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+fieldmask-singular	fds		0a9c020a07702e70726f746f120f676f6f676c652e70726f746f62756622210a094669656c644d61736b12140a0570617468731801200128095205706174687322d4010a0148122a0a02707718012001280b321a2e676f6f676c652e70726f746f6275662e4669656c644d61736b5202707712280a016c18022003280b321a2e676f6f676c652e70726f746f6275662e4669656c644d61736b52016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a500a064d456e74727912100a036b657918012001280952036b657912300a0576616c756518022001280b321a2e676f6f676c652e70726f746f6275662e4669656c644d61736b520576616c75653a023801620670726f746f33
+fieldmask-singular	validate		1	[well-known type shape] p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)
+fieldmask-singular	unmarshal	pw = { }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)	
+fieldmask-singular	unmarshal-skip	pw = { }	OK	0a00	
+fieldmask-singular	full	pw = { }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)	
+fieldmask-singular	full-skip	pw = { }	OK	0a00	
+fieldmask-singular	unmarshal	l = [ { } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)	
+fieldmask-singular	unmarshal-skip	l = [ { } ]	OK	1200	
+fieldmask-singular	full	l = [ { } ]	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)	
+fieldmask-singular	full-skip	l = [ { } ]	OK	1200	
+fieldmask-singular	unmarshal	m = { "k": { } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)	
+fieldmask-singular	unmarshal-skip	m = { "k": { } }	OK	1a050a016b1200	
+fieldmask-singular	full	m = { "k": { } }	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)	
+fieldmask-singular	full-skip	m = { "k": { } }	OK	1a050a016b1200	
+fieldmask-singular	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
+null-mask-other	fds		0a94010a07702e70726f746f120f676f6f676c652e70726f746f62756622210a094669656c644d61736b12140a056f7468657218012001280952056f74686572224d0a0148122f0a055f6e756c6c18012001280b321a2e676f6f676c652e70726f746f6275662e4669656c644d61736b52044e756c6c12110a0173180220012809480052017388010142040a025f73620670726f746f33
+null-mask-other	validate		1	[well-known type shape] p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)
+null-mask-other	unmarshal	s = null	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)	
+null-mask-other	unmarshal-skip	s = null	OK		
+null-mask-other	full	s = null	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)	
+null-mask-other	full-skip	s = null	OK		s
+null-mask-other	unmarshal	s = "a"	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)	
+null-mask-other	unmarshal-skip	s = "a"	OK	120161	
+null-mask-other	full	s = "a"	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: it has no field "paths" (draft -01 §wkt-shapes)	
+null-mask-other	full-skip	s = "a"	OK	120161	
+null-mask-other	marshal		OK	_null {\n}\n
+null-mask-singular	fds		0a94010a07702e70726f746f120f676f6f676c652e70726f746f62756622210a094669656c644d61736b12140a05706174687318012001280952057061746873224d0a0148122f0a055f6e756c6c18012001280b321a2e676f6f676c652e70726f746f6275662e4669656c644d61736b52044e756c6c12110a0173180220012809480052017388010142040a025f73620670726f746f33
+null-mask-singular	validate		1	[well-known type shape] p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)
+null-mask-singular	unmarshal	s = null	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)	
+null-mask-singular	unmarshal-skip	s = null	OK		
+null-mask-singular	full	s = null	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)	
+null-mask-singular	full-skip	s = null	OK		s
+null-mask-singular	unmarshal	s = "a"	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)	
+null-mask-singular	unmarshal-skip	s = "a"	OK	120161	
+null-mask-singular	full	s = "a"	ERR	PXF schema violations:\n  p.proto: message "google.protobuf.FieldMask" redefines a well-known type: field "paths" has the wrong cardinality (draft -01 §wkt-shapes)	
+null-mask-singular	full-skip	s = "a"	OK	120161	
+null-mask-singular	marshal		OK	_null {\n}\n
+null-mask-ok	fds		0a94010a07702e70726f746f120f676f6f676c652e70726f746f62756622210a094669656c644d61736b12140a05706174687318012003280952057061746873224d0a0148122f0a055f6e756c6c18012001280b321a2e676f6f676c652e70726f746f6275662e4669656c644d61736b52044e756c6c12110a0173180220012809480052017388010142040a025f73620670726f746f33
+null-mask-ok	validate		0	
+null-mask-ok	unmarshal	s = null	OK		
+null-mask-ok	unmarshal-skip	s = null	OK		
+null-mask-ok	full	s = null	OK	0a030a0173	s
+null-mask-ok	full-skip	s = null	OK	0a030a0173	s
+null-mask-ok	unmarshal	s = "a"	OK	120161	
+null-mask-ok	unmarshal-skip	s = "a"	OK	120161	
+null-mask-ok	full	s = "a"	OK	120161	
+null-mask-ok	full-skip	s = "a"	OK	120161	
+null-mask-ok	marshal		OK	
+ok-secret-value	fds		0ad4010a07702e70726f746f1203707866221e0a0653656372657412140a0576616c7565180120012809520576616c7565229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
+ok-secret-value	validate		0	
+ok-secret-value	unmarshal	pw = "x"	OK	0a030a0178	
+ok-secret-value	unmarshal-skip	pw = "x"	OK	0a030a0178	
+ok-secret-value	full	pw = "x"	OK	0a030a0178	
+ok-secret-value	full-skip	pw = "x"	OK	0a030a0178	
+ok-secret-value	unmarshal	l = [ "x" ]	OK	12030a0178	
+ok-secret-value	unmarshal-skip	l = [ "x" ]	OK	12030a0178	
+ok-secret-value	full	l = [ "x" ]	OK	12030a0178	
+ok-secret-value	full-skip	l = [ "x" ]	OK	12030a0178	
+ok-secret-value	unmarshal	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-value	unmarshal-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-value	full	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-value	full-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-value	marshal		OK	pw = ""\nl = [\n  ""\n]\nm = {\n  k: ""\n}\n
+ok-secret-full	fds		0a8a020a07702e70726f746f120370786622540a0653656372657412140a0576616c7565180120012809520576616c756512120a0468696e74180220012809520468696e7412200a0b66696e6765727072696e74180320012809520b66696e6765727072696e74229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
+ok-secret-full	validate		0	
+ok-secret-full	unmarshal	pw = "x"	OK	0a030a0178	
+ok-secret-full	unmarshal-skip	pw = "x"	OK	0a030a0178	
+ok-secret-full	full	pw = "x"	OK	0a030a0178	
+ok-secret-full	full-skip	pw = "x"	OK	0a030a0178	
+ok-secret-full	unmarshal	l = [ "x" ]	OK	12030a0178	
+ok-secret-full	unmarshal-skip	l = [ "x" ]	OK	12030a0178	
+ok-secret-full	full	l = [ "x" ]	OK	12030a0178	
+ok-secret-full	full-skip	l = [ "x" ]	OK	12030a0178	
+ok-secret-full	unmarshal	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-full	unmarshal-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-full	full	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-full	full-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-full	marshal		OK	pw = ""\nl = [\n  ""\n]\nm = {\n  k: ""\n}\n
+ok-secret-renumbered	fds		0ae8010a07702e70726f746f120370786622320a0653656372657412140a0576616c7565180720012809520576616c756512120a046e6f746518082001280952046e6f7465229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
+ok-secret-renumbered	validate		0	
+ok-secret-renumbered	unmarshal	pw = "x"	OK	0a033a0178	
+ok-secret-renumbered	unmarshal-skip	pw = "x"	OK	0a033a0178	
+ok-secret-renumbered	full	pw = "x"	OK	0a033a0178	
+ok-secret-renumbered	full-skip	pw = "x"	OK	0a033a0178	
+ok-secret-renumbered	unmarshal	l = [ "x" ]	OK	12033a0178	
+ok-secret-renumbered	unmarshal-skip	l = [ "x" ]	OK	12033a0178	
+ok-secret-renumbered	full	l = [ "x" ]	OK	12033a0178	
+ok-secret-renumbered	full-skip	l = [ "x" ]	OK	12033a0178	
+ok-secret-renumbered	unmarshal	m = { "k": "x" }	OK	1a080a016b12033a0178	
+ok-secret-renumbered	unmarshal-skip	m = { "k": "x" }	OK	1a080a016b12033a0178	
+ok-secret-renumbered	full	m = { "k": "x" }	OK	1a080a016b12033a0178	
+ok-secret-renumbered	full-skip	m = { "k": "x" }	OK	1a080a016b12033a0178	
+ok-secret-renumbered	marshal		OK	pw = ""\nl = [\n  ""\n]\nm = {\n  k: ""\n}\n
+ok-secret-optional	fds		0ae3010a07702e70726f746f1203707866222d0a0653656372657412190a0576616c75651801200128094800520576616c756588010142080a065f76616c7565229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
+ok-secret-optional	validate		0	
+ok-secret-optional	unmarshal	pw = "x"	OK	0a030a0178	
+ok-secret-optional	unmarshal-skip	pw = "x"	OK	0a030a0178	
+ok-secret-optional	full	pw = "x"	OK	0a030a0178	
+ok-secret-optional	full-skip	pw = "x"	OK	0a030a0178	
+ok-secret-optional	unmarshal	l = [ "x" ]	OK	12030a0178	
+ok-secret-optional	unmarshal-skip	l = [ "x" ]	OK	12030a0178	
+ok-secret-optional	full	l = [ "x" ]	OK	12030a0178	
+ok-secret-optional	full-skip	l = [ "x" ]	OK	12030a0178	
+ok-secret-optional	unmarshal	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-optional	unmarshal-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-optional	full	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-optional	full-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-optional	marshal		OK	pw = ""\nl = [\n  ""\n]\nm = {\n  k: ""\n}\n
+ok-bigint	fds		0aec010a07702e70726f746f120370786622360a06426967496e7412100a0361627318012001280c5203616273121a0a086e6567617469766518022001280852086e65676174697665229b010a0148121b0a02707718012001280b320b2e7078662e426967496e745202707712190a016c18022003280b320b2e7078662e426967496e7452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e426967496e74520576616c75653a023801620670726f746f33
+ok-bigint	validate		0	
+ok-bigint	unmarshal	pw = 5	OK	0a030a0105	
+ok-bigint	unmarshal-skip	pw = 5	OK	0a030a0105	
+ok-bigint	full	pw = 5	OK	0a030a0105	
+ok-bigint	full-skip	pw = 5	OK	0a030a0105	
+ok-bigint	unmarshal	l = [ 5 ]	OK	12030a0105	
+ok-bigint	unmarshal-skip	l = [ 5 ]	OK	12030a0105	
+ok-bigint	full	l = [ 5 ]	OK	12030a0105	
+ok-bigint	full-skip	l = [ 5 ]	OK	12030a0105	
+ok-bigint	unmarshal	m = { "k": 5 }	OK	1a080a016b12030a0105	
+ok-bigint	unmarshal-skip	m = { "k": 5 }	OK	1a080a016b12030a0105	
+ok-bigint	full	m = { "k": 5 }	OK	1a080a016b12030a0105	
+ok-bigint	full-skip	m = { "k": 5 }	OK	1a080a016b12030a0105	
+ok-bigint	marshal		OK	pw = 0\nl = [\n  0\n]\nm = {\n  k: 0\n}\n
+ok-decimal	fds		0a90020a07702e70726f746f120370786622570a07446563696d616c121a0a08756e7363616c656418012001280c5208756e7363616c656412140a057363616c6518022001280552057363616c65121a0a086e6567617469766518032001280852086e65676174697665229e010a0148121c0a02707718012001280b320c2e7078662e446563696d616c52027077121a0a016c18022003280b320c2e7078662e446563696d616c52016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a420a064d456e74727912100a036b657918012001280952036b657912220a0576616c756518022001280b320c2e7078662e446563696d616c520576616c75653a023801620670726f746f33
+ok-decimal	validate		0	
+ok-decimal	unmarshal	pw = 1.5	OK	0a050a010f1001	
+ok-decimal	unmarshal-skip	pw = 1.5	OK	0a050a010f1001	
+ok-decimal	full	pw = 1.5	OK	0a050a010f1001	
+ok-decimal	full-skip	pw = 1.5	OK	0a050a010f1001	
+ok-decimal	unmarshal	l = [ 1.5 ]	OK	12050a010f1001	
+ok-decimal	unmarshal-skip	l = [ 1.5 ]	OK	12050a010f1001	
+ok-decimal	full	l = [ 1.5 ]	OK	12050a010f1001	
+ok-decimal	full-skip	l = [ 1.5 ]	OK	12050a010f1001	
+ok-decimal	unmarshal	m = { "k": 1.5 }	OK	1a0a0a016b12050a010f1001	
+ok-decimal	unmarshal-skip	m = { "k": 1.5 }	OK	1a0a0a016b12050a010f1001	
+ok-decimal	full	m = { "k": 1.5 }	OK	1a0a0a016b12050a010f1001	
+ok-decimal	full-skip	m = { "k": 1.5 }	OK	1a0a0a016b12050a010f1001	
+ok-decimal	marshal		OK	pw = 0\nl = [\n  0\n]\nm = {\n  k: 0\n}\n
+ok-bigfloat	fds		0aae020a07702e70726f746f120370786622720a08426967466c6f6174121a0a086d616e746973736118012001280c52086d616e7469737361121a0a086578706f6e656e7418022001280552086578706f6e656e7412120a047072656318032001280d520470726563121a0a086e6567617469766518042001280852086e6567617469766522a1010a0148121d0a02707718012001280b320d2e7078662e426967466c6f617452027077121b0a016c18022003280b320d2e7078662e426967466c6f617452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a430a064d456e74727912100a036b657918012001280952036b657912230a0576616c756518022001280b320d2e7078662e426967466c6f6174520576616c75653a023801620670726f746f33
+ok-bigfloat	validate		0	
+ok-bigfloat	unmarshal	pw = 1.5	OK	0a300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	unmarshal-skip	pw = 1.5	OK	0a300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	full	pw = 1.5	OK	0a300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	full-skip	pw = 1.5	OK	0a300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	unmarshal	l = [ 1.5 ]	OK	12300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	unmarshal-skip	l = [ 1.5 ]	OK	12300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	full	l = [ 1.5 ]	OK	12300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	full-skip	l = [ 1.5 ]	OK	12300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	unmarshal	m = { "k": 1.5 }	OK	1a350a016b12300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	unmarshal-skip	m = { "k": 1.5 }	OK	1a350a016b12300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	full	m = { "k": 1.5 }	OK	1a350a016b12300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	full-skip	m = { "k": 1.5 }	OK	1a350a016b12300a20c0000000000000000000000000000000000000000000000000000000000000001081feffffffffffffff01188002	
+ok-bigfloat	marshal		OK	pw = 0\nl = [\n  0\n]\nm = {\n  k: 0\n}\n
+ok-timestamp	fds		0ab6020a07702e70726f746f120f676f6f676c652e70726f746f627566223b0a0954696d657374616d7012180a077365636f6e647318012001280352077365636f6e647312140a056e616e6f7318022001280552056e616e6f7322d4010a0148122a0a02707718012001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d705202707712280a016c18022003280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d7052016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a500a064d456e74727912100a036b657918012001280952036b657912300a0576616c756518022001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d70520576616c75653a023801620670726f746f33
+ok-timestamp	validate		0	
+ok-timestamp	unmarshal	pw = 2026-01-01T00:00:00Z	OK	0a060880f2d6ca06	
+ok-timestamp	unmarshal-skip	pw = 2026-01-01T00:00:00Z	OK	0a060880f2d6ca06	
+ok-timestamp	full	pw = 2026-01-01T00:00:00Z	OK	0a060880f2d6ca06	
+ok-timestamp	full-skip	pw = 2026-01-01T00:00:00Z	OK	0a060880f2d6ca06	
+ok-timestamp	unmarshal	l = [ 2026-01-01T00:00:00Z ]	OK	12060880f2d6ca06	
+ok-timestamp	unmarshal-skip	l = [ 2026-01-01T00:00:00Z ]	OK	12060880f2d6ca06	
+ok-timestamp	full	l = [ 2026-01-01T00:00:00Z ]	OK	12060880f2d6ca06	
+ok-timestamp	full-skip	l = [ 2026-01-01T00:00:00Z ]	OK	12060880f2d6ca06	
+ok-timestamp	unmarshal	m = { "k": 2026-01-01T00:00:00Z }	OK	1a0b0a016b12060880f2d6ca06	
+ok-timestamp	unmarshal-skip	m = { "k": 2026-01-01T00:00:00Z }	OK	1a0b0a016b12060880f2d6ca06	
+ok-timestamp	full	m = { "k": 2026-01-01T00:00:00Z }	OK	1a0b0a016b12060880f2d6ca06	
+ok-timestamp	full-skip	m = { "k": 2026-01-01T00:00:00Z }	OK	1a0b0a016b12060880f2d6ca06	
+ok-timestamp	marshal		OK	pw = 1970-01-01T00:00:00Z\nl = [\n  1970-01-01T00:00:00Z\n]\nm = {\n  k: 1970-01-01T00:00:00Z\n}\n
+ok-timestamp-extra	fds		0aca020a07702e70726f746f120f676f6f676c652e70726f746f627566224f0a0954696d657374616d7012180a077365636f6e647318032001280352077365636f6e647312140a056e616e6f7318042001280552056e616e6f7312120a047a6f6e6518052001280952047a6f6e6522d4010a0148122a0a02707718012001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d705202707712280a016c18022003280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d7052016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a500a064d456e74727912100a036b657918012001280952036b657912300a0576616c756518022001280b321a2e676f6f676c652e70726f746f6275662e54696d657374616d70520576616c75653a023801620670726f746f33
+ok-timestamp-extra	validate		0	
+ok-timestamp-extra	unmarshal	pw = 2026-01-01T00:00:00Z	OK	0a061880f2d6ca06	
+ok-timestamp-extra	unmarshal-skip	pw = 2026-01-01T00:00:00Z	OK	0a061880f2d6ca06	
+ok-timestamp-extra	full	pw = 2026-01-01T00:00:00Z	OK	0a061880f2d6ca06	
+ok-timestamp-extra	full-skip	pw = 2026-01-01T00:00:00Z	OK	0a061880f2d6ca06	
+ok-timestamp-extra	unmarshal	l = [ 2026-01-01T00:00:00Z ]	OK	12061880f2d6ca06	
+ok-timestamp-extra	unmarshal-skip	l = [ 2026-01-01T00:00:00Z ]	OK	12061880f2d6ca06	
+ok-timestamp-extra	full	l = [ 2026-01-01T00:00:00Z ]	OK	12061880f2d6ca06	
+ok-timestamp-extra	full-skip	l = [ 2026-01-01T00:00:00Z ]	OK	12061880f2d6ca06	
+ok-timestamp-extra	unmarshal	m = { "k": 2026-01-01T00:00:00Z }	OK	1a0b0a016b12061880f2d6ca06	
+ok-timestamp-extra	unmarshal-skip	m = { "k": 2026-01-01T00:00:00Z }	OK	1a0b0a016b12061880f2d6ca06	
+ok-timestamp-extra	full	m = { "k": 2026-01-01T00:00:00Z }	OK	1a0b0a016b12061880f2d6ca06	
+ok-timestamp-extra	full-skip	m = { "k": 2026-01-01T00:00:00Z }	OK	1a0b0a016b12061880f2d6ca06	
+ok-timestamp-extra	marshal		OK	pw = 1970-01-01T00:00:00Z\nl = [\n  1970-01-01T00:00:00Z\n]\nm = {\n  k: 1970-01-01T00:00:00Z\n}\n
+ok-duration	fds		0ab2020a07702e70726f746f120f676f6f676c652e70726f746f627566223a0a084475726174696f6e12180a077365636f6e647318012001280352077365636f6e647312140a056e616e6f7318022001280552056e616e6f7322d1010a014812290a02707718012001280b32192e676f6f676c652e70726f746f6275662e4475726174696f6e5202707712270a016c18022003280b32192e676f6f676c652e70726f746f6275662e4475726174696f6e52016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a4f0a064d456e74727912100a036b657918012001280952036b6579122f0a0576616c756518022001280b32192e676f6f676c652e70726f746f6275662e4475726174696f6e520576616c75653a023801620670726f746f33
+ok-duration	validate		0	
+ok-duration	unmarshal	pw = 5s	OK	0a020805	
+ok-duration	unmarshal-skip	pw = 5s	OK	0a020805	
+ok-duration	full	pw = 5s	OK	0a020805	
+ok-duration	full-skip	pw = 5s	OK	0a020805	
+ok-duration	unmarshal	l = [ 5s ]	OK	12020805	
+ok-duration	unmarshal-skip	l = [ 5s ]	OK	12020805	
+ok-duration	full	l = [ 5s ]	OK	12020805	
+ok-duration	full-skip	l = [ 5s ]	OK	12020805	
+ok-duration	unmarshal	m = { "k": 5s }	OK	1a070a016b12020805	
+ok-duration	unmarshal-skip	m = { "k": 5s }	OK	1a070a016b12020805	
+ok-duration	full	m = { "k": 5s }	OK	1a070a016b12020805	
+ok-duration	full-skip	m = { "k": 5s }	OK	1a070a016b12020805	
+ok-duration	marshal		OK	pw = 0s\nl = [\n  0s\n]\nm = {\n  k: 0s\n}\n
+ok-int32value	fds		0aa0020a07702e70726f746f120f676f6f676c652e70726f746f62756622220a0a496e74333256616c756512140a0576616c7565180120012805520576616c756522d7010a0148122b0a02707718012001280b321b2e676f6f676c652e70726f746f6275662e496e74333256616c75655202707712290a016c18022003280b321b2e676f6f676c652e70726f746f6275662e496e74333256616c756552016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a510a064d456e74727912100a036b657918012001280952036b657912310a0576616c756518022001280b321b2e676f6f676c652e70726f746f6275662e496e74333256616c7565520576616c75653a023801620670726f746f33
+ok-int32value	validate		0	
+ok-int32value	unmarshal	pw = 5	OK	0a020805	
+ok-int32value	unmarshal-skip	pw = 5	OK	0a020805	
+ok-int32value	full	pw = 5	OK	0a020805	
+ok-int32value	full-skip	pw = 5	OK	0a020805	
+ok-int32value	unmarshal	l = [ 5 ]	OK	12020805	
+ok-int32value	unmarshal-skip	l = [ 5 ]	OK	12020805	
+ok-int32value	full	l = [ 5 ]	OK	12020805	
+ok-int32value	full-skip	l = [ 5 ]	OK	12020805	
+ok-int32value	unmarshal	m = { "k": 5 }	OK	1a070a016b12020805	
+ok-int32value	unmarshal-skip	m = { "k": 5 }	OK	1a070a016b12020805	
+ok-int32value	full	m = { "k": 5 }	OK	1a070a016b12020805	
+ok-int32value	full-skip	m = { "k": 5 }	OK	1a070a016b12020805	
+ok-int32value	marshal		OK	pw = 0\nl = [\n  0\n]\nm = {\n  k: 0\n}\n
+ok-stringvalue-optional	fds		0ab3020a07702e70726f746f120f676f6f676c652e70726f746f62756622320a0b537472696e6756616c756512190a0576616c75651801200128094800520576616c756588010142080a065f76616c756522da010a0148122c0a02707718012001280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c756552027077122a0a016c18022003280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c756552016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a520a064d456e74727912100a036b657918012001280952036b657912320a0576616c756518022001280b321c2e676f6f676c652e70726f746f6275662e537472696e6756616c7565520576616c75653a023801620670726f746f33
+ok-stringvalue-optional	validate		0	
+ok-stringvalue-optional	unmarshal	pw = "x"	OK	0a030a0178	
+ok-stringvalue-optional	unmarshal-skip	pw = "x"	OK	0a030a0178	
+ok-stringvalue-optional	full	pw = "x"	OK	0a030a0178	
+ok-stringvalue-optional	full-skip	pw = "x"	OK	0a030a0178	
+ok-stringvalue-optional	unmarshal	l = [ "x" ]	OK	12030a0178	
+ok-stringvalue-optional	unmarshal-skip	l = [ "x" ]	OK	12030a0178	
+ok-stringvalue-optional	full	l = [ "x" ]	OK	12030a0178	
+ok-stringvalue-optional	full-skip	l = [ "x" ]	OK	12030a0178	
+ok-stringvalue-optional	unmarshal	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-stringvalue-optional	unmarshal-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-stringvalue-optional	full	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-stringvalue-optional	full-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-stringvalue-optional	marshal		OK	pw = ""\nl = [\n  ""\n]\nm = {\n  k: ""\n}\n
+ok-any	fds		0a9f020a07702e70726f746f120f676f6f676c652e70726f746f62756622360a03416e7912190a08747970655f75726c18012001280952077479706555726c12140a0576616c756518022001280c520576616c756522c2010a014812240a02707718012001280b32142e676f6f676c652e70726f746f6275662e416e795202707712220a016c18022003280b32142e676f6f676c652e70726f746f6275662e416e7952016c12270a016d18032003280b32192e676f6f676c652e70726f746f6275662e482e4d456e74727952016d1a4a0a064d456e74727912100a036b657918012001280952036b6579122a0a0576616c756518022001280b32142e676f6f676c652e70726f746f6275662e416e79520576616c75653a023801620670726f746f33
+ok-any	validate		0	
+ok-any	unmarshal	pw = { }	OK	0a00	
+ok-any	unmarshal-skip	pw = { }	OK	0a00	
+ok-any	full	pw = { }	OK	0a00	
+ok-any	full-skip	pw = { }	OK	0a00	
+ok-any	unmarshal	l = [ { } ]	OK	1200	
+ok-any	unmarshal-skip	l = [ { } ]	OK	1200	
+ok-any	full	l = [ { } ]	OK	1200	
+ok-any	full-skip	l = [ { } ]	OK	1200	
+ok-any	unmarshal	m = { "k": { } }	OK	1a050a016b1200	
+ok-any	unmarshal-skip	m = { "k": { } }	OK	1a050a016b1200	
+ok-any	full	m = { "k": { } }	OK	1a050a016b1200	
+ok-any	full-skip	m = { "k": { } }	OK	1a050a016b1200	
+ok-any	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n

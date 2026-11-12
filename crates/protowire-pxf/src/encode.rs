@@ -332,7 +332,7 @@ impl<'a> Encoder<'a> {
             Kind::Message(m) => m,
             _ => return,
         };
-        let full = mdesc.full_name();
+        let full = crate::wkt::dispatch_name(&mdesc);
 
         if let Some(text) = self.shorthand(&mdesc, sub) {
             self.write_field_prefix(level, fd.name());
@@ -583,7 +583,9 @@ fn message_shorthand(
     mdesc: &MessageDescriptor,
     sub: &DynamicMessage,
 ) -> Option<Result<String, String>> {
-    let full = mdesc.full_name();
+    // A message with a well-known type's name and not its shape is written
+    // as a block (draft -01 §wkt-shapes): its name matches none here.
+    let full = crate::wkt::dispatch_name(mdesc);
     if full == "google.protobuf.Timestamp" {
         return Some(Ok(format_rfc3339_nano(sub)));
     }
