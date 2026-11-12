@@ -319,3 +319,28 @@ fn bind_row_bytes_cell_round_trip() {
         panic!("expected Bytes");
     }
 }
+
+// #132: next_row keeps returning a row error, as protowire-go's Next does;
+// iterating yields it once and ends, so a loop that logs and carries on
+// stops.
+#[test]
+fn a_row_error_is_sticky_and_the_iterator_ends_after_it() {
+    let src = "@dataset t.Row (a, b)\n(1, 2)\n(3 4)\n(5, 6)\n";
+    let mut tr = reader(src).unwrap();
+    assert!(tr.next_row().unwrap().is_ok());
+    let first = tr.next_row().unwrap().unwrap_err();
+    for _ in 0..3 {
+        assert_eq!(tr.next_row().unwrap().unwrap_err(), first);
+    }
+
+    let mut ok = 0;
+    let mut errs = 0;
+    for row in reader(src).unwrap() {
+        match row {
+            Ok(_) => ok += 1,
+            Err(_) => errs += 1,
+        }
+        assert!(ok + errs < 10, "the iterator did not end after the error");
+    }
+    assert_eq!((ok, errs), (1, 1));
+}
