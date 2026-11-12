@@ -12,7 +12,7 @@
 //!    control chars — pass through verbatim. Use a `bytes` field for arbitrary
 //!    binary data.
 
-use crate::ast::{Document, Entry, Value};
+use crate::ast::{DatasetDirective, Directive, Document, Entry, ProtoDirective, ProtoShape, Value};
 use crate::keyed::ident_safe_entry_name;
 
 #[derive(Debug, Clone)]
@@ -29,6 +29,16 @@ impl Default for FormatOptions {
     }
 }
 
+/// Pretty-print a parsed [`Document`], preserving comments.
+///
+/// Every directive is kept, with its dataset rows, in document order
+/// (trendvidia/protowire#558). `@type` is written first: it binds no
+/// anonymous `@proto`, so moving it changes nothing. The other directives
+/// follow in source order, each after its comments: a named directive's
+/// body and a `@proto` body as written, and a dataset as its header and
+/// then one row per line, an absent cell left empty. A document whose only
+/// directive is `@type` formats as it always has. The output is the one
+/// protowire-go's `FormatDocument` writes.
 pub fn format(doc: &Document) -> String {
     format_with_options(doc, &FormatOptions::default())
 }
@@ -39,16 +49,79 @@ pub fn format_with_options(doc: &Document, opts: &FormatOptions) -> String {
         indent: &opts.indent,
     };
 
+    let others = top_directives(doc);
+    if others.is_empty() {
+        if !doc.type_url.is_empty() {
+            f.out.push_str("@type ");
+            f.out.push_str(&doc.type_url);
+            f.out.push_str("\n\n");
+        }
+        f.write_comments(&doc.leading_comments, 0);
+        f.format_entries(&doc.entries, 0);
+        return f.out;
+    }
+
     if !doc.type_url.is_empty() {
         f.out.push_str("@type ");
         f.out.push_str(&doc.type_url);
-        f.out.push_str("\n\n");
+        f.out.push('\n');
     }
-
     f.write_comments(&doc.leading_comments, 0);
-    f.format_entries(&doc.entries, 0);
-
+    for d in others {
+        match d {
+            TopDirective::Named(d) => {
+                f.write_comments(&d.leading_comments, 0);
+                f.format_named_directive(d);
+            }
+            TopDirective::Dataset(d) => {
+                f.write_comments(&d.leading_comments, 0);
+                f.format_dataset(d);
+            }
+            TopDirective::Proto(d) => {
+                f.write_comments(&d.leading_comments, 0);
+                f.format_proto(d);
+            }
+        }
+    }
+    if !doc.entries.is_empty() {
+        f.out.push('\n');
+        f.format_entries(&doc.entries, 0);
+    }
     f.out
+}
+
+/// A directive other than `@type`, borrowed from one of the three lists
+/// the [`Document`] keeps them in.
+enum TopDirective<'a> {
+    Named(&'a Directive),
+    Dataset(&'a DatasetDirective),
+    Proto(&'a ProtoDirective),
+}
+
+/// The document's directives other than `@type`, merged back into source
+/// order: an anonymous `@proto` binds the typed directive after it, so the
+/// order is part of the meaning.
+fn top_directives(doc: &Document) -> Vec<TopDirective<'_>> {
+    let mut all: Vec<(usize, TopDirective<'_>)> =
+        Vec::with_capacity(doc.directives.len() + doc.datasets.len() + doc.protos.len());
+    all.extend(
+        doc.directives
+            .iter()
+            .map(|d| (d.pos.offset, TopDirective::Named(d))),
+    );
+    all.extend(
+        doc.datasets
+            .iter()
+            .map(|d| (d.pos.offset, TopDirective::Dataset(d))),
+    );
+    all.extend(
+        doc.protos
+            .iter()
+            .map(|d| (d.pos.offset, TopDirective::Proto(d))),
+    );
+    // Stable, so equal offsets keep list order as Go's SortStableFunc does.
+    all.sort_by_key(|(offset, _)| *offset);
+    all.into_iter().map(|(_, d)| d).collect()
 }
 
 /// One value as PXF text, for a `@dataset` cell bound as the body entry
@@ -80,6 +153,78 @@ impl Formatter<'_> {
             self.out.push_str(&c.text);
             self.out.push('\n');
         }
+    }
+
+    /// `@<name> prefix* [{body}]`, the body as it was written: it is raw
+    /// text, which the directive's consumer decodes.
+    fn format_named_directive(&mut self, d: &Directive) {
+        self.out.push('@');
+        self.out.push_str(&d.name);
+        for p in &d.prefixes {
+            self.out.push(' ');
+            self.out.push_str(p);
+        }
+        if d.has_body {
+            self.out.push_str(" {");
+            self.out.push_str(&String::from_utf8_lossy(&d.body));
+            self.out.push('}');
+        }
+        self.out.push('\n');
+    }
+
+    /// The header, then one row per line. A `None` cell is an absent field
+    /// and is left empty; `null` is written.
+    fn format_dataset(&mut self, d: &DatasetDirective) {
+        self.out.push_str("@dataset");
+        if !d.r#type.is_empty() {
+            self.out.push(' ');
+            self.out.push_str(&d.r#type);
+        }
+        self.out.push_str(" (");
+        self.out.push_str(&d.columns.join(", "));
+        self.out.push_str(")\n");
+        for row in &d.rows {
+            self.out.push('(');
+            for (i, cell) in row.cells.iter().enumerate() {
+                if i > 0 {
+                    self.out.push_str(", ");
+                }
+                if let Some(v) = cell {
+                    self.format_value(v, 0);
+                }
+            }
+            self.out.push_str(")\n");
+        }
+    }
+
+    /// A `@proto` directive in the shape it was read in.
+    fn format_proto(&mut self, d: &ProtoDirective) {
+        self.out.push_str("@proto");
+        match d.shape {
+            ProtoShape::Anonymous => {
+                self.out.push_str(" {");
+                self.out.push_str(&String::from_utf8_lossy(&d.body));
+                self.out.push('}');
+            }
+            ProtoShape::Named => {
+                self.out.push(' ');
+                self.out.push_str(&d.type_name);
+                self.out.push_str(" {");
+                self.out.push_str(&String::from_utf8_lossy(&d.body));
+                self.out.push('}');
+            }
+            ProtoShape::Source => {
+                self.out.push_str(" \"\"\"");
+                self.out.push_str(&String::from_utf8_lossy(&d.body));
+                self.out.push_str("\"\"\"");
+            }
+            ProtoShape::Descriptor => {
+                self.out.push_str(" b\"");
+                self.out.push_str(&encode_base64(&d.body));
+                self.out.push('"');
+            }
+        }
+        self.out.push('\n');
     }
 
     fn format_entries(&mut self, entries: &[Entry], level: usize) {
@@ -490,5 +635,146 @@ mod tests {
         let once = format(&parse(src).unwrap());
         let twice = format(&parse(&once).unwrap());
         assert_eq!(twice, once);
+    }
+
+    // ---------------- directives (trendvidia/protowire#558) ----------------
+
+    /// What a document's directives say, without positions.
+    fn directive_shape(doc: &Document) -> Vec<String> {
+        let mut out = vec![doc.type_url.clone()];
+        for d in &doc.directives {
+            out.push(format!(
+                "@{} {:?} {:?} {}",
+                d.name,
+                d.prefixes,
+                String::from_utf8_lossy(&d.body),
+                d.has_body
+            ));
+        }
+        for d in &doc.datasets {
+            out.push(format!("@dataset {} {:?}", d.r#type, d.columns));
+            for r in &d.rows {
+                let cells: Vec<String> = r
+                    .cells
+                    .iter()
+                    .map(|c| match c {
+                        None => "<absent>".to_string(),
+                        Some(v) => format_value_text(v),
+                    })
+                    .collect();
+                out.push(format!("{cells:?}"));
+            }
+        }
+        for d in &doc.protos {
+            out.push(format!(
+                "@proto {:?} {} {:?}",
+                d.shape,
+                d.type_name,
+                String::from_utf8_lossy(&d.body)
+            ));
+        }
+        out.push(doc.entries.len().to_string());
+        out
+    }
+
+    /// Formats `src`, checks the output parses to the same directives and
+    /// is a fixed point of formatting, and returns it.
+    fn format_round_trip(src: &str) -> String {
+        let doc = parse(src).unwrap();
+        let out = format(&doc);
+        let again = parse(&out).unwrap_or_else(|e| panic!("{e}\n{out}"));
+        assert_eq!(directive_shape(&doc), directive_shape(&again), "{out}");
+        assert_eq!(out, format(&again), "formatting is a fixed point");
+        out
+    }
+
+    #[test]
+    fn directives_dataset_rows_kept() {
+        // The issue's input A formatted to nothing.
+        let src = "@dataset trades.v1.Trade (id, px)\n(1, 2.5)\n(2, 3.5)\n";
+        assert_eq!(format_round_trip(src), src);
+    }
+
+    #[test]
+    fn directives_dataset_absent_and_null_cells_kept() {
+        let src = "@dataset trades.v1.Trade (id, px, note)\n(1, 2.5, )\n(2, , null)\n";
+        assert_eq!(format_round_trip(src), src);
+    }
+
+    #[test]
+    fn directives_entry_kept() {
+        // The issue's input B lost its @entry.
+        let src = "@type a.v1.M\n@entry x { a = 1 }\n\nname = \"n\"\n";
+        assert_eq!(format_round_trip(src), src);
+    }
+
+    #[test]
+    fn directives_entry_and_named_directive_kept() {
+        let src = "@type a.v1.M\n@entry x { a = 1 }\n@header h.v1.H\n\nname = \"n\"\n";
+        assert_eq!(format_round_trip(src), src);
+    }
+
+    #[test]
+    fn directives_proto_shapes_kept() {
+        for (src, want) in [
+            ("@proto { string id = 1; }\n@dataset (id)\n(\"a\")\n", None),
+            (
+                "@proto a.v1.R { string id = 1; }\n@dataset a.v1.R (id)\n(\"a\")\n",
+                None,
+            ),
+            (
+                "@proto \"\"\"syntax = \"proto3\"; message R { string id = 1; }\"\"\"\n@dataset R (id)\n(\"a\")\n",
+                None,
+            ),
+            // @type moves to the front: it binds no @proto, so this changes nothing.
+            (
+                "@proto b\"CgA=\"\n@type a.v1.M\n\nx = 1\n",
+                Some("@type a.v1.M\n@proto b\"CgA=\"\n\nx = 1\n"),
+            ),
+        ] {
+            assert_eq!(format_round_trip(src), want.unwrap_or(src), "{src}");
+        }
+    }
+
+    #[test]
+    fn directives_multiline_proto_source_and_list_cells_round_trip() {
+        // A multi-line triple-quoted @proto is written from its dedented
+        // body, and a list cell spans lines; both re-parse to the same
+        // directives, and the output matches protowire-go's byte for byte.
+        let out = format_round_trip(
+            "@proto \"\"\"\n    message R {\n      repeated string tags = 1;\n    }\n\"\"\"\n@dataset R (tags)\n([\"a\", \"b\"])\n",
+        );
+        assert_eq!(
+            out,
+            "@proto \"\"\"    message R {\n      repeated string tags = 1;\n    }\"\"\"\n@dataset R (tags)\n([\n  \"a\",\n  \"b\"\n])\n"
+        );
+    }
+
+    #[test]
+    fn directives_keep_source_order() {
+        // An anonymous @proto binds the next typed directive, so a @proto
+        // written after a dataset stays after it.
+        let src = "@dataset t.v1.T (id)\n(1)\n@proto { string id = 1; }\n@dataset (id)\n(\"a\")\n";
+        assert_eq!(format_round_trip(src), src);
+    }
+
+    #[test]
+    fn directives_keep_their_comments() {
+        let out = format_round_trip(
+            "# about the rows\n@dataset t.v1.T (id)\n(1)\n# second\n@dataset t.v1.U (id)\n(2)\n",
+        );
+        assert!(
+            out.contains("# about the rows\n@dataset t.v1.T (id)"),
+            "{out}"
+        );
+        assert!(out.contains("# second\n@dataset t.v1.U (id)"), "{out}");
+    }
+
+    #[test]
+    fn directives_only_type_formats_as_before() {
+        assert_eq!(
+            format(&parse("# c\n@type a.v1.M\n\nx = 1\n").unwrap()),
+            "@type a.v1.M\n\n# c\nx = 1\n"
+        );
     }
 }
