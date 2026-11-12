@@ -40,6 +40,7 @@ format changes.
   - **Export:** a `bytes` field is now a `uint8` array (`bytesN`). A schema with such arrays survives XML → proto → XML → proto.
   - **Tests:** `tests/convert_as_go.rs` holds the output to protowire-go's converter byte for byte (`scripts/gen-sbe-convert.sh`).
   - **Breaking:** `xml_to_proto` returns `SbeError`; a parse error keeps the parser's text.
+- **SBE binds a proto3 `optional` field** ([#160](https://github.com/trendvidia/protowire-rust/issues/160)). The codec refused it as a oneof (`sbe: oneof field M.x not supported`), because proto3 puts an `optional` field in a synthetic oneof of its own. protowire-go skips synthetic oneofs, and so does this port now, at the root and in a composite. A real oneof is still refused.
 
 - **SBE refuses a value, size or header field the wire cannot hold** ([#122](https://github.com/trendvidia/protowire-rust/issues/122), protowire-go#250, protowire-go#252). These used to be cut to their low bits with no error.
   - **Marshal** refuses a value outside its `(sbe.encoding)` primitive's range (an `int32` field narrowed to `int8` holding 300 was written as 44), a double past float's range narrowed to `float`, and a group of more than 65535 entries (65536 were written with a count of 0).
