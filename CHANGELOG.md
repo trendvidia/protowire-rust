@@ -13,6 +13,7 @@ format changes.
 
 ### Added
 
+- **`check-decode --format pb-text`** ([#113](https://github.com/trendvidia/protowire-rust/issues/113), protowire#503). It reads PB bytes with the stock runtime and writes the message's PXF on stdout, for the spec's text gate (`cross_text_check.sh`), which compares the text byte for byte with what protowire-go writes.
 - **`check-decode --format pxf-pb`** ([#89](https://github.com/trendvidia/protowire-rust/issues/89), protowire#509). It decodes a PXF document with `unmarshal_full` and writes the message's PB bytes on stdout, map entries in key order, for the spec's write gate (`cross_write_check.sh`), which compares them with protowire-go's.
 - **A golden test of the spec's struct-binding table** ([#89](https://github.com/trendvidia/protowire-rust/issues/89), protowire#509). `protowire-pb`'s `tests/values_table.rs` writes a `Message` twin of each row of `testdata/values/values.tsv` that holds no big number and compares the bytes; CI checks the vendored table against the spec's. The 15 rows holding a `*big.Int`, `*big.Rat` or `*big.Float` have no twin: `protowire-pb` has no binding for a big number.
 
