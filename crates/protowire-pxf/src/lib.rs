@@ -32,7 +32,7 @@ pub use ast::{
     Directive, Document, DurationVal, Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry,
     NullVal, StringVal, TimestampVal, TypeEntry, Value,
 };
-pub use dataset_reader::{bind_row, DatasetReader, DEFAULT_HEADER_MAX_BYTES};
+pub use dataset_reader::{bind_row, DatasetReader, DatasetTail, DEFAULT_HEADER_MAX_BYTES};
 pub use decode::{unmarshal, unmarshal_full, PoolResolver, TypeResolver, UnmarshalOptions};
 pub use encode::{marshal, MarshalOptions};
 pub use errors::PxfError;

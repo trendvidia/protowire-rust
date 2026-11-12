@@ -71,20 +71,11 @@ pub(crate) fn read_value(
     Ok(value)
 }
 
-/// Parse one `( cell, ... )` row of a `@dataset` of `expected` columns, on
-/// its own: the streaming reader has already checked the header.
-pub(crate) fn parse_row(
-    input: &str,
-    expected: usize,
-    limits: Limits,
-) -> Result<DatasetRow, PxfError> {
-    limits
-        .check_message_size(input.len())
-        .map_err(|m| PxfError::new(Position::new(1, 1), m))?;
-    Ok(Parser::new(input, limits).parse_dataset_row(expected)?.0)
-}
+/// The error for anything after a dataset's rows that is neither a row nor
+/// a directive. The streaming reader reports the same text.
+pub(crate) const ERR_DATASET_BESIDE_ENTRIES: &str = "@dataset directive cannot coexist with top-level field entries; the document's payload is the @dataset rows (draft §3.4.4)";
 
-struct Parser<'a> {
+pub(crate) struct Parser<'a> {
     lex: Lexer<'a>,
     current: Token,
     pending: Vec<Comment>,
@@ -99,8 +90,16 @@ struct Parser<'a> {
 
 impl<'a> Parser<'a> {
     fn new(input: &'a str, limits: Limits) -> Self {
+        Self::at(input.as_bytes(), limits, Position::with_offset(1, 1, 0))
+    }
+
+    /// A parser over `input`, a window of a document that starts at
+    /// `start`, so positions and offsets stay document-relative
+    /// (protowire-go's `newParserAt`). `input` is valid UTF-8; the
+    /// streaming dataset reader parses a header or a row at a time.
+    pub(crate) fn at(input: &'a [u8], limits: Limits, start: Position) -> Self {
         let mut p = Self {
-            lex: Lexer::with_limits(input, limits.max_bytes_literal_length),
+            lex: Lexer::at(input, limits.max_bytes_literal_length, start),
             current: Token::new(TokenKind::Eof, "", Position::new(1, 1)),
             pending: Vec::new(),
             prev_end: Position::new(1, 1),
@@ -177,7 +176,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_document(&mut self) -> Result<Document, PxfError> {
+    /// The token the parser stands on.
+    pub(crate) fn current(&self) -> &Token {
+        &self.current
+    }
+
+    pub(crate) fn parse_document(&mut self) -> Result<Document, PxfError> {
         let leading_comments = self.flush_comments();
         let mut type_url = String::new();
         let mut directives: Vec<Directive> = Vec::new();
@@ -190,18 +194,10 @@ impl<'a> Parser<'a> {
         // appends to directives, @dataset appends to tables. body_offset
         // tracks the byte immediately after the last directive's last
         // token; stays 0 when no directives are present.
-        let mut saw_type = false;
         let mut first_dataset_pos: Option<Position> = None;
         loop {
             match self.current.kind {
                 TokenKind::AtType => {
-                    if first_dataset_pos.is_some() {
-                        return Err(PxfError::new(
-                            self.current.pos,
-                            "@dataset directive cannot coexist with @type; the @dataset header declares the document's type (draft §3.4.4)".to_string(),
-                        ));
-                    }
-                    saw_type = true;
                     self.advance(); // consume @type
                     if !matches!(self.current.kind, TokenKind::Ident) {
                         return Err(PxfError::new(
@@ -222,12 +218,6 @@ impl<'a> Parser<'a> {
                     body_offset = end;
                 }
                 TokenKind::AtDataset => {
-                    if saw_type {
-                        return Err(PxfError::new(
-                            self.current.pos,
-                            "@dataset directive cannot coexist with @type; the @dataset header declares the document's type (draft §3.4.4)".to_string(),
-                        ));
-                    }
                     let (t, end) = self.parse_dataset_directive()?;
                     if first_dataset_pos.is_none() {
                         first_dataset_pos = Some(t.pos);
@@ -246,12 +236,20 @@ impl<'a> Parser<'a> {
 
         // Standalone constraint (draft §3.4.4): a document with any
         // @dataset directive MUST NOT also carry top-level field entries.
-        if let Some(p) = first_dataset_pos {
-            if !matches!(self.current.kind, TokenKind::Eof) {
+        // Checked once every directive is read, as protowire-go checks
+        // them: @type beside a dataset at the first dataset, an entry
+        // beside one at the entry.
+        if let Some(first) = first_dataset_pos {
+            if !type_url.is_empty() {
                 return Err(PxfError::new(
-                    p,
-                    "@dataset directive cannot coexist with top-level field entries; the document's payload is the @dataset rows (draft §3.4.4)".to_string(),
+                    first,
+                    "@dataset directive cannot coexist with @type; the @dataset header declares the document's type (draft §3.4.4)",
                 ));
+            }
+            if !matches!(self.current.kind, TokenKind::Eof) {
+                // At the entry, as protowire-go reports it, and as the
+                // streaming reader finds it.
+                return Err(PxfError::new(self.current.pos, ERR_DATASET_BESIDE_ENTRIES));
             }
         }
 
@@ -337,7 +335,7 @@ impl<'a> Parser<'a> {
         let mut body: Vec<u8> = Vec::new();
         let mut has_body = false;
         if matches!(self.current.kind, TokenKind::LBrace) {
-            let open = self.current.pos.offset;
+            let open = self.current.pos.offset - self.lex.base();
             // Use parse_block_val to validate inner content (string /
             // brace / comment well-formedness); then slice the raw
             // bytes between `{` and `}` from the input for body.
@@ -355,7 +353,7 @@ impl<'a> Parser<'a> {
             let close = close as usize;
             body = input[open + 1..close].to_vec();
             has_body = true;
-            end_offset = close + 1;
+            end_offset = self.lex.base() + close + 1;
         }
 
         Ok((
@@ -473,7 +471,10 @@ impl<'a> Parser<'a> {
     /// The comments pending at the `(` and those inside the row are the
     /// row's `leading_comments`. Left pending, they would pass to the next
     /// row or directive, or to the document's end.
-    fn parse_dataset_row(&mut self, expected: usize) -> Result<(DatasetRow, usize), PxfError> {
+    pub(crate) fn parse_dataset_row(
+        &mut self,
+        expected: usize,
+    ) -> Result<(DatasetRow, usize), PxfError> {
         let pos = self.current.pos;
         let mut leading_comments = self.flush_comments();
         self.advance(); // consume (
@@ -537,7 +538,7 @@ impl<'a> Parser<'a> {
 
         match self.current.kind {
             TokenKind::LBrace => {
-                let (body, end_offset) = self.capture_brace_body(at_pos, "@proto (anonymous form)")?;
+                let (body, end_offset) = self.capture_brace_body("@proto (anonymous form)")?;
                 Ok((
                     ProtoDirective {
                         pos: at_pos,
@@ -563,7 +564,7 @@ impl<'a> Parser<'a> {
                     ));
                 }
                 let (body, end_offset) =
-                    self.capture_brace_body(at_pos, &format!("@proto {}", type_name))?;
+                    self.capture_brace_body(&format!("@proto {}", type_name))?;
                 Ok((
                     ProtoDirective {
                         pos: at_pos,
@@ -624,21 +625,21 @@ impl<'a> Parser<'a> {
     /// Slice raw bytes between `{` and the matching `}` (both
     /// exclusive) without decoding the body as PXF entries. LBrace is
     /// current on entry. Repositions the lexer past the closing brace.
-    fn capture_brace_body(
-        &mut self,
-        at_pos: Position,
-        label: &str,
-    ) -> Result<(Vec<u8>, usize), PxfError> {
-        let open = self.current.pos.offset;
+    fn capture_brace_body(&mut self, label: &str) -> Result<(Vec<u8>, usize), PxfError> {
+        let open = self.current.pos.offset - self.lex.base();
         let close = find_matching_brace(self.lex.input_view(), open);
         if close < 0 {
-            return Err(PxfError::new(at_pos, format!("{}: unmatched '{{'", label)));
+            // At the '{', as protowire-go reports it.
+            return Err(PxfError::new(
+                self.current.pos,
+                format!("{}: unmatched '{{'", label),
+            ));
         }
         let close = close as usize;
         let body = self.lex.input_view()[open + 1..close].to_vec();
         self.lex.reposition_to(close + 1);
         self.advance();
-        Ok((body, close + 1))
+        Ok((body, self.lex.base() + close + 1))
     }
 
     /// Consumes one cell of a @dataset row. Returns `None` for an empty
@@ -941,11 +942,6 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// Returns the byte index of the `}` that matches the `{` at
-/// `open_offset`. Mirrors the lexer's string / comment handling so
-/// braces inside literals don't confuse the brace count. Returns
-/// `-1` on unterminated input. Used by `parse_directive` to slice
-/// the raw bytes of a directive's inline block.
 /// An integer or bool key before `=`: protowire-go's `nonNameAssignError`.
 /// The parser and both decoders give it whatever the schema and options say,
 /// `discard_unknown` included, since no field has such a name.
@@ -1000,114 +996,174 @@ fn written_key(key: &str, prec: &str) -> String {
     format!("{}p{}", key, clip_literal(prec))
 }
 
+/// Returns the byte index of the `}` that matches the `{` at
+/// `open_offset`, or `-1` on unterminated input. Mirrors the lexer's
+/// string / comment handling so braces inside literals don't confuse the
+/// brace count. protowire-go's `findMatchingBrace`: one [`BraceMatch`]
+/// scan over the whole input.
 pub(crate) fn find_matching_brace(input: &[u8], open_offset: usize) -> i64 {
-    let n = input.len();
-    let skip_string = |mut j: usize| -> i64 {
-        if j + 2 < n && input[j + 1] == b'"' && input[j + 2] == b'"' {
-            let mut k = j + 3;
-            while k + 2 < n {
-                if input[k] == b'"' && input[k + 1] == b'"' && input[k + 2] == b'"' {
-                    return (k + 3) as i64;
-                }
-                k += 1;
-            }
-            return -1;
-        }
-        j += 1;
-        while j < n {
-            if input[j] == b'\\' {
-                if j + 1 >= n {
-                    return -1;
-                }
-                j += 2;
-                continue;
-            }
-            if input[j] == b'"' {
-                return (j + 1) as i64;
-            }
-            if input[j] == b'\n' {
-                return -1;
-            }
-            j += 1;
-        }
-        -1
-    };
-    let skip_bytes = |mut j: usize| -> i64 {
-        j += 2; // past `b"`
-        while j < n {
-            if input[j] == b'\\' {
-                if j + 1 >= n {
-                    return -1;
-                }
-                j += 2;
-                continue;
-            }
-            if input[j] == b'"' {
-                return (j + 1) as i64;
-            }
-            if input[j] == b'\n' {
-                return -1;
-            }
-            j += 1;
-        }
-        -1
-    };
-    let skip_eol = |mut j: usize| -> usize {
-        while j < n && input[j] != b'\n' {
-            j += 1;
-        }
-        j
-    };
+    let mut m = BraceMatch::new();
+    match m.scan(input, open_offset + 1) {
+        (i, BraceState::Closed) => i as i64,
+        _ => -1,
+    }
+}
 
-    let mut depth: usize = 1;
-    let mut i = open_offset + 1;
-    while i < n {
-        let ch = input[i];
-        if ch == b'{' {
-            depth += 1;
-            i += 1;
-        } else if ch == b'}' {
-            depth -= 1;
-            if depth == 0 {
-                return i as i64;
-            }
-            i += 1;
-        } else if ch == b'"' {
-            let j = skip_string(i);
-            if j < 0 {
-                return -1;
-            }
-            i = j as usize;
-        } else if ch == b'b' && i + 1 < n && input[i + 1] == b'"' {
-            let j = skip_bytes(i);
-            if j < 0 {
-                return -1;
-            }
-            i = j as usize;
-        } else if ch == b'#' {
-            i = skip_eol(i + 1);
-        } else if ch == b'/' && i + 1 < n && input[i + 1] == b'/' {
-            i = skip_eol(i + 2);
-        } else if ch == b'/' && i + 1 < n && input[i + 1] == b'*' {
-            let mut j = i + 2;
-            let mut closed = false;
-            while j + 1 < n {
-                if input[j] == b'*' && input[j + 1] == b'/' {
-                    j += 2;
-                    closed = true;
-                    break;
-                }
-                j += 1;
-            }
-            if !closed {
-                return -1;
-            }
-            i = j;
-        } else {
-            i += 1;
+/// [`find_matching_brace`]'s scan, resumable: fed a buffer that grows, it
+/// picks up where the previous call stopped, so the dataset header scan
+/// finds the end of an `@proto` body read in many pieces in time linear in
+/// its size, with the rule `parse` uses (protowire-go's `braceMatch`).
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct BraceMatch {
+    depth: usize,
+    mode: BraceMode,
+    /// In a simple string, after a backslash, which escapes the next byte.
+    esc: bool,
+    /// The quotes just seen in a triple-quoted string, or 1 after a '*' in
+    /// a block comment.
+    run: u8,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BraceMode {
+    Code,
+    String,
+    TripleString,
+    Bytes,
+    LineComment,
+    BlockComment,
+}
+
+/// What [`BraceMatch::scan`] found.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BraceState {
+    /// The input ended first; scan again from the offset returned.
+    Open,
+    /// The offset returned is the matching '}'.
+    Closed,
+    /// The body can never close: a simple string or bytes literal met a
+    /// newline.
+    Failed,
+}
+
+impl BraceMatch {
+    /// A match just past the opening '{'.
+    pub(crate) fn new() -> Self {
+        Self {
+            depth: 1,
+            mode: BraceMode::Code,
+            esc: false,
+            run: 0,
         }
     }
-    -1
+
+    /// Advance the match over `input` from offset `i`. It stops before a
+    /// byte whose meaning depends on bytes not yet in `input` (a '"' that
+    /// may open `"""`, a 'b' or '/' that may open a literal or a comment),
+    /// so scanning again from the offset it returns once more input
+    /// arrives gives the answer one call over all of it gives.
+    pub(crate) fn scan(&mut self, input: &[u8], mut i: usize) -> (usize, BraceState) {
+        while i < input.len() {
+            let ch = input[i];
+            match self.mode {
+                BraceMode::String => {
+                    if self.esc {
+                        self.esc = false;
+                    } else if ch == b'\\' {
+                        self.esc = true;
+                    } else if ch == b'"' {
+                        self.mode = BraceMode::Code;
+                    } else if ch == b'\n' {
+                        return (i, BraceState::Failed);
+                    }
+                    i += 1;
+                    continue;
+                }
+                BraceMode::TripleString => {
+                    if ch != b'"' {
+                        self.run = 0;
+                    } else {
+                        self.run += 1;
+                        if self.run == 3 {
+                            self.mode = BraceMode::Code;
+                            self.run = 0;
+                        }
+                    }
+                    i += 1;
+                    continue;
+                }
+                BraceMode::Bytes => {
+                    match ch {
+                        b'"' => self.mode = BraceMode::Code,
+                        b'\n' => return (i, BraceState::Failed),
+                        _ => {}
+                    }
+                    i += 1;
+                    continue;
+                }
+                BraceMode::LineComment => {
+                    if ch == b'\n' {
+                        self.mode = BraceMode::Code;
+                    }
+                    i += 1;
+                    continue;
+                }
+                BraceMode::BlockComment => {
+                    if ch == b'/' && self.run == 1 {
+                        self.mode = BraceMode::Code;
+                        self.run = 0;
+                    } else if ch == b'*' {
+                        self.run = 1;
+                    } else {
+                        self.run = 0;
+                    }
+                    i += 1;
+                    continue;
+                }
+                BraceMode::Code => {}
+            }
+            match ch {
+                b'{' => self.depth += 1,
+                b'}' => {
+                    self.depth -= 1;
+                    if self.depth == 0 {
+                        return (i, BraceState::Closed);
+                    }
+                }
+                b'"' => {
+                    if i + 2 >= input.len() {
+                        return (i, BraceState::Open);
+                    }
+                    if input[i + 1] == b'"' && input[i + 2] == b'"' {
+                        self.mode = BraceMode::TripleString;
+                        i += 2;
+                    } else {
+                        self.mode = BraceMode::String;
+                    }
+                }
+                b'#' => self.mode = BraceMode::LineComment,
+                b'b' | b'/' => {
+                    if i + 1 >= input.len() {
+                        return (i, BraceState::Open);
+                    }
+                    let next = input[i + 1];
+                    let mode = match (ch, next) {
+                        (b'b', b'"') => Some(BraceMode::Bytes),
+                        (b'/', b'/') => Some(BraceMode::LineComment),
+                        (b'/', b'*') => Some(BraceMode::BlockComment),
+                        _ => None,
+                    };
+                    if let Some(m) = mode {
+                        self.mode = m;
+                        i += 1;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        (i, BraceState::Open)
+    }
 }
 
 /// Decode a base64-encoded string (standard or raw — the lexer accepts both).

@@ -32,6 +32,21 @@ pub struct Lexer<'a> {
     /// `MaxBytesLiteralLength`); the decoder and parser set it from their
     /// per-call limits.
     max_bytes_literal: usize,
+    /// Added to every reported offset, and `line0`/`col0` are where the
+    /// input starts: non-zero only when the input is a window into a larger
+    /// document (the streaming dataset reader lexes and parses one at a
+    /// time), so positions stay document-relative. An offset indexes
+    /// `input` only after `base` is subtracted.
+    base: usize,
+    line0: usize,
+    col0: usize,
+    /// The lexer stopped where more input could still change the token it
+    /// returned: it ran out of input inside the token, or looked for a byte
+    /// past the end ('.' then a digit, "µ", `""` then '"', '/' then '/' or
+    /// '*'). protowire-go's `sawEnd`: the dataset reader's scan reads it to
+    /// tell a token a read cut short from a finished one, with a lexer per
+    /// token; the parser never reads it.
+    saw_end: bool,
 }
 
 /// Snapshot of [`Lexer`] state. Used to roll back the lexer for
@@ -52,13 +67,43 @@ impl<'a> Lexer<'a> {
     /// decoded bytes, judged from the literal's length before it is
     /// decoded (draft -01 § Mandatory Limits, `MaxBytesLiteralLength`).
     pub fn with_limits(input: &'a str, max_bytes_literal: usize) -> Self {
-        Self {
-            input: input.as_bytes(),
-            pos: 0,
-            line: 1,
-            col: 1,
+        Self::at(
+            input.as_bytes(),
             max_bytes_literal,
+            Position::with_offset(1, 1, 0),
+        )
+    }
+
+    /// A lexer over `input`, a window of a document that starts at `start`.
+    /// `input` is valid UTF-8 up to its end, which may cut the document
+    /// anywhere but inside a character.
+    pub(crate) fn at(input: &'a [u8], max_bytes_literal: usize, start: Position) -> Self {
+        Self {
+            input,
+            pos: 0,
+            line: start.line,
+            col: start.column,
+            max_bytes_literal,
+            base: start.offset,
+            line0: start.line,
+            col0: start.column,
+            saw_end: false,
         }
+    }
+
+    /// Whether the last token could still change with more input.
+    pub(crate) fn saw_end(&self) -> bool {
+        self.saw_end
+    }
+
+    /// The input offset (not the document offset) the lexer stands at.
+    pub(crate) fn input_pos(&self) -> usize {
+        self.pos
+    }
+
+    /// The document offset of `input[0]`.
+    pub(crate) fn base(&self) -> usize {
+        self.base
     }
 
     /// Reposition the lexer to byte offset `target`, recomputing
@@ -68,8 +113,8 @@ impl<'a> Lexer<'a> {
     pub fn reposition_to(&mut self, target: usize) {
         if target < self.pos {
             self.pos = 0;
-            self.line = 1;
-            self.col = 1;
+            self.line = self.line0;
+            self.col = self.col0;
         }
         while self.pos < target && self.pos < self.input.len() {
             let ch = self.input[self.pos];
@@ -207,17 +252,16 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn peek(&self) -> u8 {
-        if self.pos >= self.input.len() {
-            0
-        } else {
-            self.input[self.pos]
-        }
+    /// The byte at the cursor, or 0 past the end, which records `saw_end`:
+    /// the lexer looked for a byte the input does not hold yet.
+    fn peek(&mut self) -> u8 {
+        self.peek_at(0)
     }
 
-    fn peek_at(&self, offset: usize) -> u8 {
+    fn peek_at(&mut self, offset: usize) -> u8 {
         let i = self.pos + offset;
         if i >= self.input.len() {
+            self.saw_end = true;
             0
         } else {
             self.input[i]
@@ -240,7 +284,7 @@ impl<'a> Lexer<'a> {
     }
 
     pub(crate) fn current_pos(&self) -> Position {
-        Position::with_offset(self.line, self.col, self.pos)
+        Position::with_offset(self.line, self.col, self.base + self.pos)
     }
 
     /// Raw input view — used by parse_directive to slice the body
@@ -282,6 +326,7 @@ impl<'a> Lexer<'a> {
         while self.pos < self.input.len() && self.input[self.pos] != b'\n' {
             self.advance();
         }
+        self.saw_end = self.pos == self.input.len();
         Token::new(
             TokenKind::Comment,
             slice_to_string(&self.input[start..self.pos]),
@@ -305,6 +350,7 @@ impl<'a> Lexer<'a> {
             }
             self.advance();
         }
+        self.saw_end = true;
         Token::new(TokenKind::Illegal, "unterminated block comment", pos)
     }
 
@@ -339,6 +385,7 @@ impl<'a> Lexer<'a> {
                 continue;
             }
             if self.pos >= self.input.len() {
+                self.saw_end = true;
                 return Token::new(TokenKind::Illegal, "unterminated escape sequence", pos);
             }
             let esc = self.advance();
@@ -400,12 +447,14 @@ impl<'a> Lexer<'a> {
                 }
             }
         }
+        self.saw_end = true;
         Token::new(TokenKind::Illegal, "unterminated string", pos)
     }
 
     /// Reads exactly 2 hex digits and returns the assembled byte.
     fn read_hex_byte(&mut self) -> Option<u8> {
         if self.pos + 1 >= self.input.len() {
+            self.saw_end = true;
             return None;
         }
         let hi = hex_val(self.input[self.pos])?;
@@ -418,6 +467,7 @@ impl<'a> Lexer<'a> {
     /// Reads exactly N hex digits and returns the assembled codepoint.
     fn read_hex_rune(&mut self, n: usize) -> Option<u32> {
         if self.pos + n > self.input.len() {
+            self.saw_end = true;
             return None;
         }
         let mut r: u32 = 0;
@@ -433,6 +483,7 @@ impl<'a> Lexer<'a> {
     /// restricted `first` to 0-3 so the result fits in a byte.
     fn read_oct_rest(&mut self, first: u8) -> Option<u8> {
         if self.pos + 1 >= self.input.len() {
+            self.saw_end = true;
             return None;
         }
         let d1 = oct_val(self.input[self.pos])?;
@@ -460,6 +511,7 @@ impl<'a> Lexer<'a> {
             }
             self.advance();
         }
+        self.saw_end = true;
         Token::new(TokenKind::Illegal, "unterminated triple-quoted string", pos)
     }
 
@@ -498,6 +550,7 @@ impl<'a> Lexer<'a> {
             }
             self.advance();
         }
+        self.saw_end = true;
         Token::new(TokenKind::Illegal, "unterminated bytes literal", pos)
     }
 
@@ -507,6 +560,7 @@ impl<'a> Lexer<'a> {
         while self.pos < self.input.len() && is_ident_part(self.input[self.pos]) {
             self.advance();
         }
+        self.saw_end = self.pos == self.input.len();
         let name = slice_to_string(&self.input[start..self.pos]);
         if name.is_empty() {
             return Token::new(
@@ -629,7 +683,7 @@ impl<'a> Lexer<'a> {
     /// Only the first byte(s) are inspected; `lex_duration` consumes the
     /// candidate and `is_valid_go_duration` decides whether it was a unit at
     /// all. Does not advance.
-    fn at_duration_unit(&self) -> bool {
+    fn at_duration_unit(&mut self) -> bool {
         if self.pos >= self.input.len() {
             return false;
         }
@@ -641,7 +695,7 @@ impl<'a> Lexer<'a> {
     /// grammar admits (micro-us = %xC2.B5 %x73); U+03BC GREEK SMALL LETTER
     /// MU, which Go's `time.ParseDuration` would also accept, is
     /// deliberately not recognised. Does not advance.
-    fn at_micro_sign(&self) -> bool {
+    fn at_micro_sign(&mut self) -> bool {
         self.peek() == 0xC2 && self.peek_at(1) == 0xB5
     }
 
@@ -692,6 +746,11 @@ impl<'a> Lexer<'a> {
             }
             self.advance();
         }
+        // A timestamp runs to a byte that ends it; at the end of the input
+        // it could still go on.
+        if self.pos == self.input.len() {
+            self.saw_end = true;
+        }
         let raw = slice_to_string(&self.input[start..self.pos]);
         if crate::rfc3339::parse(&raw).is_none() {
             return Token::new(
@@ -713,6 +772,7 @@ impl<'a> Lexer<'a> {
     fn lex_duration(&mut self, pos: Position, start: usize) -> Token {
         loop {
             if self.pos >= self.input.len() {
+                self.saw_end = true;
                 break;
             }
             let c = self.peek();
@@ -741,6 +801,7 @@ impl<'a> Lexer<'a> {
         while self.pos < self.input.len() && is_ident_part(self.input[self.pos]) {
             self.advance();
         }
+        self.saw_end = self.pos == self.input.len();
         let val = slice_to_string(&self.input[start..self.pos]);
         match val.as_str() {
             "true" | "false" => Token::new(TokenKind::Bool, val, pos),
@@ -763,7 +824,7 @@ fn is_ident_start(ch: u8) -> bool {
     ch.is_ascii_alphabetic() || ch == b'_'
 }
 
-fn is_ident_part(ch: u8) -> bool {
+pub(crate) fn is_ident_part(ch: u8) -> bool {
     is_ident_start(ch) || is_digit(ch) || ch == b'.'
 }
 
