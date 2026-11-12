@@ -31,7 +31,7 @@ use prost_reflect::{DynamicMessage, MessageDescriptor};
 use crate::ast::{DatasetRow, Directive, Document, Value};
 use crate::dataset_paths::check_column_paths;
 use crate::errors::PxfError;
-use crate::format::format_value_text;
+use crate::format::format_value;
 use crate::lexer::{is_ident_part, Lexer};
 use crate::limits::Limits;
 use crate::parser::{BraceMatch, BraceState, Parser, ERR_DATASET_BESIDE_ENTRIES};
@@ -1082,7 +1082,7 @@ impl BodyWriter<'_> {
 
     fn write_cell(&mut self, name: &str, col: usize) {
         let value = self.cells[col].as_ref().expect("only non-empty cells");
-        let text = format_value_text(value);
+        let text = format_value(value);
         self.body.push_str(name);
         self.body.push_str(" = ");
         self.body.push_str(&text);

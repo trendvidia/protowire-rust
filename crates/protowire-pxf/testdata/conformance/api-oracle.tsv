@@ -186,3 +186,14 @@ layered-test.binpb	layered_test.v1.WKTDefaults	apply	bytv	aGk=	OK	5a040a026869
 test.binpb	test.v1.AllTypes	full	@proto b"aGk"	ERR	1:8: @proto descriptor body: invalid base64: illegal base64 data at input byte 0		
 test.binpb	test.v1.AllTypes	full	@proto b"aGk-aGk="	OK			
 test.binpb	test.v1.AllTypes	full	@proto b"aGk_"	OK			
+test.binpb	test.v1.AllTypes	format	a = "he said \"hi\"" b = 31 c = 1.5e3 d = true e = null f = ENABLED g = b"aGk=" h = 30s i = 2020-01-01T00:00:00Z	OK	"he said \\"hi\\"" | 31 | 1.5e3 | true | null | ENABLED | b"aGk=" | 30s | 2020-01-01T00:00:00Z
+test.binpb	test.v1.AllTypes	format	a = [1, 2] b = [] c = [[1, 2], [3]] d = ["x", "y"]	OK	[\n  1,\n  2\n] | [\n] | [\n  [\n    1,\n    2\n  ],\n  [\n    3\n  ]\n] | [\n  "x",\n  "y"\n]
+test.binpb	test.v1.AllTypes	format	a = { x = 1 y = "z" } b = {} c = { n { m = 1 } } d = { k = [1, 2] }	OK	{\n  x = 1\n  y = "z"\n} | {\n} | {\n  n {\n    m = 1\n  }\n} | {\n  k = [\n    1,\n    2\n  ]\n}
+test.binpb	test.v1.AllTypes	format	a = [{ x = 1 }, { x = 2 }] b = { "k": 1 "j": { z = 2 } } c = { 1: "one" true: 2 }	OK	[\n  {\n    x = 1\n  },\n  {\n    x = 2\n  }\n] | {\n  k: 1\n  j: {\n    z = 2\n  }\n} | {\n  1: "one"\n  true: 2\n}
+test.binpb	test.v1.AllTypes	format	a = "x\ny\ttab\\back" b = "é∑🎉" c = "\u0001\u007f" d = ""	OK	"x\\ny\\ttab\\\\back" | "é∑🎉" | "\\x01\\x7f" | ""
+test.binpb	test.v1.AllTypes	format	a = -5 b = 0 c = 1.5p10 d = -1e-5 e = 1.0 f = 9223372036854775808 g = inf h = -inf i = nan	OK	-5 | 0 | 1.5p10 | -1e-5 | 1.0 | 9223372036854775808 | inf | -inf | nan
+test.binpb	test.v1.AllTypes	format	a = b"" b = b"aGVsbG8" c = -1h30m d = 2020-01-01T00:00:00.123+02:00 e = b"aGk-"	OK	b"" | b"aGVsbG8=" | -1h30m | 2020-01-01T00:00:00.123+02:00 | b"aGk+"
+test.binpb	test.v1.AllTypes	format	a = [null, true, ENUM_A] b = { x = null } c = [ ] d = { }	OK	[\n  null,\n  true,\n  ENUM_A\n] | {\n  x = null\n} | [\n] | {\n}
+test.binpb	test.v1.AllTypes	format	a = """	ERR	1:5: unterminated triple-quoted string
+test.binpb	test.v1.AllTypes	marshal	string_field = "a\u0007b\u0008\u000c\u000b\u007f c​\u0085" string_map = { "k\u0007": "v\u0007" " ": "​" "plain": "x" }	OK	string_field = "a\\x07b\\x08\\x0c\\x0b c​"\nstring_map = {\n  "\\u00a0": "​"\n  "k\\a": "v\\x07"\n  plain: "x"\n}\n
+test.binpb	test.v1.AllTypes	format	a = "\u0007\u0008\u000c\u000b\u007f ​\u0085\U0001F600" b = { "k\u0007": 1 " ": 2 }	OK	"\\a\\b\\f\\v\\x7f\\u00a0\\u200b\\u0085\\ue000😀" | {\n  "k\\a": 1\n  "\\u00a0": 2\n}

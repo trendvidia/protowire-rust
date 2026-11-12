@@ -42,7 +42,7 @@ pub use decode::{
 };
 pub use encode::{marshal, MarshalOptions};
 pub use errors::PxfError;
-pub use format::{format, format_with_options, FormatOptions};
+pub use format::{append_value, format, format_value, format_with_options, FormatOptions};
 pub use keyed::{canonicalize_keyed, ident_safe_entry_name, key_field};
 pub use lexer::Lexer;
 pub use limits::{

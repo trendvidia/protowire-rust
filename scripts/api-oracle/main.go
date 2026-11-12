@@ -12,13 +12,15 @@
 //	full <doc>             UnmarshalFull
 //	full-skip <doc>        UnmarshalFull with SkipPostDecode
 //	marshal <doc>          Unmarshal, then Marshal
+//	format <doc>           Parse, then FormatValue of each top-level
+//	                       assignment's value, joined by " | "
 //	apply <field> <lit>    ApplyDefault on a new message
 //	required <field>       IsRequired
 //	default <field>        Default
 //
 // Each row is the case, then the verdict: OK and the message's pb hex, its
 // sorted PresentFields and its sorted NullFields (the last two only for a
-// full decode), or for marshal the text; or ERR and the error; or, for
+// full decode), or for marshal the text, for format the values; or ERR and the error; or, for
 // required and default, the answer.
 package main
 
@@ -119,6 +121,19 @@ func main() {
 			} else {
 				row = "OK\t" + oneLine(string(text))
 			}
+		case "format":
+			doc, err := pxf.Parse([]byte(c[3]))
+			if err != nil {
+				row = "ERR\t" + oneLine(err.Error())
+				break
+			}
+			var vals []string
+			for _, e := range doc.Entries {
+				if a, ok := e.(*pxf.Assignment); ok {
+					vals = append(vals, string(pxf.FormatValue(a.Value)))
+				}
+			}
+			row = "OK\t" + oneLine(strings.Join(vals, " | "))
 		case "apply":
 			m := dynamicpb.NewMessage(desc)
 			if err := pxf.ApplyDefault(m, field(), c[4]); err != nil {

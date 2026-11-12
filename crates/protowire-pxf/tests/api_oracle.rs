@@ -19,7 +19,8 @@ use prost::Message as _;
 use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor};
 use protowire_pxf::annotations::{get_default, is_required};
 use protowire_pxf::{
-    apply_default, marshal, unmarshal, unmarshal_full, MarshalOptions, UnmarshalOptions,
+    append_value, apply_default, format_value, marshal, parse, unmarshal, unmarshal_full, Entry,
+    MarshalOptions, UnmarshalOptions,
 };
 
 const ORACLE: &str = include_str!("../testdata/conformance/api-oracle.tsv");
@@ -128,6 +129,24 @@ fn run() -> (Vec<String>, HashMap<String, usize>) {
                 let want = format!("{}\t{}", c[4], unescape(c[5]));
                 (got != want).then(|| format!("marshal\n   got: {got:?}\n  want: {want:?}"))
             }
+            "format" => {
+                let got = match parse(c[3]) {
+                    Err(e) => format!("ERR\t{e}"),
+                    Ok(doc) => {
+                        let vals: Vec<String> = doc
+                            .entries
+                            .iter()
+                            .filter_map(|e| match e {
+                                Entry::Assignment(a) => Some(format_value(&a.value)),
+                                _ => None,
+                            })
+                            .collect();
+                        format!("OK\t{}", vals.join(" | "))
+                    }
+                };
+                let want = format!("{}\t{}", c[4], unescape(c[5]));
+                (got != want).then(|| format!("format\n   got: {got:?}\n  want: {want:?}"))
+            }
             "apply" => {
                 let mut m = DynamicMessage::new(desc.clone());
                 match (apply_default(&mut m, &field(), c[4]), c[5]) {
@@ -172,12 +191,13 @@ fn every_case_meets_the_reference() {
             "full",
             "full-skip",
             "marshal",
+            "format",
             "apply",
             "required",
             "default"
         ]
         .map(count),
-        [25, 13, 1, 130, 3, 9]
+        [25, 13, 2, 10, 130, 3, 9]
     );
     assert_eq!(count("pinned"), WAITS_ON_98.len());
     assert!(
@@ -186,4 +206,17 @@ fn every_case_meets_the_reference() {
         diffs.len(),
         diffs.join("\n")
     );
+}
+
+/// protowire-go's `TestAppendValuePreservesDst`: the text goes after what
+/// the buffer held.
+#[test]
+fn append_value_keeps_the_buffer() {
+    let doc = parse("a = 7").unwrap();
+    let Entry::Assignment(a) = &doc.entries[0] else {
+        panic!("an assignment")
+    };
+    let mut dst = String::from("prefix=");
+    append_value(&mut dst, &a.value);
+    assert_eq!(dst, "prefix=7");
 }
