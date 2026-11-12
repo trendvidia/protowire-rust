@@ -72,7 +72,7 @@ impl TokenKind {
             TokenKind::Colon => ":",
             TokenKind::Comma => ",",
             TokenKind::AtType => "@type",
-            TokenKind::AtDirective => "@<directive>",
+            TokenKind::AtDirective => "@directive",
             TokenKind::AtDataset => "@dataset",
             TokenKind::AtProto => "@proto",
         }

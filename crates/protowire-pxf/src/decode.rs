@@ -597,6 +597,15 @@ impl<'a> Decoder<'a> {
         PxfError::new(self.current.pos, msg)
     }
 
+    /// The current token, as an error names it: protowire-go's
+    /// `tokenErrMsg`, an ILLEGAL token's own text or `kind ("value")`.
+    fn token_err_msg(&self) -> String {
+        if matches!(self.current.kind, TokenKind::Illegal) {
+            return self.current.value.clone();
+        }
+        format!("{} ({:?})", self.current.kind, self.current.value)
+    }
+
     fn err_at(&self, pos: Position, msg: impl Into<String>) -> PxfError {
         PxfError::new(pos, msg)
     }
@@ -921,7 +930,12 @@ impl<'a> Decoder<'a> {
                 return Ok(());
             }
             if !matches!(self.current.kind, TokenKind::LBrace) {
-                return Err(self.err(format!("expected '{{' for message field {:?}", fd.name())));
+                return Err(self.err(format!(
+                    "expected {} for message field {:?}, got {}",
+                    msg_value_forms(&sub.descriptor()),
+                    fd.name(),
+                    self.token_err_msg()
+                )));
             }
             self.advance();
             if self.presence.is_some() {
@@ -984,7 +998,10 @@ impl<'a> Decoder<'a> {
                     let mut sub = DynamicMessage::new(inner_desc.clone());
                     if !self.try_decode_wkt(&mut sub)? {
                         if !matches!(self.current.kind, TokenKind::LBrace) {
-                            return Err(self.err("expected '{' for repeated message element"));
+                            return Err(self.err(format!(
+                                "expected '{{' for repeated message element, got {}",
+                                self.token_err_msg()
+                            )));
                         }
                         self.advance();
                         if let Some(key_fd) = &key_fd {
@@ -1225,7 +1242,10 @@ impl<'a> Decoder<'a> {
                 let mut sub = DynamicMessage::new(inner_desc);
                 if !self.try_decode_wkt(&mut sub)? {
                     if !matches!(self.current.kind, TokenKind::LBrace) {
-                        return Err(self.err("expected '{' for map message value"));
+                        return Err(self.err(format!(
+                            "expected '{{' for map message value, got {}",
+                            self.token_err_msg()
+                        )));
                     }
                     self.advance();
                     let saved = self.enter_key(fd.name(), &key);
@@ -1846,6 +1866,21 @@ fn oneof_already_chosen(fd: &FieldDescriptor, presence: &Presence, path_prefix: 
         m.number() != fd.number() && !presence.is_absent(&format!("{}{}", path_prefix, m.name()))
     });
     chosen
+}
+
+/// The value forms a message field admits, for the error when the token at
+/// the value position matches none of them: protowire-go's `msgValueForms`.
+/// Every message takes a block; the well-known types that also take a
+/// literal say so.
+fn msg_value_forms(desc: &MessageDescriptor) -> &'static str {
+    match desc.full_name() {
+        "google.protobuf.Timestamp" => "a timestamp literal or '{'",
+        "google.protobuf.Duration" => "a duration literal or '{'",
+        "pxf.BigInt" => "an integer literal or '{'",
+        "pxf.Decimal" | "pxf.BigFloat" => "a numeric literal or '{'",
+        _ if is_secret(desc) => "a string literal or '{'",
+        _ => "'{'",
+    }
 }
 
 pub(crate) fn is_wkt_skip_recursion(full: &str) -> bool {

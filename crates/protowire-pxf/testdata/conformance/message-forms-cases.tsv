@@ -1,0 +1,27 @@
+test.binpb	test.v1.AllTypes	ts_field = 5
+test.binpb	test.v1.AllTypes	ts_field = "x"
+test.binpb	test.v1.AllTypes	ts_field = true
+test.binpb	test.v1.AllTypes	ts_field = [1]
+test.binpb	test.v1.AllTypes	ts_field = 1s
+test.binpb	test.v1.AllTypes	dur_field = 5
+test.binpb	test.v1.AllTypes	dur_field = "x"
+test.binpb	test.v1.AllTypes	dur_field = 2026-01-02T03:04:05Z
+test.binpb	test.v1.AllTypes	nested_field = 5
+test.binpb	test.v1.AllTypes	nested_field = "x"
+test.binpb	test.v1.AllTypes	nested_field = [1]
+test.binpb	test.v1.AllTypes	nested_field = null_x
+test.binpb	test.v1.AllTypes	ts_field = 2026-13-01T00:00:00Z
+test.binpb	test.v1.AllTypes	ts_field = 1.5
+test.binpb	test.v1.AllTypes	ts_field = b"AA=="
+test.binpb	test.v1.AllTypes	repeated_nested = [5]
+test.binpb	test.v1.AllTypes	nested_map = { "k": 5 }
+bignum-test.binpb	bignum_test.v1.BigNumDemo	big_int_field = "x"
+bignum-test.binpb	bignum_test.v1.BigNumDemo	big_int_field = 1.5
+bignum-test.binpb	bignum_test.v1.BigNumDemo	big_int_field = true
+bignum-test.binpb	bignum_test.v1.BigNumDemo	decimal_field = "x"
+bignum-test.binpb	bignum_test.v1.BigNumDemo	decimal_field = true
+bignum-test.binpb	bignum_test.v1.BigNumDemo	big_float_field = "x"
+bignum-test.binpb	bignum_test.v1.BigNumDemo	big_float_field = 1s
+secret-literal-test.binpb	secretlit.v1.S	pw = 5
+secret-literal-test.binpb	secretlit.v1.S	pw = true
+secret-literal-test.binpb	secretlit.v1.S	pw = [1]

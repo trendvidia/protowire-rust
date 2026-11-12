@@ -21,7 +21,7 @@ mkdir -p "$work/scripts/presence_oracle"
 cp "$repo_root/scripts/presence-oracle/main.go" "$work/scripts/presence_oracle/main.go"
 
 # Names to regenerate, default all: `scripts/gen-presence-oracle.sh timestamp`.
-for name in ${@:-presence timestamp}; do
+for name in ${@:-presence timestamp message-forms}; do
   cases="$testdata/conformance/$name-cases.tsv"
   out="$testdata/conformance/$name-oracle.tsv"
   {

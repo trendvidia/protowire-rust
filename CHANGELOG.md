@@ -34,6 +34,11 @@ format changes.
 ### Fixed
 
 - **Iterating a `DatasetReader` ends after a row error** ([#132](https://github.com/trendvidia/protowire-rust/issues/132)). The iterator forwarded to `next_row`, which returns a row error again on every call, as protowire-go's `Next` does. So `for row in reader` yielded the same error forever, and a loop that logged it and carried on never ended. The iterator now yields the error once and ends. `next_row` is unchanged, and its doc no longer says it returns `None` after an error.
+- **A wrong token for a message field gets protowire-go's error** ([#147](https://github.com/trendvidia/protowire-rust/issues/147)). `ts_field = 5` used to say only `expected '{' for message field "ts_field"`. It now names the forms the field takes and the token it got, word for word as protowire-go: `expected a timestamp literal or '{' for message field "ts_field", got integer ("5")`.
+  - **Forms named:** a duration literal for a Duration, an integer literal for a BigInt, a numeric literal for a Decimal or BigFloat, a string literal for a Secret, and `'{'` alone otherwise.
+  - **List elements and map values:** these say what they got too.
+  - **Directive token:** now named `@directive` in errors, as in Go, not `@<directive>`.
+  - **Tests:** `testdata/conformance/message-forms-oracle.tsv` holds 27 such errors from protowire-go v1.17.0.
 - **A timestamp literal is read as protowire-go reads it** ([#118](https://github.com/trendvidia/protowire-rust/issues/118)). It ends at `)`, as protowire-go's lexer ends one, so a timestamp can be the last cell of a `@dataset` row. `(1, 2026-01-01T00:00:00Z)` used to fail with `invalid timestamp: 2026-01-01T00:00:00Z)`. Which literals are valid, and the value each reads as, now follow Go's `time.Parse` for RFC 3339, which protowire-go uses.
   - **Now refused:** lowercase `t` or `z`, and second 60.
   - **Now accepted:** a one-digit hour (`T3:04:05Z`), and zone offsets up to `+24:00`, `+24:01` and `+23:60`.

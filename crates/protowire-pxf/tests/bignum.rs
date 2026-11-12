@@ -135,11 +135,10 @@ fn big_int_block_form_still_reads() {
 fn big_int_rejects_a_non_integer_literal() {
     let err = unmarshal("big_int_field = 1.5", &demo(), UnmarshalOptions::default())
         .expect_err("a float is not a BigInt literal");
-    assert!(
-        err.msg
-            .contains("expected '{' for message field \"big_int_field\""),
-        "{}",
-        err.msg
+    // protowire-go's text (#147; message-forms-oracle.tsv has the row).
+    assert_eq!(
+        err.to_string(),
+        "1:17: expected an integer literal or '{' for message field \"big_int_field\", got float (\"1.5\")"
     );
 }
 
