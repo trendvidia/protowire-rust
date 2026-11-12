@@ -12,6 +12,7 @@ use crate::ast::{
     Directive, Document, DurationVal, Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry,
     NullVal, ProtoDirective, ProtoShape, StringVal, TimestampVal, TypeEntry, Value,
 };
+use crate::bigfloat::clip_literal;
 use crate::dataset_paths::column_path_error;
 use crate::decode::TYPE_ENTRY_MISPLACED;
 use crate::errors::PxfError;
@@ -138,6 +139,15 @@ impl<'a> Parser<'a> {
                 _ => return,
             }
         }
+    }
+
+    /// protowire-go's `tokenErrMsg`: an illegal token is named by the
+    /// lexer's diagnostic, any other by its kind and text.
+    fn token_err_msg(&self) -> String {
+        if matches!(self.current.kind, TokenKind::Illegal) {
+            return self.current.value.clone();
+        }
+        format!("{} ({:?})", self.current.kind.name(), self.current.value)
     }
 
     fn flush_comments(&mut self) -> Vec<Comment> {
@@ -617,23 +627,16 @@ impl<'a> Parser<'a> {
             return Err(PxfError::new(
                 pos,
                 format!(
-                    "expected identifier, string, integer, or bool, got {} ({:?})",
-                    k.name(),
-                    self.current.value
-                ),
-            ));
-        }
-        if !self.current.prec.is_empty() {
-            return Err(PxfError::new(
-                pos,
-                format!(
-                    "a key cannot carry a precision suffix (p{})",
-                    self.current.prec
+                    "expected identifier, string, integer, or bool, got {}",
+                    self.token_err_msg()
                 ),
             ));
         }
         let key_kind = k;
         let key = std::mem::take(&mut self.current.value);
+        // Only a numeric literal carries a suffix. Each tail below decides
+        // what one on a key means, as protowire-go's parseEntry does.
+        let key_prec = std::mem::take(&mut self.current.prec);
         self.advance();
 
         match self.current.kind {
@@ -644,14 +647,7 @@ impl<'a> Parser<'a> {
                 // layer checks (draft -01 §3.13). Integer and bool keys are
                 // only valid with `:`.
                 if !matches!(key_kind, TokenKind::Ident | TokenKind::String) {
-                    return Err(PxfError::new(
-                        pos,
-                        format!(
-                            "field assignment with '=' requires an identifier or string key, got {} ({:?}); use ':' for map entries",
-                            key_kind.name(),
-                            key
-                        ),
-                    ));
+                    return Err(non_name_assign_error(pos, key_kind, &key, &key_prec));
                 }
                 self.advance();
                 let value = self.parse_value()?;
@@ -668,9 +664,19 @@ impl<'a> Parser<'a> {
                 // Map entry. Only allowed inside a '{ ... }' block, never at
                 // document top level.
                 if !allow_map_entry {
+                    return Err(top_level_map_entry_error(pos));
+                }
+                // map-key = identifier / string / integer / bool: an integer
+                // key takes no precision suffix (draft -01 ABNF,
+                // protowire#406). MapEntry.key has nowhere to keep one.
+                if !key_prec.is_empty() {
                     return Err(PxfError::new(
                         pos,
-                        "map entry (':' form) is only allowed inside a '{ … }' block; use '=' for top-level field assignments".to_string(),
+                        format!(
+                            "map key {}: a key cannot carry a precision suffix (p{})",
+                            key,
+                            clip_literal(&key_prec)
+                        ),
                     ));
                 }
                 self.advance();
@@ -688,14 +694,7 @@ impl<'a> Parser<'a> {
                 // `{ ... }` denotes a submessage field, or a named entry of a
                 // keyed repeated field; same identifier-or-string rule as `=`.
                 if !matches!(key_kind, TokenKind::Ident | TokenKind::String) {
-                    return Err(PxfError::new(
-                        pos,
-                        format!(
-                            "submessage block requires an identifier or string key, got {} ({:?})",
-                            key_kind.name(),
-                            key
-                        ),
-                    ));
+                    return Err(non_name_block_error(pos, key_kind, &key, &key_prec));
                 }
                 let open_pos = self.current.pos;
                 self.advance();
@@ -853,7 +852,7 @@ impl<'a> Parser<'a> {
         if !matches!(self.current.kind, TokenKind::Equals) {
             return Err(PxfError::new(
                 self.current.pos,
-                format!("expected '=' after @type, got {}", self.current.kind.name()),
+                format!("expected '=' after @type, got {}", self.token_err_msg()),
             ));
         }
         self.advance();
@@ -862,7 +861,7 @@ impl<'a> Parser<'a> {
                 self.current.pos,
                 format!(
                     "expected a string type URL after @type =, got {}",
-                    self.current.kind.name()
+                    self.token_err_msg()
                 ),
             ));
         }
@@ -881,6 +880,60 @@ impl<'a> Parser<'a> {
 /// braces inside literals don't confuse the brace count. Returns
 /// `-1` on unterminated input. Used by `parse_directive` to slice
 /// the raw bytes of a directive's inline block.
+/// An integer or bool key before `=`: protowire-go's `nonNameAssignError`.
+/// The parser and both decoders give it whatever the schema and options say,
+/// `discard_unknown` included, since no field has such a name.
+pub(crate) fn non_name_assign_error(
+    pos: Position,
+    kind: TokenKind,
+    key: &str,
+    prec: &str,
+) -> PxfError {
+    PxfError::new(
+        pos,
+        format!(
+            "field assignment with '=' requires an identifier or string key, got {} ({:?}); use ':' for map entries",
+            kind.name(),
+            written_key(key, prec)
+        ),
+    )
+}
+
+/// An integer or bool key before `{`: protowire-go's `nonNameBlockError`.
+pub(crate) fn non_name_block_error(
+    pos: Position,
+    kind: TokenKind,
+    key: &str,
+    prec: &str,
+) -> PxfError {
+    PxfError::new(
+        pos,
+        format!(
+            "submessage block requires an identifier or string key, got {} ({:?})",
+            kind.name(),
+            written_key(key, prec)
+        ),
+    )
+}
+
+/// A `:` entry at the top level of a document: protowire-go's
+/// `topLevelMapEntryError`, from the parser and the decoders alike.
+pub(crate) fn top_level_map_entry_error(pos: Position) -> PxfError {
+    PxfError::new(
+        pos,
+        "map entry (':' form) is only allowed inside a '{ … }' block; use '=' for top-level field assignments",
+    )
+}
+
+/// A key as written: an integer with its precision suffix, shortened as
+/// protowire-go's `writtenKey` shortens it.
+fn written_key(key: &str, prec: &str) -> String {
+    if prec.is_empty() {
+        return key.to_string();
+    }
+    format!("{}p{}", key, clip_literal(prec))
+}
+
 pub(crate) fn find_matching_brace(input: &[u8], open_offset: usize) -> i64 {
     let n = input.len();
     let skip_string = |mut j: usize| -> i64 {
