@@ -4,8 +4,10 @@
 //!
 //! Mirrors `protowire/encoding/pxf/parser.go`. Newlines and comments are
 //! absorbed at the lexer-token boundary: comments accumulate in a pending
-//! buffer and attach as `leading_comments` to the next entry. Trailing
-//! inline comments are not yet captured (the formatter populates them).
+//! buffer and attach as `leading_comments` to the next entry, directive or
+//! dataset row. A comment on the same line after an entry's value is that
+//! entry's `trailing_comment`, and one that precedes nothing is the
+//! `trailing_comments` of its block or document (protowire-go#279).
 
 use crate::ast::{
     Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, DatasetDirective, DatasetRow,
@@ -59,6 +61,7 @@ pub(crate) fn read_value(
         lex: lex.clone(),
         current: std::mem::replace(current, Token::new(TokenKind::Eof, "", Position::new(1, 1))),
         pending: Vec::new(),
+        prev_end: Position::new(1, 1),
         depth,
         limits,
     };
@@ -85,6 +88,9 @@ struct Parser<'a> {
     lex: Lexer<'a>,
     current: Token,
     pending: Vec<Comment>,
+    /// Where the last consumed token ended: a value's end once it is read,
+    /// which tells a comment on its line from one on the next.
+    prev_end: Position,
     /// Live `{` + `[` depth, incremented at each opening token and
     /// decremented at the matching close. Exceeds → reject before recursing.
     depth: usize,
@@ -97,6 +103,7 @@ impl<'a> Parser<'a> {
             lex: Lexer::with_limits(input, limits.max_bytes_literal_length),
             current: Token::new(TokenKind::Eof, "", Position::new(1, 1)),
             pending: Vec::new(),
+            prev_end: Position::new(1, 1),
             depth: 0,
             limits,
         };
@@ -125,6 +132,7 @@ impl<'a> Parser<'a> {
     /// Consume the next token, swallowing newlines and accumulating comments
     /// into the pending buffer so they can be attached to the following entry.
     fn advance(&mut self) {
+        self.prev_end = self.lex.current_pos();
         loop {
             self.current = self.lex.next_token();
             match self.current.kind {
@@ -152,6 +160,21 @@ impl<'a> Parser<'a> {
 
     fn flush_comments(&mut self) -> Vec<Comment> {
         std::mem::take(&mut self.pending)
+    }
+
+    /// Remove and return the text of a pending comment written after a
+    /// value on the same source line (`restrict = true # deny-by-default`),
+    /// as protowire-go's `takeTrailingComment` does; `end` is the value's
+    /// end. A newline ends every line, so at most the first pending comment
+    /// is one. Empty when that comment starts on a later line (it leads the
+    /// next entry) or before the value.
+    fn take_trailing_comment(&mut self, end: Position) -> String {
+        match self.pending.first() {
+            Some(c) if c.pos.line == end.line && c.pos.offset >= end.offset => {
+                self.pending.remove(0).text
+            }
+            _ => String::new(),
+        }
     }
 
     fn parse_document(&mut self) -> Result<Document, PxfError> {
@@ -240,6 +263,8 @@ impl<'a> Parser<'a> {
             // docs/grammar.ebnf -> document.
             entries.push(self.parse_entry(false)?);
         }
+        // Comments after the last entry, directive or row.
+        let trailing_comments = self.flush_comments();
         Ok(Document {
             type_url,
             directives,
@@ -248,6 +273,7 @@ impl<'a> Parser<'a> {
             body_offset,
             entries,
             leading_comments,
+            trailing_comments,
         })
     }
 
@@ -443,8 +469,13 @@ impl<'a> Parser<'a> {
 
     /// Reads `( cell ( ',' cell )* )` with an arity check against
     /// `expected`. LPAREN is current on entry.
+    ///
+    /// The comments pending at the `(` and those inside the row are the
+    /// row's `leading_comments`. Left pending, they would pass to the next
+    /// row or directive, or to the document's end.
     fn parse_dataset_row(&mut self, expected: usize) -> Result<(DatasetRow, usize), PxfError> {
         let pos = self.current.pos;
+        let mut leading_comments = self.flush_comments();
         self.advance(); // consume (
 
         let mut cells: Vec<Option<Value>> = Vec::with_capacity(expected);
@@ -463,6 +494,9 @@ impl<'a> Parser<'a> {
             ));
         }
         let end_offset = self.current.pos.offset + 1;
+        // Taken before the ')' is consumed: advance would add the comments
+        // after it, which belong to what follows the row.
+        leading_comments.append(&mut self.flush_comments());
         self.advance(); // consume )
 
         if cells.len() != expected {
@@ -475,7 +509,14 @@ impl<'a> Parser<'a> {
                 ),
             ));
         }
-        Ok((DatasetRow { pos, cells }, end_offset))
+        Ok((
+            DatasetRow {
+                pos,
+                cells,
+                leading_comments,
+            },
+            end_offset,
+        ))
     }
 
     /// Reads `@proto <body>` (draft §3.4.5). AT_PROTO is current on
@@ -606,7 +647,17 @@ impl<'a> Parser<'a> {
     fn parse_row_cell(&mut self) -> Result<Option<Value>, PxfError> {
         match self.current.kind {
             TokenKind::Comma | TokenKind::RParen => Ok(None),
-            _ => Ok(Some(self.parse_value()?)),
+            _ => {
+                // A block cell's entries flush pending comments as their
+                // leading comments. Comments before the cell belong to no
+                // entry of it, so set them aside: the cell keeps only the
+                // comments written inside it.
+                let pending = std::mem::take(&mut self.pending);
+                let v = self.parse_value();
+                let inside = std::mem::replace(&mut self.pending, pending);
+                self.pending.extend(inside);
+                Ok(Some(v?))
+            }
         }
     }
 
@@ -651,13 +702,14 @@ impl<'a> Parser<'a> {
                 }
                 self.advance();
                 let value = self.parse_value()?;
+                let trailing_comment = self.take_trailing_comment(self.prev_end);
                 Ok(Entry::Assignment(Assignment {
                     pos,
                     key,
                     key_quoted: matches!(key_kind, TokenKind::String),
                     value,
                     leading_comments,
-                    trailing_comment: String::new(),
+                    trailing_comment,
                 }))
             }
             TokenKind::Colon => {
@@ -681,13 +733,14 @@ impl<'a> Parser<'a> {
                 }
                 self.advance();
                 let value = self.parse_value()?;
+                let trailing_comment = self.take_trailing_comment(self.prev_end);
                 Ok(Entry::MapEntry(MapEntry {
                     pos,
                     key,
                     quoted: matches!(key_kind, TokenKind::String),
                     value,
                     leading_comments,
-                    trailing_comment: String::new(),
+                    trailing_comment,
                 }))
             }
             TokenKind::LBrace => {
@@ -698,13 +751,14 @@ impl<'a> Parser<'a> {
                 }
                 let open_pos = self.current.pos;
                 self.advance();
-                let entries = self.parse_body(open_pos)?;
+                let (entries, trailing_comments) = self.parse_body(open_pos)?;
                 Ok(Entry::Block(Block {
                     pos,
                     name: key,
                     name_quoted: matches!(key_kind, TokenKind::String),
                     entries,
                     leading_comments,
+                    trailing_comments,
                 }))
             }
             other => Err(PxfError::new(
@@ -810,11 +864,17 @@ impl<'a> Parser<'a> {
     fn parse_block_val(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
         self.advance(); // consume {
-        let entries = self.parse_body(pos)?;
-        Ok(Value::Block(BlockVal { pos, entries }))
+        let (entries, trailing_comments) = self.parse_body(pos)?;
+        Ok(Value::Block(BlockVal {
+            pos,
+            entries,
+            trailing_comments,
+        }))
     }
 
-    fn parse_body(&mut self, open_pos: Position) -> Result<Vec<Entry>, PxfError> {
+    /// Reads a block's entries up to and through its `}`. Returns them and
+    /// the comments after the last of them, before the `}`.
+    fn parse_body(&mut self, open_pos: Position) -> Result<(Vec<Entry>, Vec<Comment>), PxfError> {
         self.enter(open_pos)?;
         let mut entries = Vec::new();
         while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof) {
@@ -832,9 +892,12 @@ impl<'a> Parser<'a> {
                 format!("expected '}}', got {}", self.current.kind.name()),
             ));
         }
+        // Taken before the '}' is consumed: advance would add the comments
+        // after it, which belong to what follows the block.
+        let trailing = self.flush_comments();
         self.advance();
         self.leave();
-        Ok(entries)
+        Ok((entries, trailing))
     }
 
     /// Reads `@type = "<type-url>"`, the type entry of a
@@ -867,10 +930,12 @@ impl<'a> Parser<'a> {
         }
         let url = std::mem::take(&mut self.current.value);
         self.advance();
+        let trailing_comment = self.take_trailing_comment(self.prev_end);
         Ok(Entry::TypeEntry(TypeEntry {
             pos,
             url,
             leading_comments,
+            trailing_comment,
         }))
     }
 }

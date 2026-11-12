@@ -233,7 +233,7 @@ impl<'a> Lexer<'a> {
         ch
     }
 
-    fn current_pos(&self) -> Position {
+    pub(crate) fn current_pos(&self) -> Position {
         Position::with_offset(self.line, self.col, self.pos)
     }
 

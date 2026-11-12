@@ -31,6 +31,12 @@ impl Default for FormatOptions {
 
 /// Pretty-print a parsed [`Document`], preserving comments.
 ///
+/// A comment is written where it was: before the entry, directive or
+/// dataset row it precedes, after the value on its line, or before the end
+/// of its block or document when nothing follows it (protowire-go#279). A
+/// row is written on one line, so a comment inside a row comes before it.
+/// Comments inside a list are written after the list.
+///
 /// Every directive is kept, with its dataset rows, in document order
 /// (trendvidia/protowire#558). `@type` is written first: it binds no
 /// anonymous `@proto`, so moving it changes nothing. The other directives
@@ -58,6 +64,7 @@ pub fn format_with_options(doc: &Document, opts: &FormatOptions) -> String {
         }
         f.write_comments(&doc.leading_comments, 0);
         f.format_entries(&doc.entries, 0);
+        f.write_comments(&doc.trailing_comments, 0);
         return f.out;
     }
 
@@ -87,6 +94,7 @@ pub fn format_with_options(doc: &Document, opts: &FormatOptions) -> String {
         f.out.push('\n');
         f.format_entries(&doc.entries, 0);
     }
+    f.write_comments(&doc.trailing_comments, 0);
     f.out
 }
 
@@ -184,6 +192,7 @@ impl Formatter<'_> {
         self.out.push_str(&d.columns.join(", "));
         self.out.push_str(")\n");
         for row in &d.rows {
+            self.write_comments(&row.leading_comments, 0);
             self.out.push('(');
             for (i, cell) in row.cells.iter().enumerate() {
                 if i > 0 {
@@ -279,6 +288,7 @@ impl Formatter<'_> {
                     }
                     self.out.push_str(" {\n");
                     self.format_entries(&b.entries, level + 1);
+                    self.write_comments(&b.trailing_comments, level + 1);
                     self.write_indent(level);
                     self.out.push_str("}\n");
                 }
@@ -287,6 +297,10 @@ impl Formatter<'_> {
                     self.write_indent(level);
                     self.out.push_str("@type = ");
                     self.out.push_str(&quote_string(&t.url));
+                    if !t.trailing_comment.is_empty() {
+                        self.out.push(' ');
+                        self.out.push_str(&t.trailing_comment);
+                    }
                     self.out.push('\n');
                 }
             }
@@ -333,6 +347,7 @@ impl Formatter<'_> {
             Value::Block(b) => {
                 self.out.push_str("{\n");
                 self.format_entries(&b.entries, level + 1);
+                self.write_comments(&b.trailing_comments, level + 1);
                 self.write_indent(level);
                 self.out.push('}');
             }
