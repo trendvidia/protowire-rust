@@ -42,3 +42,9 @@ message Required {
   int32 n = 1 [(pxf.required) = true];
   string s = 2;
 }
+// A negative zero in an Any body (#98): protobuf-go writes it.
+message Floats {
+  double d = 1;
+  float f = 2;
+  map<string, double> md = 3;
+}

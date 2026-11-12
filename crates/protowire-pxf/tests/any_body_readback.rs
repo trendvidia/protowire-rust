@@ -429,3 +429,50 @@ fn decoder_packs_a_map_in_key_order() {
         assert_eq!(value.as_bytes().unwrap().as_ref(), &want[..]);
     }
 }
+
+/// A negative zero in an Any body keeps its sign in the packed value (#98).
+/// prost-reflect's encoder drops a proto3 -0.0 (andrewhickman/prost-reflect#208),
+/// and this port packs an Any's value with its own writer, which now writes
+/// it. The bytes are what protobuf-go's deterministic Marshal writes for
+/// `anyback.v1.Floats{d: -0, f: -0, md: {"a": -0}}`.
+#[test]
+fn negative_zero_in_an_any_body_is_packed() {
+    let p = pool();
+    let d = holder(p);
+    let res = PoolResolver(p);
+    let opts = || UnmarshalOptions {
+        type_resolver: Some(&res),
+        ..Default::default()
+    };
+    let doc = "payload {\n  @type = \"type.googleapis.com/anyback.v1.Floats\"\n  d = -0\n  f = -0\n  md = { a: -0 }\n}\n";
+    let m = unmarshal(doc, &d, opts()).unwrap();
+    let any = m.get_field_by_name("payload").unwrap();
+    let value = any
+        .as_message()
+        .unwrap()
+        .get_field_by_name("value")
+        .unwrap();
+    let hex: String = value
+        .as_bytes()
+        .unwrap()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    assert_eq!(
+        hex,
+        "09000000000000008015000000801a0c0a0161110000000000000080"
+    );
+
+    // Whatever form marshal picks for the Any, it reads back to the same bytes.
+    let out = marshal(
+        &m,
+        &d,
+        MarshalOptions {
+            type_resolver: Some(&res),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let back = unmarshal(&out, &d, opts()).unwrap();
+    assert_eq!(back.encode_to_vec(), m.encode_to_vec(), "{out}");
+}
