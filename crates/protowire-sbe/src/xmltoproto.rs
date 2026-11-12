@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use crate::saxlite::SaxError;
+use crate::errors::SbeError;
 use crate::xmlschema::{
     camel_to_screaming_snake, camel_to_snake, parse_xml_schema, singular_pascal, XmlComposite,
     XmlEnum, XmlField, XmlGroup, XmlMessage, XmlSchema, XmlType,
@@ -20,12 +20,15 @@ const BUILTINS: &[&str] = &[
 
 /// Parse `xml` and emit proto3 source covering the SBE schema's enums,
 /// composites, and template messages with the appropriate `sbe.*` options.
-pub fn xml_to_proto(xml: &str) -> Result<String, SaxError> {
-    let schema = parse_xml_schema(xml)?;
-    Ok(generate_proto(&schema))
+/// A malformed document is refused with the parser's error, and an array no
+/// proto field can hold (one of a primitive wider than a byte) with
+/// protowire-go's text, naming the message or composite and the field.
+pub fn xml_to_proto(xml: &str) -> Result<String, SbeError> {
+    let schema = parse_xml_schema(xml).map_err(|e| SbeError::new(e.to_string()))?;
+    generate_proto(&schema)
 }
 
-fn generate_proto(schema: &XmlSchema) -> String {
+fn generate_proto(schema: &XmlSchema) -> Result<String, SbeError> {
     // Build type-resolution maps; built-ins seeded first so user types can
     // shadow them (the Go reference does the same).
     let mut type_map: HashMap<String, XmlType> = HashMap::new();
@@ -71,7 +74,7 @@ fn generate_proto(schema: &XmlSchema) -> String {
         if c.name == "messageHeader" || c.name == "groupSizeEncoding" {
             continue;
         }
-        out.push_str(&write_proto_composite(c));
+        out.push_str(&write_proto_composite(c)?);
     }
     for m in &schema.messages {
         out.push_str(&write_proto_message(
@@ -79,9 +82,9 @@ fn generate_proto(schema: &XmlSchema) -> String {
             &type_map,
             &composite_map,
             &enum_map,
-        ));
+        )?);
     }
-    out
+    Ok(out)
 }
 
 fn write_proto_enum(e: &XmlEnum) -> String {
@@ -100,11 +103,12 @@ fn write_proto_enum(e: &XmlEnum) -> String {
     out
 }
 
-fn write_proto_composite(c: &XmlComposite) -> String {
+fn write_proto_composite(c: &XmlComposite) -> Result<String, SbeError> {
     let mut out = format!("message {} {{\n", c.name);
     let mut field_num = 1u32;
     for t in &c.types {
-        let (proto_type, opts, note) = resolve_type_to_proto(t);
+        let (proto_type, opts, note) = resolve_type_to_proto(t)
+            .map_err(|e| SbeError::new(format!("sbe: composite {:?}: {e}", c.name)))?;
         let name = camel_to_snake(&t.name);
         write_note(&mut out, "  ", &note);
         if !opts.is_empty() {
@@ -120,7 +124,7 @@ fn write_proto_composite(c: &XmlComposite) -> String {
         field_num += 1;
     }
     out.push_str("}\n\n");
-    out
+    Ok(out)
 }
 
 fn write_proto_message(
@@ -128,29 +132,22 @@ fn write_proto_message(
     type_map: &HashMap<String, XmlType>,
     composite_map: &HashMap<String, XmlComposite>,
     enum_map: &HashMap<String, XmlEnum>,
-) -> String {
+) -> Result<String, SbeError> {
+    let in_message = |e: String| SbeError::new(format!("sbe: message {:?}: {e}", m.name));
     let mut out = format!("message {} {{\n", m.name);
     let _ = writeln!(out, "  option (sbe.template_id) = {};", m.id);
     for f in &m.fields {
-        out.push_str(&write_proto_field(
-            f,
-            type_map,
-            composite_map,
-            enum_map,
-            "  ",
-        ));
+        out.push_str(
+            &write_proto_field(f, type_map, composite_map, enum_map, "  ").map_err(in_message)?,
+        );
     }
     for g in &m.groups {
-        out.push_str(&write_proto_group(
-            g,
-            type_map,
-            composite_map,
-            enum_map,
-            "  ",
-        ));
+        out.push_str(
+            &write_proto_group(g, type_map, composite_map, enum_map, "  ").map_err(in_message)?,
+        );
     }
     out.push_str("}\n\n");
-    out
+    Ok(out)
 }
 
 fn write_proto_field(
@@ -159,17 +156,18 @@ fn write_proto_field(
     composite_map: &HashMap<String, XmlComposite>,
     enum_map: &HashMap<String, XmlEnum>,
     indent: &str,
-) -> String {
+) -> Result<String, String> {
     let name = camel_to_snake(&f.name);
 
     if enum_map.contains_key(&f.r#type) {
-        return format!("{}{} {} = {};\n", indent, f.r#type, name, f.id);
+        return Ok(format!("{}{} {} = {};\n", indent, f.r#type, name, f.id));
     }
     if composite_map.contains_key(&f.r#type) {
-        return format!("{}{} {} = {};\n", indent, f.r#type, name, f.id);
+        return Ok(format!("{}{} {} = {};\n", indent, f.r#type, name, f.id));
     }
     if let Some(t) = type_map.get(&f.r#type) {
-        let (proto_type, opts, note) = resolve_type_to_proto(t);
+        let (proto_type, opts, note) =
+            resolve_type_to_proto(t).map_err(|e| format!("field {:?}: {e}", f.name))?;
         let mut out = String::new();
         write_note(&mut out, indent, &note);
         if !opts.is_empty() {
@@ -181,10 +179,10 @@ fn write_proto_field(
         } else {
             let _ = writeln!(out, "{}{} {} = {};", indent, proto_type, name, f.id);
         }
-        return out;
+        return Ok(out);
     }
     // Unknown type — pass through so the user's protoc surfaces the error.
-    format!("{}{} {} = {};\n", indent, f.r#type, name, f.id)
+    Ok(format!("{}{} {} = {};\n", indent, f.r#type, name, f.id))
 }
 
 fn write_proto_group(
@@ -193,18 +191,15 @@ fn write_proto_group(
     composite_map: &HashMap<String, XmlComposite>,
     enum_map: &HashMap<String, XmlEnum>,
     indent: &str,
-) -> String {
+) -> Result<String, String> {
     let msg_name = singular_pascal(&g.name);
     let mut out = format!("{}message {} {{\n", indent, msg_name);
     let inner_indent = format!("{}  ", indent);
     for f in &g.fields {
-        out.push_str(&write_proto_field(
-            f,
-            type_map,
-            composite_map,
-            enum_map,
-            &inner_indent,
-        ));
+        out.push_str(
+            &write_proto_field(f, type_map, composite_map, enum_map, &inner_indent)
+                .map_err(|e| format!("group {:?}: {e}", g.name))?,
+        );
     }
     let _ = writeln!(out, "{}}}", indent);
     let field_name = camel_to_snake(&g.name);
@@ -213,7 +208,7 @@ fn write_proto_group(
         "{}repeated {} {} = {};",
         indent, msg_name, field_name, g.id
     );
-    out
+    Ok(out)
 }
 
 /// Map an SBE type to a proto type and its field options, plus a note for
@@ -223,7 +218,13 @@ fn write_proto_group(
 /// in another encoding is carried as `bytes` of the same `(sbe.length)`
 /// rather than failing at run time (draft -01 § Character Encoding,
 /// protowire#494). Mirrors protowire-go#248.
-fn resolve_type_to_proto(t: &XmlType) -> (String, String, String) {
+///
+/// An array of `uint8` or `int8` (length past 1) is raw bytes, the same N
+/// bytes on the wire as a `bytes` field with `(sbe.length) = N`. An array of
+/// a wider primitive is refused rather than imported as one element, which
+/// would misplace every later field in the block (draft -01 § Fixed-Length
+/// Arrays, protowire-go#249). A length of 1, or none, is a single value.
+fn resolve_type_to_proto(t: &XmlType) -> Result<(String, String, String), String> {
     if t.primitive_type == "char" {
         let len = t.length.filter(|&n| n > 0).unwrap_or(1);
         let opts = format!("(sbe.length) = {len}");
@@ -232,12 +233,25 @@ fn resolve_type_to_proto(t: &XmlType) -> (String, String, String) {
             let note = format!(
                 "SBE characterEncoding {encoding:?} is not UTF-8 compatible, so this field is bytes."
             );
-            return ("bytes".into(), opts, note);
+            return Ok(("bytes".into(), opts, note));
         }
-        return ("string".into(), opts, String::new());
+        return Ok(("string".into(), opts, String::new()));
+    }
+    if let Some(len) = t.length.filter(|&n| n > 1) {
+        return match t.primitive_type.as_str() {
+            "uint8" | "int8" => Ok((
+                "bytes".into(),
+                format!("(sbe.length) = {len}"),
+                String::new(),
+            )),
+            other => Err(format!(
+                "type {:?} is an array of {len} {other}, which no proto field represents",
+                t.name
+            )),
+        };
     }
     let (proto_type, opts) = resolve_primitive_to_proto(&t.primitive_type);
-    (proto_type, opts, String::new())
+    Ok((proto_type, opts, String::new()))
 }
 
 /// Write `note` as a comment line, if there is one.

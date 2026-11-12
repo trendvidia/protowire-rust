@@ -18,8 +18,20 @@ use crate::xmlschema::{snake_to_camel, strip_enum_prefix};
 
 struct SbeTypeInfo {
     primitive_type: String,
+    /// What a `<field>` names: the primitive, or for a fixed-length array
+    /// the `<types>` entry declared for its length.
     xml_type: String,
     length: u32,
+}
+
+/// The `<types>` entries a string or bytes field of a fixed length refers
+/// to.
+fn str_type_name(length: u32) -> String {
+    format!("str{length}")
+}
+
+fn bytes_type_name(length: u32) -> String {
+    format!("bytes{length}")
 }
 
 pub fn proto_to_xml(file: &FileDescriptor) -> Result<String, SbeError> {
@@ -30,6 +42,7 @@ pub fn proto_to_xml(file: &FileDescriptor) -> Result<String, SbeError> {
 
     // Pre-collect types referenced by template messages.
     let mut str_lengths: HashSet<u32> = HashSet::new();
+    let mut bytes_lengths: HashSet<u32> = HashSet::new();
     let mut composites: Vec<MessageDescriptor> = Vec::new();
     let mut composites_seen: HashSet<String> = HashSet::new();
     let mut enums: Vec<EnumDescriptor> = Vec::new();
@@ -45,6 +58,7 @@ pub fn proto_to_xml(file: &FileDescriptor) -> Result<String, SbeError> {
             collect_types(
                 &md,
                 &mut str_lengths,
+                &mut bytes_lengths,
                 &mut composites,
                 &mut composites_seen,
                 &mut enums,
@@ -56,8 +70,10 @@ pub fn proto_to_xml(file: &FileDescriptor) -> Result<String, SbeError> {
         }
     }
 
-    let mut lengths: Vec<u32> = str_lengths.into_iter().collect();
-    lengths.sort_unstable();
+    let mut str_lengths: Vec<u32> = str_lengths.into_iter().collect();
+    str_lengths.sort_unstable();
+    let mut bytes_lengths: Vec<u32> = bytes_lengths.into_iter().collect();
+    bytes_lengths.sort_unstable();
 
     let mut out = String::new();
     out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
@@ -83,10 +99,19 @@ pub fn proto_to_xml(file: &FileDescriptor) -> Result<String, SbeError> {
     out.push_str("            <type name=\"numInGroup\" primitiveType=\"uint16\"/>\n");
     out.push_str("        </composite>\n");
 
-    for l in lengths {
+    // Named string and bytes types, sorted for deterministic output.
+    for l in str_lengths {
         let _ = writeln!(
             out,
-            "        <type name=\"str{l}\" primitiveType=\"char\" length=\"{l}\"/>",
+            "        <type name=\"{}\" primitiveType=\"char\" length=\"{l}\"/>",
+            str_type_name(l)
+        );
+    }
+    for l in bytes_lengths {
+        let _ = writeln!(
+            out,
+            "        <type name=\"{}\" primitiveType=\"uint8\" length=\"{l}\"/>",
+            bytes_type_name(l)
         );
     }
     for e in &enums {
@@ -110,6 +135,7 @@ pub fn proto_to_xml(file: &FileDescriptor) -> Result<String, SbeError> {
 fn collect_types(
     md: &MessageDescriptor,
     str_lengths: &mut HashSet<u32>,
+    bytes_lengths: &mut HashSet<u32>,
     composites: &mut Vec<MessageDescriptor>,
     composites_seen: &mut HashSet<String>,
     enums: &mut Vec<EnumDescriptor>,
@@ -122,9 +148,14 @@ fn collect_types(
     }
     for f in md.fields() {
         match f.kind() {
-            Kind::String | Kind::Bytes => {
+            Kind::String => {
                 if let Some(len) = field_uint32(&f, EXT_LENGTH) {
                     str_lengths.insert(len);
+                }
+            }
+            Kind::Bytes => {
+                if let Some(len) = field_uint32(&f, EXT_LENGTH) {
+                    bytes_lengths.insert(len);
                 }
             }
             Kind::Enum(ed) if enums_seen.insert(ed.full_name().to_string()) => {
@@ -135,6 +166,7 @@ fn collect_types(
                     collect_types(
                         &sub,
                         str_lengths,
+                        bytes_lengths,
                         composites,
                         composites_seen,
                         enums,
@@ -145,6 +177,7 @@ fn collect_types(
                     collect_types(
                         &sub,
                         str_lengths,
+                        bytes_lengths,
                         composites,
                         composites_seen,
                         enums,
@@ -237,17 +270,10 @@ fn write_field(fd: &FieldDescriptor, indent: &str) -> String {
         );
     }
     let info = proto_field_to_sbe_type(fd);
-    if info.length > 0 {
-        format!(
-            "{}<field name=\"{}\" id=\"{}\" type=\"str{}\"/>\n",
-            indent, field_name, field_id, info.length
-        )
-    } else {
-        format!(
-            "{}<field name=\"{}\" id=\"{}\" type=\"{}\"/>\n",
-            indent, field_name, field_id, info.xml_type
-        )
-    }
+    format!(
+        "{}<field name=\"{}\" id=\"{}\" type=\"{}\"/>\n",
+        indent, field_name, field_id, info.xml_type
+    )
 }
 
 fn write_group(fd: &FieldDescriptor, indent: &str) -> String {
@@ -276,14 +302,24 @@ fn proto_field_to_sbe_type(fd: &FieldDescriptor) -> SbeTypeInfo {
         };
     }
     match fd.kind() {
-        Kind::String | Kind::Bytes => {
-            let length = field_uint32(fd, EXT_LENGTH).unwrap_or(0);
-            SbeTypeInfo {
-                primitive_type: "char".into(),
-                xml_type: "char".into(),
+        // A bytes field is a uint8 array, not a char array: a char array
+        // imports back as a string, and a char in a non-UTF-8 encoding as
+        // bytes only because nothing carries the encoding. Both are the same
+        // N bytes on the wire. A length of 1 exports as one uint8, which
+        // imports back as a uint32 narrowed to uint8: the same byte.
+        kind @ (Kind::String | Kind::Bytes) => match field_uint32(fd, EXT_LENGTH) {
+            None | Some(0) => scalar_info("char"),
+            Some(length) if matches!(kind, Kind::Bytes) => SbeTypeInfo {
+                primitive_type: "uint8".into(),
+                xml_type: bytes_type_name(length),
                 length,
-            }
-        }
+            },
+            Some(length) => SbeTypeInfo {
+                primitive_type: "char".into(),
+                xml_type: str_type_name(length),
+                length,
+            },
+        },
         Kind::Bool => scalar_info("uint8"),
         Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => scalar_info("int32"),
         Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => scalar_info("int64"),
