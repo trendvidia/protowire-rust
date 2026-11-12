@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for the layered-config API (#127): skip_post_decode,
+// apply_default and Presence::present_fields. The messages are the schemas
+// of protowire-go's encoding/pxf/layered_config_test.go, in one package.
+syntax = "proto3";
+package layered_test.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "pxf/annotations.proto";
+import "pxf/bignum.proto";
+
+message AllScalars {
+  string s = 1 [(pxf.default) = "hello"];
+  bool b = 2 [(pxf.default) = "true"];
+  int32 i32 = 3 [(pxf.default) = "32"];
+  int64 i64 = 4 [(pxf.default) = "64"];
+  uint32 u32 = 5 [(pxf.default) = "320"];
+  uint64 u64 = 6 [(pxf.default) = "640"];
+  float f32 = 7 [(pxf.default) = "1.5"];
+  double f64 = 8 [(pxf.default) = "3.14"];
+  bytes raw = 9 [(pxf.default) = "aGVsbG8="];
+
+  Color color = 10 [(pxf.default) = "RED"];
+  Color color_by_num = 11 [(pxf.default) = "2"];
+
+  string no_default = 12;
+  string optional_no_anno = 13;
+  string req = 14 [(pxf.required) = true];
+}
+
+enum Color {
+  UNKNOWN = 0;
+  RED = 1;
+  BLUE = 2;
+}
+
+message Nested {
+  AllScalars inner = 1;
+  string outer = 2 [(pxf.required) = true];
+}
+
+message WKTMaps {
+  map<string, google.protobuf.Timestamp> when = 1;
+  map<string, google.protobuf.Duration> howlong = 2;
+  map<string, google.protobuf.StringValue> labels = 3;
+  map<string, google.protobuf.Int32Value> counts = 4;
+  map<string, pxf.BigFloat> ratios = 5;
+}
+
+message WKTContainer {
+  google.protobuf.Timestamp t = 1;
+  google.protobuf.Duration d = 2;
+  google.protobuf.StringValue sv = 3;
+  pxf.BigInt bi = 4;
+  pxf.Decimal dec = 5;
+  pxf.BigFloat bf = 6;
+}
+
+message WKTDefaults {
+  google.protobuf.Timestamp t = 1;
+  google.protobuf.Duration d = 2;
+  google.protobuf.StringValue sv = 3;
+  google.protobuf.Int32Value i32v = 4;
+  google.protobuf.Int64Value i64v = 5;
+  google.protobuf.UInt32Value u32v = 6;
+  google.protobuf.UInt64Value u64v = 7;
+  google.protobuf.BoolValue bv = 8;
+  google.protobuf.FloatValue fv = 9;
+  google.protobuf.DoubleValue dv = 10;
+  google.protobuf.BytesValue bytv = 11;
+  pxf.BigInt bi = 12;
+  pxf.Decimal dec = 13;
+  pxf.BigFloat bf = 14;
+}

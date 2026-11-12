@@ -13,6 +13,12 @@ format changes.
 
 ### Added
 
+- **The pxf API for layered configuration** ([#127](https://github.com/trendvidia/protowire-rust/issues/127), protowire-go's `SkipPostDecode`, `ApplyDefault`, `Result.PresentFields`). A layered-config caller merges several documents, and the defaults and required checks belong to the merged result, not to one layer. These pieces let it run them there:
+  - `UnmarshalOptions::skip_post_decode` decodes without applying `(pxf.default)` or checking `(pxf.required)`. This holds at the root, in list elements and map values, and in `Any` bodies. Presence and the root's `_null` mask are still recorded.
+  - `Presence::present_fields` gives every path the document set, to a value or to `null`.
+  - `apply_default` applies one default literal to a field, with the post-decode pass's rules.
+  - `crates/protowire-pxf/tests/api_oracle.rs` holds them, and `is_required` and `get_default`, to protowire-go on its `layered_config_test.go` cases and more (`scripts/gen-api-oracle.sh`).
+  - **Breaking:** `UnmarshalOptions` has a new public field, so a struct literal without `..Default::default()` no longer compiles.
 - **`protowire-pb` binds `pxf.BigInt`, `pxf.Decimal` and `pxf.BigFloat` fields** ([#142](https://github.com/trendvidia/protowire-rust/issues/142), decided on [#89](https://github.com/trendvidia/protowire-rust/issues/89)). A struct can now hold a big number and write the bytes protowire-go writes for a `*big.Int`, `*big.Rat` or `*big.Float`. The new `protowire_pb::big` module has byte-backed `BigInt`, `Decimal` and `BigFloat` types, following protowire-cpp's `pb_big.h`.
   - **Writing:** a Decimal goes out at its smallest scale >= 0 (`1.00` as `1`). A BigFloat goes out as a prec-bit mantissa, rounded half to even. A zero singular field is left out (`write_big_int`, `write_decimal`, `write_big_float`), while a list element or map value is always written, a null one as the empty message.
   - **Refusals:** a value a reader would refuse is refused on write too, with protowire-go's text.
@@ -35,6 +41,12 @@ format changes.
 
 ### Fixed
 
+- **A default literal is read as protowire-go reads it** ([#127](https://github.com/trendvidia/protowire-rust/issues/127)). These came to light once `apply_default` could be held to protowire-go's `ApplyDefault`.
+  - A bool default other than `true` or `false` was read as `false`; it is now an error, with protowire-go's text.
+  - A wrapper's default error names the field holding the wrapper, not its inner `value`.
+  - A big-number default error now names its type: `invalid default big integer "x" for field "bi": …`.
+  - A Timestamp, Duration, wrapper, big-number or Secret literal on a singular field now marks its inner fields present (`t.seconds`, `bi.abs`), as protowire-go's `markInnerPresent` does.
+  - **Not matched:** protowire-go ends some of these errors with the Go standard library's own text, for example `strconv.ParseInt: parsing "x": invalid syntax`. This port does not, and whether it should is open in [#144](https://github.com/trendvidia/protowire-rust/issues/144); the test pins the 8 such rows.
 - **PXF checks a well-known type's shape, not only its name** ([#120](https://github.com/trendvidia/protowire-rust/issues/120), protowire-go#224, draft -01 §wkt-shapes). A schema could declare a message named like a well-known type, say `google.protobuf.Timestamp`, without the fields the codec reads. Decode and marshal read those fields by name anyway. A literal such as `pw = 5` on a `pxf.BigInt` with no `abs` was accepted, and the value dropped. A field of the wrong type, or a missing one on some paths, made Rust panic. On protowire-go's cases, 381 of 642 results differed from Go's, and 42 of those were panics.
   - **Validation:** such a message is now reported at bind time as `ViolationKind::WellKnownShape`, with protowire-go's text, naming the field that is missing, mistyped or of the wrong cardinality. This covers Timestamp, Duration, Any, FieldMask, the nine wrappers, `pxf.Secret`, `pxf.BigInt`, `pxf.Decimal` and `pxf.BigFloat`.
   - **Without validation:** with `skip_validate`, and on marshal, the message is an ordinary one. It is read and written as a block, has no literal form, and is not used as a `_null` mask.

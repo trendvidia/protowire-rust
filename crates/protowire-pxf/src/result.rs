@@ -77,6 +77,17 @@ impl Presence {
         self.nulls.iter().map(|s| s.as_str())
     }
 
+    /// Iterate over every path the document mentioned: set to a value or to
+    /// `null`, the union of [`Presence::is_set`] and [`Presence::is_null`].
+    /// The order is not guaranteed; callers that need one should sort.
+    /// protowire-go's `Result.PresentFields`. A layered-config caller unions
+    /// it across layers, then runs [`crate::apply_default`] and its required
+    /// check over the merged message (see
+    /// [`crate::UnmarshalOptions::skip_post_decode`]).
+    pub fn present_fields(&self) -> impl Iterator<Item = &str> {
+        self.present.iter().map(|s| s.as_str())
+    }
+
     // Directive accessors (PXF v0.72+).
 
     pub fn directives(&self) -> &[Directive] {

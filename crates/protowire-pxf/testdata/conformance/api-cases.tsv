@@ -1,0 +1,85 @@
+layered-test.binpb	layered_test.v1.AllScalars	full	i32 = 99
+layered-test.binpb	layered_test.v1.AllScalars	full	req = "x"
+layered-test.binpb	layered_test.v1.AllScalars	full	s = "explicit" i32 = 42 req = "r"
+layered-test.binpb	layered_test.v1.AllScalars	full	
+layered-test.binpb	layered_test.v1.Nested	full	outer = "x"  inner = null
+layered-test.binpb	layered_test.v1.Nested	full	outer = "x"  inner { req = "y" }
+layered-test.binpb	layered_test.v1.Nested	full	outer = "x"  inner { s = "y" }
+layered-test.binpb	layered_test.v1.WKTContainer	full	t = 2026-05-09T12:00:00Z d = 1h30m sv = "hello" bi = 100 dec = 3.14 bf = 2.71828
+layered-test.binpb	layered_test.v1.WKTContainer	full	bi = -7 dec = -0.5
+layered-test.binpb	layered_test.v1.WKTMaps	full	when = { "start": 2026-05-09T12:00:00Z "end": 2026-05-10T18:30:00Z } howlong = { "fast": 100ms "slow": 5s } labels = { "env": "prod" "tier": "free" } counts = { "errors": 42 "warnings": 7 } ratios = { "small": 0.5 "large": 1024.0 }
+d4-test.binpb	d4_test.v1.WithNullMask	full	value = null
+d4-test.binpb	d4_test.v1.WithNullMask	full	value = 3
+d4-test.binpb	d4_test.v1.WithDefault	full	count = 1
+layered-test.binpb	layered_test.v1.AllScalars	full-skip	i32 = 99
+layered-test.binpb	layered_test.v1.AllScalars	full-skip	req = "x"
+layered-test.binpb	layered_test.v1.AllScalars	full-skip	s = "explicit" i32 = 42 req = "r"
+layered-test.binpb	layered_test.v1.AllScalars	full-skip	
+layered-test.binpb	layered_test.v1.Nested	full-skip	outer = "x"  inner = null
+layered-test.binpb	layered_test.v1.Nested	full-skip	outer = "x"  inner { req = "y" }
+layered-test.binpb	layered_test.v1.Nested	full-skip	outer = "x"  inner { s = "y" }
+layered-test.binpb	layered_test.v1.WKTContainer	full-skip	t = 2026-05-09T12:00:00Z d = 1h30m sv = "hello" bi = 100 dec = 3.14 bf = 2.71828
+layered-test.binpb	layered_test.v1.WKTContainer	full-skip	bi = -7 dec = -0.5
+layered-test.binpb	layered_test.v1.WKTMaps	full-skip	when = { "start": 2026-05-09T12:00:00Z "end": 2026-05-10T18:30:00Z } howlong = { "fast": 100ms "slow": 5s } labels = { "env": "prod" "tier": "free" } counts = { "errors": 42 "warnings": 7 } ratios = { "small": 0.5 "large": 1024.0 }
+d4-test.binpb	d4_test.v1.WithNullMask	full-skip	value = null
+d4-test.binpb	d4_test.v1.WithNullMask	full-skip	value = 3
+d4-test.binpb	d4_test.v1.WithDefault	full-skip	count = 1
+layered-test.binpb	layered_test.v1.WKTMaps	marshal	when = { "start": 2026-05-09T12:00:00Z "end": 2026-05-10T18:30:00Z } howlong = { "fast": 100ms "slow": 5s } labels = { "env": "prod" "tier": "free" } counts = { "errors": 42 "warnings": 7 } ratios = { "small": 0.5 "large": 1024.0 }
+layered-test.binpb	layered_test.v1.AllScalars	apply	s	hello
+layered-test.binpb	layered_test.v1.AllScalars	apply	b	true
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	32
+layered-test.binpb	layered_test.v1.AllScalars	apply	i64	64
+layered-test.binpb	layered_test.v1.AllScalars	apply	u32	320
+layered-test.binpb	layered_test.v1.AllScalars	apply	u64	640
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1.5
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	3.14
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGVsbG8=
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGVsbG8
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	!!!not-base64!!!
+layered-test.binpb	layered_test.v1.AllScalars	apply	color	RED
+layered-test.binpb	layered_test.v1.AllScalars	apply	color	BLUE
+layered-test.binpb	layered_test.v1.AllScalars	apply	color_by_num	2
+layered-test.binpb	layered_test.v1.AllScalars	apply	color	PURPLE
+layered-test.binpb	layered_test.v1.AllScalars	apply	color	7
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	not-an-int
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	99999999999
+layered-test.binpb	layered_test.v1.AllScalars	apply	u32	-1
+layered-test.binpb	layered_test.v1.AllScalars	apply	b	yes
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1e39
+layered-test.binpb	layered_test.v1.AllScalars	apply	s	
+layered-test.binpb	layered_test.v1.AllScalars	apply	no_default	x
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	d	1h30m
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	sv	hello
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	i32v	42
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	i64v	9000000000
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	u32v	100
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	u64v	200
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bv	true
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	fv	1.5
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	dv	3.14
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bytv	aGVsbG8=
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bi	12345
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	dec	3.14
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bf	2.71828
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	not-a-timestamp
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	d	not-a-duration
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	i32v	not-a-number
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bi	not-a-bigint
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	dec	not-a-decimal
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bf	not-a-bigfloat
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bytv	not base64!
+layered-test.binpb	layered_test.v1.Nested	apply	inner	x
+layered-test.binpb	layered_test.v1.WKTMaps	apply	when	x
+layered-test.binpb	layered_test.v1.AllScalars	required	req
+layered-test.binpb	layered_test.v1.AllScalars	required	b
+layered-test.binpb	layered_test.v1.AllScalars	required	no_default
+layered-test.binpb	layered_test.v1.AllScalars	default	s
+layered-test.binpb	layered_test.v1.AllScalars	default	b
+layered-test.binpb	layered_test.v1.AllScalars	default	i32
+layered-test.binpb	layered_test.v1.AllScalars	default	f64
+layered-test.binpb	layered_test.v1.AllScalars	default	raw
+layered-test.binpb	layered_test.v1.AllScalars	default	color
+layered-test.binpb	layered_test.v1.AllScalars	default	no_default
+layered-test.binpb	layered_test.v1.AllScalars	default	optional_no_anno
+layered-test.binpb	layered_test.v1.AllScalars	default	req
