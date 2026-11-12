@@ -344,3 +344,26 @@ fn a_row_error_is_sticky_and_the_iterator_ends_after_it() {
     }
     assert_eq!((ok, errs), (1, 1));
 }
+
+// #118: a timestamp ends at ')', as protowire-go's endsRun has it, so it can
+// be a row's last cell. Both readers used to take the ')' into the literal:
+// `invalid timestamp: 2026-01-01T00:00:00Z)`.
+#[test]
+fn a_timestamp_can_end_a_row() {
+    let src =
+        "@dataset t.Row (n, ts)\n(1, 2026-01-01T00:00:00Z)\n(2, 2026-01-02T03:04:05.5+01:00)\n";
+    let rows: Vec<_> = reader(src).unwrap().map(|r| r.expect("row")).collect();
+    assert_eq!(rows.len(), 2);
+    for (row, want) in rows
+        .iter()
+        .zip(["2026-01-01T00:00:00Z", "2026-01-02T03:04:05.5+01:00"])
+    {
+        match row.cells[1].as_ref() {
+            Some(AstValue::Timestamp(t)) => assert_eq!(t.raw, want),
+            other => panic!("cell 1 is {other:?}"),
+        }
+    }
+    let doc = protowire_pxf::parse(src).expect("parse");
+    assert_eq!(doc.datasets.len(), 1);
+    assert_eq!(doc.datasets[0].rows.len(), 2);
+}

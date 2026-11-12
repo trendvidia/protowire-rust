@@ -666,8 +666,11 @@ impl<'a> Lexer<'a> {
                 || ch == b','
                 || ch == b']'
                 || ch == b'}'
+                || ch == b')'
                 || ch == b'#'
             {
+                // protowire-go's endsRun: `)` ends one too, so a timestamp
+                // can be a @dataset row's last cell (#118).
                 break;
             }
             if ch == b'/' && (self.peek_at(1) == b'/' || self.peek_at(1) == b'*') {
@@ -676,7 +679,7 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
         let raw = slice_to_string(&self.input[start..self.pos]);
-        if !is_valid_rfc3339(&raw) {
+        if crate::rfc3339::parse(&raw).is_none() {
             return Token::new(
                 TokenKind::Illegal,
                 format!("invalid timestamp: {}", raw),
@@ -853,112 +856,6 @@ fn is_valid_base64(s: &str) -> bool {
         return bytes.len() % 4 != 1;
     }
     bytes.len() % 4 == 0
-}
-
-/// Validate an RFC 3339 timestamp (Z or numeric offset, optional fractional
-/// seconds). Calendar fields are range-checked, including leap-year-aware day
-/// counts.
-fn is_valid_rfc3339(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    if bytes.len() < 20 {
-        return false;
-    }
-    if !bytes[0..4].iter().all(|b| b.is_ascii_digit())
-        || bytes[4] != b'-'
-        || !bytes[5..7].iter().all(|b| b.is_ascii_digit())
-        || bytes[7] != b'-'
-        || !bytes[8..10].iter().all(|b| b.is_ascii_digit())
-        || (bytes[10] != b'T' && bytes[10] != b't')
-        || !bytes[11..13].iter().all(|b| b.is_ascii_digit())
-        || bytes[13] != b':'
-        || !bytes[14..16].iter().all(|b| b.is_ascii_digit())
-        || bytes[16] != b':'
-        || !bytes[17..19].iter().all(|b| b.is_ascii_digit())
-    {
-        return false;
-    }
-
-    let year = parse_u32(&bytes[0..4]);
-    let month = parse_u32(&bytes[5..7]);
-    let day = parse_u32(&bytes[8..10]);
-    let hour = parse_u32(&bytes[11..13]);
-    let minute = parse_u32(&bytes[14..16]);
-    let second = parse_u32(&bytes[17..19]);
-
-    if !(1..=12).contains(&month) {
-        return false;
-    }
-    let max_day = days_in_month(year, month);
-    if !(1..=max_day).contains(&day) {
-        return false;
-    }
-    if hour > 23 || minute > 59 || second > 60 {
-        return false;
-    }
-
-    let mut i = 19;
-    if i < bytes.len() && bytes[i] == b'.' {
-        i += 1;
-        let frac_start = i;
-        while i < bytes.len() && bytes[i].is_ascii_digit() {
-            i += 1;
-        }
-        if i == frac_start {
-            return false;
-        }
-    }
-
-    if i >= bytes.len() {
-        return false;
-    }
-    if bytes[i] == b'Z' || bytes[i] == b'z' {
-        return i + 1 == bytes.len();
-    }
-    if bytes[i] == b'+' || bytes[i] == b'-' {
-        if bytes.len() != i + 6 {
-            return false;
-        }
-        if !bytes[i + 1..i + 3].iter().all(|b| b.is_ascii_digit())
-            || bytes[i + 3] != b':'
-            || !bytes[i + 4..i + 6].iter().all(|b| b.is_ascii_digit())
-        {
-            return false;
-        }
-        let off_h = parse_u32(&bytes[i + 1..i + 3]);
-        let off_m = parse_u32(&bytes[i + 4..i + 6]);
-        if off_h > 23 || off_m > 59 {
-            return false;
-        }
-        return true;
-    }
-    false
-}
-
-fn parse_u32(bytes: &[u8]) -> u32 {
-    let mut n: u32 = 0;
-    for &b in bytes {
-        n = n * 10 + (b - b'0') as u32;
-    }
-    n
-}
-
-fn is_leap_year(y: u32) -> bool {
-    (y % 4 == 0 && y % 100 != 0) || y % 400 == 0
-}
-
-fn days_in_month(y: u32, m: u32) -> u32 {
-    match m {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 => {
-            if is_leap_year(y) {
-                29
-            } else {
-                28
-            }
-        }
-        _ => 0,
-    }
 }
 
 /// Validate a Go-style duration string: optional leading sign, then one or
