@@ -142,3 +142,29 @@ fn defaults_take_the_same_literals() {
     let e = unset.unwrap_err().to_string();
     assert!(e.contains(r#"invalid default double "1e400""#), "{e}");
 }
+
+// The spec's text cases Scalars.float-negzero, float-large and float-small
+// (testdata/text/cases): protowire-go writes `-0` for a negative zero, which
+// protobuf-go counts as set, and an exponent where strconv's 'g' form has
+// one. A negative zero read back keeps its sign.
+#[test]
+fn marshal_writes_floats_as_protowire_go_does() {
+    let d = desc("floatlit.v1.F");
+    let opts = MarshalOptions::default;
+    let m = decode("d = -0 f = -0").unwrap();
+    assert_eq!(marshal(&m, &d, opts()).unwrap(), "d = -0\nf = -0\n");
+    let back = decode(&marshal(&m, &d, opts()).unwrap()).unwrap();
+    assert_eq!(f64_bits(&back, "d"), (-0.0f64).to_bits());
+    assert_eq!(f32_bits(&back, "f"), (-0.0f32).to_bits());
+
+    let m = decode("d = 0 f = 0").unwrap();
+    assert_eq!(marshal(&m, &d, opts()).unwrap(), "");
+
+    let m = decode("d = 1e21 f = 1e10").unwrap();
+    assert_eq!(marshal(&m, &d, opts()).unwrap(), "d = 1e+21\nf = 1e+10\n");
+    let m = decode("d = 0.0000001 f = 0.000001").unwrap();
+    assert_eq!(marshal(&m, &d, opts()).unwrap(), "d = 1e-07\nf = 1e-06\n");
+    let back = decode("d = 1e-07 f = 1e-06").unwrap();
+    assert_eq!(f64_bits(&back, "d"), 1e-7f64.to_bits());
+    assert_eq!(f32_bits(&back, "f"), 1e-6f32.to_bits());
+}
