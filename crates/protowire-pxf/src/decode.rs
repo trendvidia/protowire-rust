@@ -63,6 +63,12 @@ impl<'a> TypeResolver for PoolResolver<'a> {
     }
 }
 
+/// The hook [`UnmarshalOptions::on_secret_field`] calls with a
+/// `pxf.Secret`'s path and value. An error aborts the decode. It may borrow
+/// from its surroundings for `'a`, the options' lifetime.
+pub type SecretHook<'a> =
+    dyn Fn(&str, &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> + 'a;
+
 /// Options controlling [`unmarshal`] behavior.
 #[derive(Default, Clone, Copy)]
 pub struct UnmarshalOptions<'a> {
@@ -84,6 +90,24 @@ pub struct UnmarshalOptions<'a> {
     /// over [`crate::Presence::present_fields`]. protowire-go's
     /// `SkipPostDecode`.
     pub skip_post_decode: bool,
+    /// Called with each `pxf.Secret` value instead of storing it, so the
+    /// secret stays out of the decoded message (protowire-go's
+    /// `OnSecretField`). It fires for every form a value takes: `pw = "x"`,
+    /// a list element or a map value of that form, and the block form
+    /// `pw { value = "x" hint = "h" }`, wherever the Secret sits, an `Any`
+    /// body included. It gets the field's dotted path and the value:
+    ///
+    /// - `pw = "x"` → `"pw"`; `db { password = "x" }` → `"db.password"`
+    /// - `servers = [{ password = "x" }]` → `"servers[0].password"`
+    /// - `by_host = { "a": { password = "x" } }` → `"by_host[\"a\"].password"`
+    /// - `keys = ["a", "b"]` → `"keys[0]"`, `"keys[1]"`; `by_id = { 7: "k" }` → `"by_id[7]"`
+    ///
+    /// The Secret's own `value` is left unset, though presence still
+    /// reports it set; `hint` and `fingerprint` are stored as usual. An
+    /// error from the hook aborts the decode, as `pxf.Secret hook for
+    /// "<path>": <error>`. The plaintext is still a substring of the input
+    /// for the length of the call; the hook keeps it out of the message.
+    pub on_secret_field: Option<&'a SecretHook<'a>>,
     /// Skip the per-call schema reserved-name check (draft §3.13).
     /// Callers that have already validated their descriptors (typically
     /// via [`crate::validate_descriptor`] in a one-time codegen or
@@ -153,6 +177,7 @@ fn unmarshal_inner(
         options.limits,
     );
     decoder.post_decode_any = !options.skip_post_decode;
+    decoder.on_secret = options.on_secret_field;
     decoder.advance();
     decoder.consume_directives()?;
 
@@ -224,6 +249,11 @@ struct Decoder<'a> {
     /// Whether an `Any` body takes the post-decode pass before it is
     /// packed: false under [`UnmarshalOptions::skip_post_decode`].
     post_decode_any: bool,
+    /// [`UnmarshalOptions::on_secret_field`].
+    on_secret: Option<&'a SecretHook<'a>>,
+    /// Set for the one `decode_fields` call that reads an `Any`'s body, which
+    /// is never a Secret block, whatever type it packs.
+    any_body: bool,
 }
 
 impl<'a> Decoder<'a> {
@@ -260,6 +290,8 @@ impl<'a> Decoder<'a> {
             limits,
             keyed_elem: None,
             post_decode_any: true,
+            on_secret: None,
+            any_body: false,
         }
     }
 
@@ -303,7 +335,7 @@ impl<'a> Decoder<'a> {
     /// would satisfy the parent's `(pxf.required)` or keep its
     /// `(pxf.default)` off.
     fn enter_index(&mut self, name: &str, i: usize) -> String {
-        if self.presence.is_none() {
+        if !self.tracks_paths() {
             return String::new();
         }
         let saved = std::mem::take(&mut self.path_prefix);
@@ -313,12 +345,34 @@ impl<'a> Decoder<'a> {
 
     /// [`Self::enter_index`] for the value of map key `key`: `name["k"].`.
     fn enter_key(&mut self, name: &str, key: &MapKey) -> String {
-        if self.presence.is_none() {
+        if !self.tracks_paths() {
             return String::new();
         }
         let saved = std::mem::take(&mut self.path_prefix);
         self.path_prefix = format!("{saved}{name}[{}].", shown_key(key));
         saved
+    }
+
+    /// Whether anything reads the path: the presence of `unmarshal_full`,
+    /// or the Secret hook, which is given it. Plain `unmarshal` without the
+    /// hook reads neither, so it does not build them.
+    fn tracks_paths(&self) -> bool {
+        self.presence.is_some() || self.on_secret.is_some()
+    }
+
+    /// Hand a Secret's value to the hook, as the field at `path`, and turn
+    /// its error into the decode's, at `pos`.
+    fn call_secret_hook(&self, path: &str, value: &str, pos: Position) -> Result<(), PxfError> {
+        let hook = self.on_secret.expect("called with a hook");
+        hook(path, value).map_err(|e| {
+            PxfError::new(
+                pos,
+                format!(
+                    "pxf.Secret hook for {}: {e}",
+                    crate::go_strconv::quote(path)
+                ),
+            )
+        })
     }
 
     fn mark_present(&mut self, fd: &FieldDescriptor) {
@@ -687,6 +741,21 @@ impl<'a> Decoder<'a> {
         in_block: bool,
     ) -> Result<(), PxfError> {
         let desc = msg.descriptor();
+        // With the hook set, a Secret's block body routes its value through
+        // it, as its shorthand does (protowire-go's decodeSecretBlockInto).
+        // The caller extended the path by the Secret's own name.
+        if in_block
+            && !std::mem::take(&mut self.any_body)
+            && self.on_secret.is_some()
+            && is_secret(&desc)
+        {
+            let path = self
+                .path_prefix
+                .strip_suffix('.')
+                .unwrap_or(&self.path_prefix)
+                .to_string();
+            return self.decode_secret_block(msg, &path);
+        }
         // A block bound to google.protobuf.Any may open with a type entry
         // (draft -01 "Any Blocks"; protowire#354), wherever a body is
         // written: a singular field, a list element, a map value. Without
@@ -878,7 +947,7 @@ impl<'a> Decoder<'a> {
                         _ => unreachable!(),
                     };
                     let mut sub = DynamicMessage::new(inner_desc);
-                    if self.presence.is_some() {
+                    if self.tracks_paths() {
                         let saved = std::mem::take(&mut self.path_prefix);
                         self.path_prefix = format!("{}{}.", saved, fd.name());
                         self.decode_fields(&mut sub, true)?;
@@ -959,7 +1028,10 @@ impl<'a> Decoder<'a> {
         }
         if let Kind::Message(inner_desc) = fd.kind() {
             let mut sub = DynamicMessage::new(inner_desc);
-            if let Some(inner) = self.try_decode_wkt(&mut sub)? {
+            let at = self
+                .on_secret
+                .map(|_| format!("{}{}", self.path_prefix, fd.name()));
+            if let Some(inner) = self.try_decode_wkt(&mut sub, at)? {
                 msg.set_field(fd, Value::Message(sub));
                 if let Some(p) = self.presence.as_mut() {
                     for name in inner {
@@ -977,7 +1049,7 @@ impl<'a> Decoder<'a> {
                 )));
             }
             self.advance();
-            if self.presence.is_some() {
+            if self.tracks_paths() {
                 let saved = std::mem::take(&mut self.path_prefix);
                 self.path_prefix = format!("{}{}.", saved, fd.name());
                 self.decode_fields(&mut sub, true)?;
@@ -1035,7 +1107,10 @@ impl<'a> Decoder<'a> {
             let v = match &element_kind {
                 Kind::Message(inner_desc) => {
                     let mut sub = DynamicMessage::new(inner_desc.clone());
-                    if self.try_decode_wkt(&mut sub)?.is_none() {
+                    let at = self
+                        .on_secret
+                        .map(|_| format!("{}{}[{}]", self.path_prefix, fd.name(), elems.len()));
+                    if self.try_decode_wkt(&mut sub, at)?.is_none() {
                         if !matches!(self.current.kind, TokenKind::LBrace) {
                             return Err(self.err(format!(
                                 "expected '{{' for repeated message element, got {}",
@@ -1281,7 +1356,10 @@ impl<'a> Decoder<'a> {
 
             let value = if let Kind::Message(inner_desc) = val_fd.kind() {
                 let mut sub = DynamicMessage::new(inner_desc);
-                if self.try_decode_wkt(&mut sub)?.is_none() {
+                let at = self
+                    .on_secret
+                    .map(|_| format!("{}{}[{}]", self.path_prefix, fd.name(), shown_key(&key)));
+                if self.try_decode_wkt(&mut sub, at)?.is_none() {
                     if !matches!(self.current.kind, TokenKind::LBrace) {
                         return Err(self.err(format!(
                             "expected '{{' for map message value, got {}",
@@ -1349,6 +1427,7 @@ impl<'a> Decoder<'a> {
         // The body shares the Any's braces, which the enclosing
         // decode_fields has already counted as one descent.
         self.depth -= 1;
+        self.any_body = true;
         let decoded = self.decode_fields(&mut inner, true);
         self.depth += 1;
         decoded?;
@@ -1391,6 +1470,7 @@ impl<'a> Decoder<'a> {
     fn try_decode_wkt(
         &mut self,
         target: &mut DynamicMessage,
+        secret_path: Option<String>,
     ) -> Result<Option<&'static [&'static str]>, PxfError> {
         let desc = target.descriptor();
         // A message with a well-known type's name and not its shape has no
@@ -1459,6 +1539,13 @@ impl<'a> Decoder<'a> {
         // (draft -01 § pxf.Secret): `pw = "x"`, in a field, a list element
         // or a map value. The block form falls through.
         if full == "pxf.Secret" && matches!(self.current.kind, TokenKind::String) {
+            if self.on_secret.is_some() {
+                // The hook takes the value; the Secret stays empty.
+                let path = secret_path.expect("a path whenever the hook is set");
+                self.call_secret_hook(&path, &self.current.value, self.current.pos)?;
+                self.advance();
+                return Ok(Some(&["value"]));
+            }
             let value_fd = desc
                 .get_field_by_name("value")
                 .expect("checked by dispatch_name");
@@ -1481,6 +1568,92 @@ impl<'a> Decoder<'a> {
             return Ok(Some(&["mantissa", "exponent", "prec", "negative"]));
         }
         Ok(None)
+    }
+
+    /// The body of a `pxf.Secret` block, its `{` consumed and its depth
+    /// counted by `decode_fields`, with the hook set: `value` goes to the
+    /// hook as the field at `path`, `hint` and `fingerprint` into `sub`.
+    /// Each may appear once and in any order; any other name is an error,
+    /// since a Secret is a closed shape. Consumes the closing `}`.
+    /// protowire-go's `decodeSecretBlockInto`.
+    fn decode_secret_block(
+        &mut self,
+        sub: &mut DynamicMessage,
+        path: &str,
+    ) -> Result<(), PxfError> {
+        let desc = sub.descriptor();
+        let value_fd = desc
+            .get_field_by_name("value")
+            .expect("checked by is_secret");
+        let mut bound: HashSet<u32> = HashSet::new();
+        loop {
+            match self.current.kind {
+                TokenKind::RBrace => {
+                    self.advance();
+                    return Ok(());
+                }
+                TokenKind::Eof => {
+                    return Err(self.err("expected '}' to close pxf.Secret block, got EOF"))
+                }
+                TokenKind::Ident => {}
+                _ => {
+                    return Err(self.err(format!(
+                        "expected pxf.Secret field name (value/hint/fingerprint), got {}",
+                        self.token_err_msg()
+                    )))
+                }
+            }
+            let name = std::mem::take(&mut self.current.value);
+            let name_pos = self.current.pos;
+            self.advance();
+            if !matches!(self.current.kind, TokenKind::Equals) {
+                return Err(self.err(format!(
+                    "expected '=' after pxf.Secret field {}, got {}",
+                    crate::go_strconv::quote(&name),
+                    self.current.kind
+                )));
+            }
+            self.advance();
+            self.illegal()?;
+            if !matches!(self.current.kind, TokenKind::String) {
+                return Err(self.err(format!(
+                    "expected string value for pxf.Secret {name}, got {}",
+                    self.current.kind
+                )));
+            }
+            match name.as_str() {
+                "value" => {
+                    check_bound(&value_fd, &mut bound, name_pos)?;
+                    self.call_secret_hook(path, &self.current.value, self.current.pos)?;
+                }
+                "hint" | "fingerprint" => {
+                    let Some(fd) = desc.get_field_by_name(&name) else {
+                        return Err(PxfError::new(
+                            name_pos,
+                            format!(
+                                "unknown pxf.Secret field {}: this schema does not declare it",
+                                crate::go_strconv::quote(&name)
+                            ),
+                        ));
+                    };
+                    check_bound(&fd, &mut bound, name_pos)?;
+                    sub.set_field(&fd, Value::String(self.current.value.clone()));
+                }
+                _ => {
+                    return Err(PxfError::new(
+                        name_pos,
+                        format!(
+                            "unknown pxf.Secret field {} (expected value/hint/fingerprint)",
+                            crate::go_strconv::quote(&name)
+                        ),
+                    ))
+                }
+            }
+            if let Some(p) = self.presence.as_mut() {
+                p.mark_present(format!("{path}.{name}"));
+            }
+            self.advance();
+        }
     }
 
     /// Reject a precision suffix on the current literal, which binds to
@@ -1816,7 +1989,7 @@ pub(crate) fn shown_key(key: &MapKey) -> String {
         MapKey::I64(v) => v.to_string(),
         MapKey::U32(v) => v.to_string(),
         MapKey::U64(v) => v.to_string(),
-        MapKey::String(v) => format!("{v:?}"),
+        MapKey::String(v) => crate::go_strconv::quote(v),
     }
 }
 

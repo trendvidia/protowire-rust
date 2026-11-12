@@ -197,3 +197,73 @@ test.binpb	test.v1.AllTypes	format	a = [null, true, ENUM_A] b = { x = null } c =
 test.binpb	test.v1.AllTypes	format	a = """	ERR	1:5: unterminated triple-quoted string
 test.binpb	test.v1.AllTypes	marshal	string_field = "a\u0007b\u0008\u000c\u000b\u007f c​\u0085" string_map = { "k\u0007": "v\u0007" " ": "​" "plain": "x" }	OK	string_field = "a\\x07b\\x08\\x0c\\x0b c​"\nstring_map = {\n  "\\u00a0": "​"\n  "k\\a": "v\\x07"\n  plain: "x"\n}\n
 test.binpb	test.v1.AllTypes	format	a = "\u0007\u0008\u000c\u000b\u007f ​\u0085\U0001F600" b = { "k\u0007": 1 " ": 2 }	OK	"\\a\\b\\f\\v\\x7f\\u00a0\\u200b\\u0085\\ue000😀" | {\n  "k\\a": 1\n  "\\u00a0": 2\n}
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = "supersecret"	OK	1200	db_password,db_password.value	db_password=supersecret
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = "supersecret"	OK	1200		db_password=supersecret
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	backup_keys = ["a", "b", "c"]	OK	220022002200	backup_keys	backup_keys[0]=a ; backup_keys[1]=b ; backup_keys[2]=c
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	backup_keys = ["a", "b", "c"]	OK	220022002200		backup_keys[0]=a ; backup_keys[1]=b ; backup_keys[2]=c
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "acme": "k1" "evil_corp": "k2" }	OK	2a080a0461636d6512002a0d0a096576696c5f636f72701200	tenant_keys	tenant_keys["acme"]=k1 ; tenant_keys["evil_corp"]=k2
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "acme": "k1" "evil_corp": "k2" }	OK	2a080a0461636d6512002a0d0a096576696c5f636f72701200		tenant_keys["acme"]=k1 ; tenant_keys["evil_corp"]=k2
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = "x" hint = "h" }	OK	1203120168	db_password,db_password.hint,db_password.value	db_password=x
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = "x" hint = "h" }	OK	1203120168		db_password=x
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = { value = "x" }	OK	1200	db_password,db_password.value	db_password=x
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = { value = "x" }	OK	1200		db_password=x
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = "p1" api_token { value = "p2" fingerprint = "f" }	OK	12001a031a0166	api_token,api_token.fingerprint,api_token.value,db_password,db_password.value	db_password=p1 ; api_token=p2
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = "p1" api_token { value = "p2" fingerprint = "f" }	OK	12001a031a0166		db_password=p1 ; api_token=p2
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = "\xff\xfe"	ERR	1:15: invalid UTF-8 in pxf.Secret value for field "db_password"		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = "\xff\xfe"	ERR	1:15: invalid UTF-8 in pxf.Secret value for field "db_password"		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	backup_keys = ["\xff\xfe"]	ERR	1:16: invalid UTF-8 in pxf.Secret value for field "backup_keys"		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	backup_keys = ["\xff\xfe"]	ERR	1:16: invalid UTF-8 in pxf.Secret value for field "backup_keys"		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = "\xff\xfe" }	ERR	1:23: invalid UTF-8 in pxf.Secret value		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = "\xff\xfe" }	ERR	1:23: invalid UTF-8 in pxf.Secret value		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { hint = "\xff\xfe" }	ERR	1:22: invalid UTF-8 in pxf.Secret hint		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { hint = "\xff\xfe" }	ERR	1:22: invalid UTF-8 in pxf.Secret hint		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	backup_keys = [{ value = "k0" }, { value = "k1" hint = "h" }]	OK	22002203120168	backup_keys,backup_keys[0].value,backup_keys[1].hint,backup_keys[1].value	backup_keys[0]=k0 ; backup_keys[1]=k1
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	backup_keys = [{ value = "k0" }, { value = "k1" hint = "h" }]	OK	22002203120168		backup_keys[0]=k0 ; backup_keys[1]=k1
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "acme": { value = "k1" } "globex": { value = "k2" } }	OK	2a080a0461636d6512002a0a0a06676c6f6265781200	tenant_keys,tenant_keys["acme"].value,tenant_keys["globex"].value	tenant_keys["acme"]=k1 ; tenant_keys["globex"]=k2
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "acme": { value = "k1" } "globex": { value = "k2" } }	OK	2a080a0461636d6512002a0a0a06676c6f6265781200		tenant_keys["acme"]=k1 ; tenant_keys["globex"]=k2
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { hint = "h" fingerprint = "f" }	OK	12061201681a0166	db_password,db_password.fingerprint,db_password.hint	
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { hint = "h" fingerprint = "f" }	OK	12061201681a0166		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = "x" rotation = "P30D" }	ERR	1:27: unknown pxf.Secret field "rotation" (expected value/hint/fingerprint)		db_password=x
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = "x" rotation = "P30D" }	ERR	1:27: unknown pxf.Secret field "rotation" (expected value/hint/fingerprint)		db_password=x
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password {}	OK	1200	db_password	
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password {}	OK	1200		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value "x" }	ERR	1:21: expected '=' after pxf.Secret field "value", got string		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value "x" }	ERR	1:21: expected '=' after pxf.Secret field "value", got string		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = 42 }	ERR	1:23: expected string value for pxf.Secret value, got integer		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = 42 }	ERR	1:23: expected string value for pxf.Secret value, got integer		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { 42 = "x" }	ERR	1:15: expected pxf.Secret field name (value/hint/fingerprint), got integer ("42")		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { 42 = "x" }	ERR	1:15: expected pxf.Secret field name (value/hint/fingerprint), got integer ("42")		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = "x"	ERR	1:26: expected '}' to close pxf.Secret block, got EOF		db_password=x
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = "x"	ERR	1:26: expected '}' to close pxf.Secret block, got EOF		db_password=x
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = "a" value = "b" }	ERR	1:27: field "value" is already set		db_password=a
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = "a" value = "b" }	ERR	1:27: field "value" is already set		db_password=a
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = null	OK		db_password	
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = null	OK			
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	backup_keys = [null]	ERR	1:16: null is not allowed in repeated field "backup_keys"		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	backup_keys = [null]	ERR	1:16: null is not allowed in repeated field "backup_keys"		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "a\"b": "k" }	OK	2a070a036122621200	tenant_keys	tenant_keys["a\\"b"]=k
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "a\"b": "k" }	OK	2a070a036122621200		tenant_keys["a\\"b"]=k
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	base_url = "u" db_password = "s"	OK	0a01751200	base_url,db_password,db_password.value	db_password=s
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	base_url = "u" db_password = "s"	OK	0a01751200		db_password=s
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	db { password = "p" }	OK	12020a00	db,db.password,db.password.value	db.password=p
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	db { password = "p" }	OK	12020a00		db.password=p
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	db = { password = { value = "p" hint = "h" } }	OK	12050a03120168	db,db.password,db.password.hint,db.password.value	db.password=p
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	db = { password = { value = "p" hint = "h" } }	OK	12050a03120168		db.password=p
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	dbs = [{ password = "a" }, { password = { value = "b" } }]	OK	1a020a001a020a00	dbs,dbs[0].password,dbs[0].password.value,dbs[1].password,dbs[1].password.value	dbs[0].password=a ; dbs[1].password=b
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	dbs = [{ password = "a" }, { password = { value = "b" } }]	OK	1a020a001a020a00		dbs[0].password=a ; dbs[1].password=b
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	db_by_name = { "x": { password = "a" } }	OK	22070a017812020a00	db_by_name,db_by_name["x"].password,db_by_name["x"].password.value	db_by_name["x"].password=a
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	db_by_name = { "x": { password = "a" } }	OK	22070a017812020a00		db_by_name["x"].password=a
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	by_id = { 7: "s" -1: "t" }	OK	2a0d08ffffffffffffffffff0112002a0408071200	by_id	by_id[7]=s ; by_id[-1]=t
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	by_id = { 7: "s" -1: "t" }	OK	2a0d08ffffffffffffffffff0112002a0408071200		by_id[7]=s ; by_id[-1]=t
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	by_flag = { true: "s" }	OK	320408011200	by_flag	by_flag[true]=s
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	by_flag = { true: "s" }	OK	320408011200		by_flag[true]=s
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	payload { @type = "type.googleapis.com/secret_hook_test.v1.DB" password = "z" }	OK	3a300a2a747970652e676f6f676c65617069732e636f6d2f7365637265745f686f6f6b5f746573742e76312e444212020a00	payload,payload.password,payload.password.value	payload.password=z
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	payload { @type = "type.googleapis.com/secret_hook_test.v1.DB" password = "z" }	OK	3a300a2a747970652e676f6f676c65617069732e636f6d2f7365637265745f686f6f6b5f746573742e76312e444212020a00		payload.password=z
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	payload = { @type = "type.googleapis.com/secret_hook_test.v1.DB" password { value = "z" } }	OK	3a300a2a747970652e676f6f676c65617069732e636f6d2f7365637265745f686f6f6b5f746573742e76312e444212020a00	payload,payload.password,payload.password.value	payload.password=z
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	payload = { @type = "type.googleapis.com/secret_hook_test.v1.DB" password { value = "z" } }	OK	3a300a2a747970652e676f6f676c65617069732e636f6d2f7365637265745f686f6f6b5f746573742e76312e444212020a00		payload.password=z
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	db_password = "x"	ERR	1:15: pxf.Secret hook for "db_password": vault closed		db_password=x
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	backup_keys = ["a", "b"]	ERR	1:16: pxf.Secret hook for "backup_keys[0]": vault closed		backup_keys[0]=a
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	tenant_keys = { "acme": "k" }	ERR	1:25: pxf.Secret hook for "tenant_keys[\\"acme\\"]": vault closed		tenant_keys["acme"]=k
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	db_password { value = "x" }	ERR	1:23: pxf.Secret hook for "db_password": vault closed		db_password=x
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	backup_keys = [{ value = "k0" }]	ERR	1:26: pxf.Secret hook for "backup_keys[0]": vault closed		backup_keys[0]=k0
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	tenant_keys = { "acme": { value = "k1" } }	ERR	1:35: pxf.Secret hook for "tenant_keys[\\"acme\\"]": vault closed		tenant_keys["acme"]=k1

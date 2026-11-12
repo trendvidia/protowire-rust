@@ -190,3 +190,73 @@ test.binpb	test.v1.AllTypes	format	a = [null, true, ENUM_A] b = { x = null } c =
 test.binpb	test.v1.AllTypes	format	a = """
 test.binpb	test.v1.AllTypes	marshal	string_field = "a\u0007b\u0008\u000c\u000b\u007f c​\u0085" string_map = { "k\u0007": "v\u0007" " ": "​" "plain": "x" }
 test.binpb	test.v1.AllTypes	format	a = "\u0007\u0008\u000c\u000b\u007f ​\u0085\U0001F600" b = { "k\u0007": 1 " ": 2 }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = "supersecret"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = "supersecret"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	backup_keys = ["a", "b", "c"]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	backup_keys = ["a", "b", "c"]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "acme": "k1" "evil_corp": "k2" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "acme": "k1" "evil_corp": "k2" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = "x" hint = "h" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = "x" hint = "h" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = { value = "x" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = { value = "x" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = "p1" api_token { value = "p2" fingerprint = "f" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = "p1" api_token { value = "p2" fingerprint = "f" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = "\xff\xfe"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = "\xff\xfe"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	backup_keys = ["\xff\xfe"]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	backup_keys = ["\xff\xfe"]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = "\xff\xfe" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = "\xff\xfe" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { hint = "\xff\xfe" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { hint = "\xff\xfe" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	backup_keys = [{ value = "k0" }, { value = "k1" hint = "h" }]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	backup_keys = [{ value = "k0" }, { value = "k1" hint = "h" }]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "acme": { value = "k1" } "globex": { value = "k2" } }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "acme": { value = "k1" } "globex": { value = "k2" } }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { hint = "h" fingerprint = "f" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { hint = "h" fingerprint = "f" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = "x" rotation = "P30D" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = "x" rotation = "P30D" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password {}
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password {}
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value "x" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value "x" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = 42 }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = 42 }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { 42 = "x" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { 42 = "x" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = "x"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = "x"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = "a" value = "b" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = "a" value = "b" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = null
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = null
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	backup_keys = [null]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	backup_keys = [null]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "a\"b": "k" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "a\"b": "k" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	base_url = "u" db_password = "s"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	base_url = "u" db_password = "s"
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	db { password = "p" }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	db { password = "p" }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	db = { password = { value = "p" hint = "h" } }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	db = { password = { value = "p" hint = "h" } }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	dbs = [{ password = "a" }, { password = { value = "b" } }]
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	dbs = [{ password = "a" }, { password = { value = "b" } }]
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	db_by_name = { "x": { password = "a" } }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	db_by_name = { "x": { password = "a" } }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	by_id = { 7: "s" -1: "t" }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	by_id = { 7: "s" -1: "t" }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	by_flag = { true: "s" }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	by_flag = { true: "s" }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	payload { @type = "type.googleapis.com/secret_hook_test.v1.DB" password = "z" }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	payload { @type = "type.googleapis.com/secret_hook_test.v1.DB" password = "z" }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	payload = { @type = "type.googleapis.com/secret_hook_test.v1.DB" password { value = "z" } }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	payload = { @type = "type.googleapis.com/secret_hook_test.v1.DB" password { value = "z" } }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	db_password = "x"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	backup_keys = ["a", "b"]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	tenant_keys = { "acme": "k" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	db_password { value = "x" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	backup_keys = [{ value = "k0" }]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	tenant_keys = { "acme": { value = "k1" } }
