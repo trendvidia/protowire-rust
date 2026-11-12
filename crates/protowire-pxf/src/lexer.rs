@@ -540,7 +540,7 @@ impl<'a> Lexer<'a> {
             if ch == b'"' {
                 let raw = slice_to_string(&self.input[start..self.pos]);
                 self.advance(); // closing "
-                if !is_valid_base64(&raw) {
+                if crate::go_strconv::decode_base64_lenient(&raw).is_err() {
                     return Token::new(TokenKind::Illegal, "invalid base64 in bytes literal", pos);
                 }
                 return Token::new(TokenKind::Bytes, raw, pos);
@@ -905,32 +905,6 @@ fn dedent(s: &str) -> String {
         return stripped.join("\n");
     }
     lines.join("\n")
-}
-
-/// Validate either standard (padded) or raw (unpadded) base64. Mirrors the
-/// dual-fallback in `lexer.go` (`StdEncoding` then `RawStdEncoding`).
-fn is_valid_base64(s: &str) -> bool {
-    if s.is_empty() {
-        return true;
-    }
-    let bytes = s.as_bytes();
-    let mut content_end = bytes.len();
-    let mut pad = 0;
-    while content_end > 0 && bytes[content_end - 1] == b'=' && pad < 2 {
-        content_end -= 1;
-        pad += 1;
-    }
-    for &b in &bytes[..content_end] {
-        let ok = b.is_ascii_alphanumeric() || b == b'+' || b == b'/';
-        if !ok {
-            return false;
-        }
-    }
-    if pad == 0 {
-        // raw: any length except mod 4 == 1
-        return bytes.len() % 4 != 1;
-    }
-    bytes.len() % 4 == 0
 }
 
 /// A character as Go's `%q` (`strconv.QuoteRune`) writes it: in single

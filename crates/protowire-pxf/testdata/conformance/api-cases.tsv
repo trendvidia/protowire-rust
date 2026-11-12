@@ -83,3 +83,99 @@ layered-test.binpb	layered_test.v1.AllScalars	default	color
 layered-test.binpb	layered_test.v1.AllScalars	default	no_default
 layered-test.binpb	layered_test.v1.AllScalars	default	optional_no_anno
 layered-test.binpb	layered_test.v1.AllScalars	default	req
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGk-
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGk_
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aG k=
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGVsbG8==
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGVsbG9=
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	=
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	+5
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	3000000000x
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	1_000
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	 5
+layered-test.binpb	layered_test.v1.AllScalars	apply	u32	+5
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1p-2
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1_000.5
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	inf
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1e400
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	.5
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	5.
+layered-test.binpb	layered_test.v1.AllScalars	apply	b	True
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00+01:00
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09 12:00:00Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-5-09T12:00:00Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00.123456789Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09t12:00:00z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	d	1.5h
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	d	-1s
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	d	1d
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGk-"
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGk_"
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGk="
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGk"
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGVsbG8=="
+test.binpb	test.v1.AllTypes	full	bytes_field = b"="
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aG k="
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGVsbG9="
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGk-="
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1.8p1
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1p
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1__0.5
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	_1.5
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1.5_
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	Infinity
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	-Inf
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	+nan
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	NaN
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1e
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1e+
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1p-149
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1p-150
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1e-50
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	3.4028235e38
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	3.4028236e38
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1.fffffep127
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1p128
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0X1P-2
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	-0
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	0x1p-1074
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	0x1p-1075
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	0x1.8p-1074
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	0x1.fffffffffffff8p0
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	1e308
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	2e308
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	4.9e-324
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	2.4e-324
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	-0
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	0x10
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	00012
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	-2147483648
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	-2147483649
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	9999999999x
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	
+layered-test.binpb	layered_test.v1.AllScalars	apply	i64	-9223372036854775808
+layered-test.binpb	layered_test.v1.AllScalars	apply	i64	9223372036854775808
+layered-test.binpb	layered_test.v1.AllScalars	apply	u64	18446744073709551615
+layered-test.binpb	layered_test.v1.AllScalars	apply	u64	18446744073709551616
+layered-test.binpb	layered_test.v1.AllScalars	apply	u64	-0
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T1:00:00Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00,5Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T24:00:00Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-02-30T00:00:00Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2024-02-29T00:00:00Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:60Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00+25:00
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00+0100
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00Zjunk
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-13-01T00:00:00Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:60:00Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	26-05-09T12:00:00Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00.Z
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00-00:00
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bytv	aGk-
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bytv	aGk=
+test.binpb	test.v1.AllTypes	full	@proto b"aGk"
+test.binpb	test.v1.AllTypes	full	@proto b"aGk-aGk="
+test.binpb	test.v1.AllTypes	full	@proto b"aGk_"
