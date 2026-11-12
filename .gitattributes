@@ -4,4 +4,7 @@
 *.pxf    text eol=lf
 *.proto  text eol=lf
 *.tsv    text eol=lf
+*.xml    text eol=lf
+*.txt    text eol=lf
+*.err    text eol=lf
 *.binpb  binary
