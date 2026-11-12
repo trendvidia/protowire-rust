@@ -1,0 +1,16 @@
+all-retired	pxf/annotations.proto	50100=9001,50101=0,50404=""	50200=7,50400=""	50000=1,50001="42",50400="",51000=1	50400=""	50400=""	50400=""	-
+every-number	pxf/annotations.proto	50100=1,50101=1,50400="",50401="",50402="",50403="",50404=""	50200=1,50400="",51001=1	50000=1,50001="1",50002="k",50300=1,50301="u8",50400="",51000=1	50400="",51002=1	50400=""	50400=""	-
+sbe-import	sbe/annotations.proto	-	-	50000=1	-	-	-	-
+no-protowire-import	google/protobuf/timestamp.proto	50100=9001	50400=""	50000=1	-	-	-	-
+no-import	-	50100=9001	50400=""	50000=1	-	-	-	-
+unallocated	pxf/annotations.proto	50999=1	-	50050=1	-	-	-	-
+wrong-options-kind	pxf/annotations.proto	50000=1	50100=1	50200=1	50000=1	50002=1	51000=1	-
+registered-numbers	pxf/annotations.proto	-	-	1314=1	-	-	-	-
+repeated-number	pxf/annotations.proto	-	-	50000=1,50000=1	-	-	-	-
+clean	pxf/annotations.proto	-	-	-	-	-	-	-
+in-an-import	pxf/annotations.proto	-	-	50000=1	-	-	-	uses
+sbe-schema-id-retired	sbe/annotations.proto	50100=9001	-	-	-	-	-	-
+sbe-template-id-retired	sbe/annotations.proto	1319=9001	50200=7	-	-	-	-	-
+sbe-missing	sbe/annotations.proto	-	-	-	-	-	-	-
+sbe-no-template	sbe/annotations.proto	1319=9001	-	-	-	-	-	-
+sbe-both-schema-ids	sbe/annotations.proto	1319=9001,50100=9001	-	-	-	-	-	-

@@ -17,3 +17,7 @@ protowire-pb = { workspace = true }
 protowire-envelope = { workspace = true }
 protowire-pxf = { workspace = true }
 protowire-sbe = { workspace = true }
+
+[dev-dependencies]
+prost = { workspace = true }
+prost-reflect = { workspace = true }

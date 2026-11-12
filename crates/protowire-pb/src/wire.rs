@@ -298,14 +298,27 @@ impl Writer {
         self.buf.extend_from_slice(&v.to_le_bytes());
     }
 
-    /// IEEE 754 32-bit float, little-endian.
+    /// IEEE 754 32-bit float, little-endian. A NaN is written as the
+    /// canonical quiet NaN, `0x7FC00000`, whatever its sign and payload, as
+    /// protowire-go's `Marshal` writes a struct field (draft -01 § Numeric
+    /// Literals, protowire-go#241). [`Writer::fixed32`] writes bits as given.
     pub fn float(&mut self, v: f32) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
+        let bits = if v.is_nan() { 0x7FC0_0000 } else { v.to_bits() };
+        self.fixed32(bits);
     }
 
-    /// IEEE 754 64-bit double, little-endian.
+    /// IEEE 754 64-bit double, little-endian. A NaN is written as the
+    /// canonical quiet NaN, `0x7FF8000000000000`, whatever its sign and
+    /// payload, as protowire-go's `Marshal` writes a struct field (draft -01
+    /// § Numeric Literals, protowire-go#241). [`Writer::fixed64`] writes bits
+    /// as given.
     pub fn double(&mut self, v: f64) {
-        self.buf.extend_from_slice(&v.to_le_bytes());
+        let bits = if v.is_nan() {
+            0x7FF8_0000_0000_0000
+        } else {
+            v.to_bits()
+        };
+        self.fixed64(bits);
     }
 
     /// UTF-8 length-prefixed string.

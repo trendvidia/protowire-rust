@@ -72,6 +72,13 @@ pub enum ViolationKind {
     /// oneof undecodable. Also a true `(pxf.required)` beside
     /// `(pxf.default)` on one field, which "Required and Default" forbids.
     RequiredOption,
+    /// An option carried at one of the extension numbers protowire retired
+    /// when it moved into its registered block (STABILITY.md promise 3):
+    /// the descriptor was compiled before protowire v1.12.0 and must be
+    /// recompiled, because a reader that looks only at the registered
+    /// numbers would otherwise silently see none of its annotations.
+    /// `name` is the retired number, and `detail` what it was and is now.
+    RetiredNumber,
     /// A message that has the full name of a well-known type a codec
     /// handles by name, without the fields that handling reads (draft -01
     /// §wkt-shapes). `detail` says which. Where validation does not run,
@@ -88,6 +95,7 @@ impl ViolationKind {
             ViolationKind::KeyOption => "keyed field option",
             ViolationKind::DefaultOption => "default field option",
             ViolationKind::RequiredOption => "required field option",
+            ViolationKind::RetiredNumber => "retired option number",
             ViolationKind::WellKnownShape => "well-known type shape",
         }
     }
@@ -118,8 +126,9 @@ pub struct Violation {
     /// rendered by `Display`, since `detail` says what is wrong).
     pub name: String,
     pub kind: ViolationKind,
-    /// A human-readable explanation; set for the three annotation kinds and
-    /// [`ViolationKind::WellKnownShape`], empty for the reserved-name kinds.
+    /// A human-readable explanation; set for the three annotation kinds,
+    /// [`ViolationKind::RetiredNumber`] and [`ViolationKind::WellKnownShape`],
+    /// and empty for the reserved-name kinds.
     pub detail: String,
     /// Which spelling the offending annotation was written in, so `Display`
     /// quotes the form the author wrote.
@@ -150,6 +159,11 @@ impl fmt::Display for Violation {
                 self.element,
                 self.surface.required_name(),
                 self.detail
+            ),
+            ViolationKind::RetiredNumber => write!(
+                f,
+                "{}: \"{}\": {} (STABILITY.md promise 3)",
+                self.file, self.element, self.detail
             ),
             ViolationKind::WellKnownShape => write!(
                 f,
@@ -261,6 +275,11 @@ fn file_violations(fd: &FileDescriptor) -> Arc<[Violation]> {
     }
     for en in fd.enums() {
         walk_enum(&path, &en, &mut out);
+    }
+    // Retired option numbers are looked for only in files that import
+    // protowire's annotations; see retired.rs for why the gate exists.
+    if crate::retired::imports_protowire(fd) {
+        crate::retired::walk_retired(&path, fd, &mut out);
     }
     // Deliberately unsorted: validate_file sorts the assembled closure
     // once, and walk_message appends deterministically.
