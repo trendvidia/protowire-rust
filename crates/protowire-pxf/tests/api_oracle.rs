@@ -13,6 +13,7 @@
 //! protowire-go's `layered_config_test.go` and a few more edges, over
 //! `testdata/layered-test.proto`, which holds that test's schemas.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use prost::Message as _;
@@ -20,19 +21,23 @@ use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor};
 use protowire_pxf::annotations::{get_default, is_required};
 use protowire_pxf::{
     append_value, apply_default, format_value, marshal, parse, unmarshal, unmarshal_full, Entry,
-    MarshalOptions, UnmarshalOptions,
+    MarshalOptions, PoolResolver, SecretHook, UnmarshalOptions,
 };
 
 const ORACLE: &str = include_str!("../testdata/conformance/api-oracle.tsv");
 
 fn pools() -> HashMap<&'static str, DescriptorPool> {
-    let sets: [(&str, &[u8]); 3] = [
+    let sets: [(&str, &[u8]); 4] = [
         (
             "layered-test.binpb",
             include_bytes!("../testdata/layered-test.binpb"),
         ),
         ("d4-test.binpb", include_bytes!("../testdata/d4-test.binpb")),
         ("test.binpb", include_bytes!("../testdata/test.binpb")),
+        (
+            "secret-hook-test.binpb",
+            include_bytes!("../testdata/secret-hook-test.binpb"),
+        ),
     ];
     sets.into_iter()
         .map(|(name, fds)| (name, DescriptorPool::decode(fds).expect(name)))
@@ -63,6 +68,19 @@ fn unhex(s: &str) -> Vec<u8> {
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
         .collect()
+}
+
+/// Rows whose verdict and position agree but whose text cannot yet: a string
+/// holding invalid UTF-8, which this port's lexer refuses with its own text
+/// where protowire-go's decoder names the field (#170). They are compared up
+/// to the position, and their count is pinned.
+fn waits_on_170(want: &str) -> bool {
+    want.contains("invalid UTF-8")
+}
+
+/// The position an error starts with, `line:col`.
+fn position(e: &str) -> &str {
+    e.split(": ").next().unwrap_or(e)
 }
 
 /// Two messages are the same when their bytes decode to the same message,
@@ -147,6 +165,59 @@ fn run() -> (Vec<String>, HashMap<String, usize>) {
                 let want = format!("{}\t{}", c[4], unescape(c[5]));
                 (got != want).then(|| format!("format\n   got: {got:?}\n  want: {want:?}"))
             }
+            "secret" | "secret-plain" | "secret-err" => {
+                let calls = RefCell::new(Vec::<String>::new());
+                let fail = op == "secret-err";
+                let record = |path: &str, value: &str| {
+                    calls.borrow_mut().push(format!("{path}={value}"));
+                    if fail {
+                        Err("vault closed".into())
+                    } else {
+                        Ok(())
+                    }
+                };
+                let hook: &SecretHook = &record;
+                let resolver = PoolResolver(&pools[set]);
+                let opts = UnmarshalOptions {
+                    type_resolver: Some(&resolver),
+                    on_secret_field: Some(hook),
+                    ..Default::default()
+                };
+                let got = if op == "secret-plain" {
+                    unmarshal(c[3], &desc, opts).map(|m| (m, String::new()))
+                } else {
+                    unmarshal_full(c[3], &desc, opts).map(|(m, presence)| {
+                        let mut present: Vec<&str> = presence.present_fields().collect();
+                        present.sort_unstable();
+                        (m, present.join(","))
+                    })
+                };
+                let calls = calls.into_inner().join(" ; ");
+                match (got, c[4]) {
+                    (Err(e), "ERR") if waits_on_170(c[5]) => {
+                        *ops.entry("utf8".into()).or_default() += 1;
+                        (position(&e.to_string()) != position(c[5]))
+                            .then(|| format!("position\n   got: {e}\n  want: {}", c[5]))
+                    }
+                    (Err(e), "ERR") => {
+                        let got = format!("{e}\t{calls}");
+                        let want = format!("{}\t{}", unescape(c[5]), unescape(c[7]));
+                        (got != want).then(|| format!("error\n   got: {got:?}\n  want: {want:?}"))
+                    }
+                    (Err(e), _) => Some(format!("refused: {e} (calls {calls})")),
+                    (Ok(_), "ERR") => Some(format!("accepted; want: {}", unescape(c[5]))),
+                    (Ok((m, present)), _) => {
+                        let got = (present, calls);
+                        let want = (c[6].to_string(), unescape(c[7]));
+                        if !same(&desc, &m, c[5]) {
+                            Some(format!("message\n   got: {m}\n  want: {}", c[5]))
+                        } else {
+                            (got != want)
+                                .then(|| format!("paths, calls\n   got: {got:?}\n  want: {want:?}"))
+                        }
+                    }
+                }
+            }
             "apply" => {
                 let mut m = DynamicMessage::new(desc.clone());
                 match (apply_default(&mut m, &field(), c[4]), c[5]) {
@@ -192,14 +263,19 @@ fn every_case_meets_the_reference() {
             "full-skip",
             "marshal",
             "format",
+            "secret",
+            "secret-plain",
+            "secret-err",
             "apply",
             "required",
             "default"
         ]
         .map(count),
-        [25, 13, 2, 10, 130, 3, 9]
+        [25, 13, 2, 10, 32, 32, 6, 130, 3, 9]
     );
     assert_eq!(count("pinned"), WAITS_ON_98.len());
+    // The invalid-UTF-8 rows held to their position only, until #170.
+    assert_eq!(count("utf8"), 8);
     assert!(
         diffs.is_empty(),
         "{} rows differ from protowire-go:\n{}",

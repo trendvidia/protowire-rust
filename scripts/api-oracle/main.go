@@ -12,6 +12,9 @@
 //	full <doc>             UnmarshalFull
 //	full-skip <doc>        UnmarshalFull with SkipPostDecode
 //	marshal <doc>          Unmarshal, then Marshal
+//	secret <doc>           UnmarshalFull with an OnSecretField hook that
+//	                       records each call; secret-plain with Unmarshal;
+//	                       secret-err with a hook that fails
 //	format <doc>           Parse, then FormatValue of each top-level
 //	                       assignment's value, joined by " | "
 //	apply <field> <lit>    ApplyDefault on a new message
@@ -20,13 +23,15 @@
 //
 // Each row is the case, then the verdict: OK and the message's pb hex, its
 // sorted PresentFields and its sorted NullFields (the last two only for a
-// full decode), or for marshal the text, for format the values; or ERR and the error; or, for
+// full decode), or for marshal the text, for format the values, for the
+// secret ops the hook's calls, "path=value" joined by " ; ", last; or ERR and the error; or, for
 // required and default, the answer.
 package main
 
 import (
 	"bufio"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -42,6 +47,16 @@ import (
 
 	"github.com/trendvidia/protowire-go/encoding/pxf"
 )
+
+type resolver struct{ files *protoregistry.Files }
+
+func (r resolver) FindMessageByURL(url string) (protoreflect.MessageDescriptor, error) {
+	d, err := r.files.FindDescriptorByName(protoreflect.FullName(url[strings.LastIndex(url, "/")+1:]))
+	if err != nil {
+		return nil, err
+	}
+	return d.(protoreflect.MessageDescriptor), nil
+}
 
 func load(path string) *protoregistry.Files {
 	data, err := os.ReadFile(path)
@@ -134,6 +149,35 @@ func main() {
 				}
 			}
 			row = "OK\t" + oneLine(strings.Join(vals, " | "))
+		case "secret", "secret-plain", "secret-err":
+			var calls []string
+			opts := pxf.UnmarshalOptions{
+				TypeResolver: resolver{files},
+				OnSecretField: func(path, value string) error {
+					calls = append(calls, path+"="+value)
+					if c[2] == "secret-err" {
+						return errors.New("vault closed")
+					}
+					return nil
+				},
+			}
+			m := dynamicpb.NewMessage(desc)
+			var res *pxf.Result
+			var err error
+			if c[2] == "secret-plain" {
+				err = opts.Unmarshal([]byte(c[3]), m)
+			} else {
+				res, err = opts.UnmarshalFull([]byte(c[3]), m)
+			}
+			joined := oneLine(strings.Join(calls, " ; "))
+			switch {
+			case err != nil:
+				row = "ERR\t" + oneLine(err.Error()) + "\t\t" + joined
+			case res != nil:
+				row = "OK\t" + bytesOf(m) + "\t" + sorted(res.PresentFields()) + "\t" + joined
+			default:
+				row = "OK\t" + bytesOf(m) + "\t\t" + joined
+			}
 		case "apply":
 			m := dynamicpb.NewMessage(desc)
 			if err := pxf.ApplyDefault(m, field(), c[4]); err != nil {

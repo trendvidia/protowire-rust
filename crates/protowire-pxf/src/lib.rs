@@ -38,7 +38,8 @@ pub use ast::{
 };
 pub use dataset_reader::{bind_row, DatasetReader, DatasetTail, DEFAULT_HEADER_MAX_BYTES};
 pub use decode::{
-    apply_default, unmarshal, unmarshal_full, PoolResolver, TypeResolver, UnmarshalOptions,
+    apply_default, unmarshal, unmarshal_full, PoolResolver, SecretHook, TypeResolver,
+    UnmarshalOptions,
 };
 pub use encode::{marshal, MarshalOptions};
 pub use errors::PxfError;

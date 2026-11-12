@@ -28,6 +28,8 @@ out="$conformance/wkt-shape-oracle.tsv"
   echo "# validate: the count and the violations, \"[kind] text\" joined by \" | \"."
   echo "# unmarshal, unmarshal-skip, full, full-skip (Unmarshal or UnmarshalFull, with"
   echo "# SkipValidate or not): OK, pb hex, sorted null paths; or ERR or PANIC, the text."
+  echo "# hook, hook-skip (a Secret's cases): Unmarshal with an OnSecretField hook, with"
+  echo "# SkipValidate or not: the verdict as above, then the hook's calls, path=value."
   echo "# marshal: H with each message field holding an empty message; OK and the text,"
   echo "# or ERR or PANIC and the text. Tabs, newlines and backslashes are escaped."
   (cd "$work" && GOWORK=off go run ./scripts/wkt_shape_oracle "$conformance/wkt-shape-cases.tsv")

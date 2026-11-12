@@ -161,6 +161,28 @@ func main() {
 			}
 		}
 
+		// A Secret's cases also run with the OnSecretField hook, which must
+		// fire only for a Secret of the right shape, and refuse a block
+		// naming a field the Secret does not declare.
+		if name == "Secret" && holder == fmt.Sprintf(defaultHolder, name) {
+			hookDocs := append(append([]string{}, docs...),
+				`pw { value = "v" hint = "h" }`, `pw { hint = "h" }`, `pw { fingerprint = "f" }`)
+			for _, doc := range hookDocs {
+				for _, op := range []string{"hook", "hook-skip"} {
+					var calls []string
+					row := guard(func() string {
+						m := dynamicpb.NewMessage(md)
+						opts := pxf.UnmarshalOptions{SkipValidate: op == "hook-skip", OnSecretField: func(path, value string) error {
+							calls = append(calls, path+"="+value)
+							return nil
+						}}
+						return verdict(m, nil, opts.Unmarshal([]byte(doc), m))
+					})
+					fmt.Fprintf(out, "%s\t%s\t%s\t%s\t%s\n", id, op, oneLine(doc), row, oneLine(strings.Join(calls, " ; ")))
+				}
+			}
+		}
+
 		row := guard(func() string {
 			text, err := pxf.Marshal(filled(md))
 			if err != nil {

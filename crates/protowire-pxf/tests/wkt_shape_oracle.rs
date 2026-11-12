@@ -11,12 +11,14 @@
 //! `scripts/gen-wkt-shape-oracle.sh` regenerates it. The cases are protowire-go's
 //! own (`wkt_shape_test.go`) and a few more edges.
 
+use std::cell::RefCell;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use prost::Message as _;
 use prost_reflect::{DescriptorPool, DynamicMessage, Kind, MapKey, MessageDescriptor, Value};
 use protowire_pxf::{
-    marshal, unmarshal, unmarshal_full, validate_descriptor, MarshalOptions, UnmarshalOptions,
+    marshal, unmarshal, unmarshal_full, validate_descriptor, MarshalOptions, SecretHook,
+    UnmarshalOptions,
 };
 
 const ORACLE: &str = include_str!("../testdata/conformance/wkt-shape-oracle.tsv");
@@ -115,10 +117,10 @@ fn decode_diff(
 }
 
 /// Checks every row, and returns the differences and the count of rows by op.
-fn run() -> (Vec<String>, [usize; 4]) {
+fn run() -> (Vec<String>, [usize; 5]) {
     let mut diffs = Vec::new();
-    // fds, validate, decodes, marshal.
-    let mut counts = [0; 4];
+    // fds, validate, decodes, marshal, decodes with the Secret hook.
+    let mut counts = [0; 5];
     let mut pool = None;
     let mut h: Option<MessageDescriptor> = None;
     for line in ORACLE.lines().filter(|l| !l.starts_with('#')) {
@@ -159,6 +161,28 @@ fn run() -> (Vec<String>, [usize; 4]) {
                 }));
                 decode_diff(&desc, got, &c[3..])
             }
+            // A Secret of the wrong shape is an ordinary message, so the
+            // hook never fires for it (#127, #120).
+            "hook" | "hook-skip" => {
+                counts[4] += 1;
+                let calls = RefCell::new(Vec::<String>::new());
+                let record = |path: &str, value: &str| {
+                    calls.borrow_mut().push(format!("{path}={value}"));
+                    Ok(())
+                };
+                let hook: &SecretHook = &record;
+                let opts = UnmarshalOptions {
+                    skip_validate: op == "hook-skip",
+                    on_secret_field: Some(hook),
+                    ..Default::default()
+                };
+                let got = catch_unwind(AssertUnwindSafe(|| unmarshal(doc, &desc, opts)));
+                let calls = calls.into_inner().join(" ; ");
+                decode_diff(&desc, got, &c[3..]).or_else(|| {
+                    (calls != unescape(c[6]))
+                        .then(|| format!("hook calls\n   got: {calls}\n  want: {}", c[6]))
+                })
+            }
             "marshal" => {
                 counts[3] += 1;
                 let msg = filled(&desc);
@@ -186,7 +210,7 @@ fn run() -> (Vec<String>, [usize; 4]) {
 fn every_case_meets_the_reference() {
     let (diffs, counts) = run();
     // A positive marker: every case ran, all four kinds of row among them.
-    assert_eq!(counts, [45, 45, 552, 45]);
+    assert_eq!(counts, [45, 45, 552, 45, 108]);
     assert!(
         diffs.is_empty(),
         "{} of {} rows differ from protowire-go:\n{}",

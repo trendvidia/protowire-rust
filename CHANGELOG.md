@@ -13,6 +13,13 @@ format changes.
 
 ### Added
 
+- **`UnmarshalOptions::on_secret_field`** ([#127](https://github.com/trendvidia/protowire-rust/issues/127), protowire-go's `OnSecretField`). A hook that receives each `pxf.Secret` value with its field's dotted path, so the secret never lands in the decoded message.
+  - **Where it fires:** for every form a Secret takes. That covers `pw = "x"`, list elements, map values and the block form `pw { value = "x" hint = "h" }`, wherever the Secret sits, `Any` bodies included.
+  - **Paths:** they read as protowire-go's do: `db.password`, `servers[0].password`, `by_host["a"]`, `by_id[7]`.
+  - **What is stored:** the Secret's `value` is left unset, though presence reports it set. `hint` and `fingerprint` are stored as before.
+  - **Errors:** a hook error aborts the decode as `pxf.Secret hook for "<path>": <error>`.
+  - **Shape:** a Secret of the wrong shape (#120) is an ordinary message, and the hook never fires for it.
+  - **Tests:** `tests/api_oracle.rs` and `tests/wkt_shape_oracle.rs` hold it to protowire-go on 178 rows. Eight rows, with invalid UTF-8 in a Secret, compare only their position until [#170](https://github.com/trendvidia/protowire-rust/issues/170).
 - **`format_value` and `append_value`** ([#127](https://github.com/trendvidia/protowire-rust/issues/127), protowire-go's `FormatValue`, `AppendValue`). They give one value's PXF source text, as `format` writes it inside a document. A tool that splices a rendered value into a buffer no longer has to render it itself. `tests/api_oracle.rs` holds them to protowire-go on 10 documents.
 - **The pxf API for layered configuration** ([#127](https://github.com/trendvidia/protowire-rust/issues/127), protowire-go's `SkipPostDecode`, `ApplyDefault`, `Result.PresentFields`). A layered-config caller merges several documents, and the defaults and required checks belong to the merged result, not to one layer. These pieces let it run them there:
   - `UnmarshalOptions::skip_post_decode` decodes without applying `(pxf.default)` or checking `(pxf.required)`. This holds at the root, in list elements and map values, and in `Any` bodies. Presence and the root's `_null` mask are still recorded.
@@ -42,6 +49,7 @@ format changes.
 
 ### Fixed
 
+- **A string map key in a presence path is quoted as Go quotes it** ([#127](https://github.com/trendvidia/protowire-rust/issues/127)). `Presence` paths and map-key errors spelled the key with Rust's `{:?}`, which differs from Go's `strconv.Quote` for control and non-printable characters; they now use the same quoting as protowire-go.
 - **Strings are quoted as protowire-go quotes them** ([#127](https://github.com/trendvidia/protowire-rust/issues/127)). protowire-go's formatter writes every string, key, entry name and type URL with Go's `%q`, and its marshal quotes a map key that is not an identifier with `strconv.Quote`. This port escaped only `\\`, `"`, `\n`, `\r` and `\t` in the formatter, and used the byte-wise value writer for map keys. So `\a`, `\b`, `\f`, `\v`, DEL, a no-break space or a zero-width space came out differently. Both now follow `strconv.Quote`. Marshal's string values are unchanged; they already match protowire-go's own writer.
 - **A default literal and a bytes literal are read by protowire-go's parsers** ([#167](https://github.com/trendvidia/protowire-rust/issues/167)). protowire-go reads a `(pxf.default)`, and an `apply_default` literal, with Go's `strconv`, `encoding/base64` and `time`, and a document's `b"…"` with the same base64 decoder. Its errors wrap theirs. This port used readers of its own, which accepted different literals, and stopped its errors at the field name. The new `go_strconv` module ports those parsers, following protowire-cpp's `detail/go_strconv` and protowire-java's `Base64Literal`.
   - **Accepted now:**

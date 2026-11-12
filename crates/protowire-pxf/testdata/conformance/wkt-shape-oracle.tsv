@@ -4,6 +4,8 @@
 # validate: the count and the violations, "[kind] text" joined by " | ".
 # unmarshal, unmarshal-skip, full, full-skip (Unmarshal or UnmarshalFull, with
 # SkipValidate or not): OK, pb hex, sorted null paths; or ERR or PANIC, the text.
+# hook, hook-skip (a Secret's cases): Unmarshal with an OnSecretField hook, with
+# SkipValidate or not: the verdict as above, then the hook's calls, path=value.
 # marshal: H with each message field holding an empty message; OK and the text,
 # or ERR or PANIC and the text. Tabs, newlines and backslashes are escaped.
 secret-other	fds		0ad4010a07702e70726f746f1203707866221e0a0653656372657412140a056f7468657218012001280952056f74686572229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
@@ -20,6 +22,18 @@ secret-other	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: m
 secret-other	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
 secret-other	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)	
 secret-other	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-other	hook	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)		
+secret-other	hook-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")		
+secret-other	hook	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)		
+secret-other	hook-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")		
+secret-other	hook	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)		
+secret-other	hook-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")		
+secret-other	hook	pw { value = "v" hint = "h" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)		
+secret-other	hook-skip	pw { value = "v" hint = "h" }	ERR	1:6: unknown field "value" in pxf.Secret		
+secret-other	hook	pw { hint = "h" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)		
+secret-other	hook-skip	pw { hint = "h" }	ERR	1:6: unknown field "hint" in pxf.Secret		
+secret-other	hook	pw { fingerprint = "f" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: it has no field "value" (draft -01 §wkt-shapes)		
+secret-other	hook-skip	pw { fingerprint = "f" }	ERR	1:6: unknown field "fingerprint" in pxf.Secret		
 secret-other	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
 secret-int	fds		0ad4010a07702e70726f746f1203707866221e0a0653656372657412140a0576616c7565180120012805520576616c7565229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
 secret-int	validate		1	[well-known type shape] p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)
@@ -35,6 +49,18 @@ secret-int	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: mes
 secret-int	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
 secret-int	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)	
 secret-int	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-int	hook	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-int	hook-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")		
+secret-int	hook	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-int	hook-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")		
+secret-int	hook	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-int	hook-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")		
+secret-int	hook	pw { value = "v" hint = "h" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-int	hook-skip	pw { value = "v" hint = "h" }	ERR	1:14: expected integer for field "value"		
+secret-int	hook	pw { hint = "h" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-int	hook-skip	pw { hint = "h" }	ERR	1:6: unknown field "hint" in pxf.Secret		
+secret-int	hook	pw { fingerprint = "f" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-int	hook-skip	pw { fingerprint = "f" }	ERR	1:6: unknown field "fingerprint" in pxf.Secret		
 secret-int	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
 secret-repeated	fds		0ad4010a07702e70726f746f1203707866221e0a0653656372657412140a0576616c7565180120032809520576616c7565229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
 secret-repeated	validate		1	[well-known type shape] p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)
@@ -50,6 +76,18 @@ secret-repeated	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto
 secret-repeated	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
 secret-repeated	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)	
 secret-repeated	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-repeated	hook	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)		
+secret-repeated	hook-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")		
+secret-repeated	hook	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)		
+secret-repeated	hook-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")		
+secret-repeated	hook	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)		
+secret-repeated	hook-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")		
+secret-repeated	hook	pw { value = "v" hint = "h" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)		
+secret-repeated	hook-skip	pw { value = "v" hint = "h" }	ERR	1:14: expected '[' for repeated field "value"		
+secret-repeated	hook	pw { hint = "h" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)		
+secret-repeated	hook-skip	pw { hint = "h" }	ERR	1:6: unknown field "hint" in pxf.Secret		
+secret-repeated	hook	pw { fingerprint = "f" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "value" has the wrong cardinality (draft -01 §wkt-shapes)		
+secret-repeated	hook-skip	pw { fingerprint = "f" }	ERR	1:6: unknown field "fingerprint" in pxf.Secret		
 secret-repeated	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
 secret-hint-int	fds		0ae8010a07702e70726f746f120370786622320a0653656372657412140a0576616c7565180120012809520576616c756512120a0468696e74180220012805520468696e74229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
 secret-hint-int	validate		1	[well-known type shape] p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)
@@ -65,6 +103,18 @@ secret-hint-int	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto
 secret-hint-int	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
 secret-hint-int	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)	
 secret-hint-int	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-hint-int	hook	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-hint-int	hook-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")		
+secret-hint-int	hook	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-hint-int	hook-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")		
+secret-hint-int	hook	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-hint-int	hook-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")		
+secret-hint-int	hook	pw { value = "v" hint = "h" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-hint-int	hook-skip	pw { value = "v" hint = "h" }	ERR	1:25: expected integer for field "hint"		
+secret-hint-int	hook	pw { hint = "h" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-hint-int	hook-skip	pw { hint = "h" }	ERR	1:13: expected integer for field "hint"		
+secret-hint-int	hook	pw { fingerprint = "f" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "hint" is int32, and must be string (draft -01 §wkt-shapes)		
+secret-hint-int	hook-skip	pw { fingerprint = "f" }	ERR	1:6: unknown field "fingerprint" in pxf.Secret		
 secret-hint-int	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
 secret-fingerprint-bytes	fds		0af6010a07702e70726f746f120370786622400a0653656372657412140a0576616c7565180120012809520576616c756512200a0b66696e6765727072696e7418032001280c520b66696e6765727072696e74229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
 secret-fingerprint-bytes	validate		1	[well-known type shape] p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)
@@ -80,6 +130,18 @@ secret-fingerprint-bytes	unmarshal	m = { "k": "x" }	ERR	PXF schema violations:\n
 secret-fingerprint-bytes	unmarshal-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
 secret-fingerprint-bytes	full	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)	
 secret-fingerprint-bytes	full-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")	
+secret-fingerprint-bytes	hook	pw = "x"	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)		
+secret-fingerprint-bytes	hook-skip	pw = "x"	ERR	1:6: expected '{' for message field "pw", got string ("x")		
+secret-fingerprint-bytes	hook	l = [ "x" ]	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)		
+secret-fingerprint-bytes	hook-skip	l = [ "x" ]	ERR	1:7: expected '{' for repeated message element, got string ("x")		
+secret-fingerprint-bytes	hook	m = { "k": "x" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)		
+secret-fingerprint-bytes	hook-skip	m = { "k": "x" }	ERR	1:12: expected '{' for map message value, got string ("x")		
+secret-fingerprint-bytes	hook	pw { value = "v" hint = "h" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)		
+secret-fingerprint-bytes	hook-skip	pw { value = "v" hint = "h" }	ERR	1:18: unknown field "hint" in pxf.Secret		
+secret-fingerprint-bytes	hook	pw { hint = "h" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)		
+secret-fingerprint-bytes	hook-skip	pw { hint = "h" }	ERR	1:6: unknown field "hint" in pxf.Secret		
+secret-fingerprint-bytes	hook	pw { fingerprint = "f" }	ERR	PXF schema violations:\n  p.proto: message "pxf.Secret" redefines a well-known type: field "fingerprint" is bytes, and must be string (draft -01 §wkt-shapes)		
+secret-fingerprint-bytes	hook-skip	pw { fingerprint = "f" }	ERR	1:20: expected bytes for field "fingerprint"		
 secret-fingerprint-bytes	marshal		OK	pw {\n}\nl = [\n  {\n  }\n]\nm = {\n  k: {\n  }\n}\n
 bigint-other	fds		0ad4010a07702e70726f746f1203707866221e0a06426967496e7412140a056f7468657218012001280952056f74686572229b010a0148121b0a02707718012001280b320b2e7078662e426967496e745202707712190a016c18022003280b320b2e7078662e426967496e7452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e426967496e74520576616c75653a023801620670726f746f33
 bigint-other	validate		1	[well-known type shape] p.proto: message "pxf.BigInt" redefines a well-known type: it has no field "abs" (draft -01 §wkt-shapes)
@@ -512,6 +574,18 @@ ok-secret-value	unmarshal	m = { "k": "x" }	OK	1a080a016b12030a0178
 ok-secret-value	unmarshal-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
 ok-secret-value	full	m = { "k": "x" }	OK	1a080a016b12030a0178	
 ok-secret-value	full-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-value	hook	pw = "x"	OK	0a00		pw=x
+ok-secret-value	hook-skip	pw = "x"	OK	0a00		pw=x
+ok-secret-value	hook	l = [ "x" ]	OK	1200		l[0]=x
+ok-secret-value	hook-skip	l = [ "x" ]	OK	1200		l[0]=x
+ok-secret-value	hook	m = { "k": "x" }	OK	1a050a016b1200		m["k"]=x
+ok-secret-value	hook-skip	m = { "k": "x" }	OK	1a050a016b1200		m["k"]=x
+ok-secret-value	hook	pw { value = "v" hint = "h" }	ERR	1:18: unknown pxf.Secret field "hint": this schema does not declare it		pw=v
+ok-secret-value	hook-skip	pw { value = "v" hint = "h" }	ERR	1:18: unknown pxf.Secret field "hint": this schema does not declare it		pw=v
+ok-secret-value	hook	pw { hint = "h" }	ERR	1:6: unknown pxf.Secret field "hint": this schema does not declare it		
+ok-secret-value	hook-skip	pw { hint = "h" }	ERR	1:6: unknown pxf.Secret field "hint": this schema does not declare it		
+ok-secret-value	hook	pw { fingerprint = "f" }	ERR	1:6: unknown pxf.Secret field "fingerprint": this schema does not declare it		
+ok-secret-value	hook-skip	pw { fingerprint = "f" }	ERR	1:6: unknown pxf.Secret field "fingerprint": this schema does not declare it		
 ok-secret-value	marshal		OK	pw = ""\nl = [\n  ""\n]\nm = {\n  k: ""\n}\n
 ok-secret-full	fds		0a8a020a07702e70726f746f120370786622540a0653656372657412140a0576616c7565180120012809520576616c756512120a0468696e74180220012809520468696e7412200a0b66696e6765727072696e74180320012809520b66696e6765727072696e74229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
 ok-secret-full	validate		0	
@@ -527,6 +601,18 @@ ok-secret-full	unmarshal	m = { "k": "x" }	OK	1a080a016b12030a0178
 ok-secret-full	unmarshal-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
 ok-secret-full	full	m = { "k": "x" }	OK	1a080a016b12030a0178	
 ok-secret-full	full-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-full	hook	pw = "x"	OK	0a00		pw=x
+ok-secret-full	hook-skip	pw = "x"	OK	0a00		pw=x
+ok-secret-full	hook	l = [ "x" ]	OK	1200		l[0]=x
+ok-secret-full	hook-skip	l = [ "x" ]	OK	1200		l[0]=x
+ok-secret-full	hook	m = { "k": "x" }	OK	1a050a016b1200		m["k"]=x
+ok-secret-full	hook-skip	m = { "k": "x" }	OK	1a050a016b1200		m["k"]=x
+ok-secret-full	hook	pw { value = "v" hint = "h" }	OK	0a03120168		pw=v
+ok-secret-full	hook-skip	pw { value = "v" hint = "h" }	OK	0a03120168		pw=v
+ok-secret-full	hook	pw { hint = "h" }	OK	0a03120168		
+ok-secret-full	hook-skip	pw { hint = "h" }	OK	0a03120168		
+ok-secret-full	hook	pw { fingerprint = "f" }	OK	0a031a0166		
+ok-secret-full	hook-skip	pw { fingerprint = "f" }	OK	0a031a0166		
 ok-secret-full	marshal		OK	pw = ""\nl = [\n  ""\n]\nm = {\n  k: ""\n}\n
 ok-secret-renumbered	fds		0ae8010a07702e70726f746f120370786622320a0653656372657412140a0576616c7565180720012809520576616c756512120a046e6f746518082001280952046e6f7465229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
 ok-secret-renumbered	validate		0	
@@ -542,6 +628,18 @@ ok-secret-renumbered	unmarshal	m = { "k": "x" }	OK	1a080a016b12033a0178
 ok-secret-renumbered	unmarshal-skip	m = { "k": "x" }	OK	1a080a016b12033a0178	
 ok-secret-renumbered	full	m = { "k": "x" }	OK	1a080a016b12033a0178	
 ok-secret-renumbered	full-skip	m = { "k": "x" }	OK	1a080a016b12033a0178	
+ok-secret-renumbered	hook	pw = "x"	OK	0a00		pw=x
+ok-secret-renumbered	hook-skip	pw = "x"	OK	0a00		pw=x
+ok-secret-renumbered	hook	l = [ "x" ]	OK	1200		l[0]=x
+ok-secret-renumbered	hook-skip	l = [ "x" ]	OK	1200		l[0]=x
+ok-secret-renumbered	hook	m = { "k": "x" }	OK	1a050a016b1200		m["k"]=x
+ok-secret-renumbered	hook-skip	m = { "k": "x" }	OK	1a050a016b1200		m["k"]=x
+ok-secret-renumbered	hook	pw { value = "v" hint = "h" }	ERR	1:18: unknown pxf.Secret field "hint": this schema does not declare it		pw=v
+ok-secret-renumbered	hook-skip	pw { value = "v" hint = "h" }	ERR	1:18: unknown pxf.Secret field "hint": this schema does not declare it		pw=v
+ok-secret-renumbered	hook	pw { hint = "h" }	ERR	1:6: unknown pxf.Secret field "hint": this schema does not declare it		
+ok-secret-renumbered	hook-skip	pw { hint = "h" }	ERR	1:6: unknown pxf.Secret field "hint": this schema does not declare it		
+ok-secret-renumbered	hook	pw { fingerprint = "f" }	ERR	1:6: unknown pxf.Secret field "fingerprint": this schema does not declare it		
+ok-secret-renumbered	hook-skip	pw { fingerprint = "f" }	ERR	1:6: unknown pxf.Secret field "fingerprint": this schema does not declare it		
 ok-secret-renumbered	marshal		OK	pw = ""\nl = [\n  ""\n]\nm = {\n  k: ""\n}\n
 ok-secret-optional	fds		0ae3010a07702e70726f746f1203707866222d0a0653656372657412190a0576616c75651801200128094800520576616c756588010142080a065f76616c7565229b010a0148121b0a02707718012001280b320b2e7078662e5365637265745202707712190a016c18022003280b320b2e7078662e53656372657452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e536563726574520576616c75653a023801620670726f746f33
 ok-secret-optional	validate		0	
@@ -557,6 +655,18 @@ ok-secret-optional	unmarshal	m = { "k": "x" }	OK	1a080a016b12030a0178
 ok-secret-optional	unmarshal-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
 ok-secret-optional	full	m = { "k": "x" }	OK	1a080a016b12030a0178	
 ok-secret-optional	full-skip	m = { "k": "x" }	OK	1a080a016b12030a0178	
+ok-secret-optional	hook	pw = "x"	OK	0a00		pw=x
+ok-secret-optional	hook-skip	pw = "x"	OK	0a00		pw=x
+ok-secret-optional	hook	l = [ "x" ]	OK	1200		l[0]=x
+ok-secret-optional	hook-skip	l = [ "x" ]	OK	1200		l[0]=x
+ok-secret-optional	hook	m = { "k": "x" }	OK	1a050a016b1200		m["k"]=x
+ok-secret-optional	hook-skip	m = { "k": "x" }	OK	1a050a016b1200		m["k"]=x
+ok-secret-optional	hook	pw { value = "v" hint = "h" }	ERR	1:18: unknown pxf.Secret field "hint": this schema does not declare it		pw=v
+ok-secret-optional	hook-skip	pw { value = "v" hint = "h" }	ERR	1:18: unknown pxf.Secret field "hint": this schema does not declare it		pw=v
+ok-secret-optional	hook	pw { hint = "h" }	ERR	1:6: unknown pxf.Secret field "hint": this schema does not declare it		
+ok-secret-optional	hook-skip	pw { hint = "h" }	ERR	1:6: unknown pxf.Secret field "hint": this schema does not declare it		
+ok-secret-optional	hook	pw { fingerprint = "f" }	ERR	1:6: unknown pxf.Secret field "fingerprint": this schema does not declare it		
+ok-secret-optional	hook-skip	pw { fingerprint = "f" }	ERR	1:6: unknown pxf.Secret field "fingerprint": this schema does not declare it		
 ok-secret-optional	marshal		OK	pw = ""\nl = [\n  ""\n]\nm = {\n  k: ""\n}\n
 ok-bigint	fds		0aec010a07702e70726f746f120370786622360a06426967496e7412100a0361627318012001280c5203616273121a0a086e6567617469766518022001280852086e65676174697665229b010a0148121b0a02707718012001280b320b2e7078662e426967496e745202707712190a016c18022003280b320b2e7078662e426967496e7452016c121b0a016d18032003280b320d2e7078662e482e4d456e74727952016d1a410a064d456e74727912100a036b657918012001280952036b657912210a0576616c756518022001280b320b2e7078662e426967496e74520576616c75653a023801620670726f746f33
 ok-bigint	validate		0	
