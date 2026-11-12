@@ -37,6 +37,16 @@ use crate::limits::{MAX_BIG_FLOAT_EXPONENT, MAX_NUMERIC_LITERAL_DIGITS};
 /// bits.
 pub const BIG_FLOAT_PREC: u32 = 256;
 
+/// The most precision [`parse_big_float`] runs its `big.Float.Parse`
+/// emulation at, which it uses only to place a literal against the range
+/// checks; the value itself is the literal's exact value rounded once.
+/// `Parse`'s cost grows with the square of its precision, so a suffix of
+/// hundreds of millions of bits, which a raised `MaxNumericLiteralDigits`
+/// admits, took minutes (protowire-go#274, #109). 16384 bits is above the
+/// 13603 the default `MaxNumericLiteralDigits` allows, so at the default
+/// limits nothing is read differently.
+const BIG_FLOAT_CHECK_PREC: u32 = 1 << 14;
+
 /// A parsed `pxf.BigFloat` literal, as the wire message carries it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BigFloatLit {
@@ -512,6 +522,57 @@ fn pow5(n: u64, prec: u32) -> Fl {
     z
 }
 
+/// 10^k, exactly.
+fn pow10_exact(mut k: u64) -> BigUint {
+    let mut z = BigUint::from_u64(1);
+    let mut f = BigUint::from_u64(10);
+    while k > 0 {
+        if k & 1 == 1 {
+            z = z.mul(&f);
+        }
+        k >>= 1;
+        if k > 0 {
+            f = f.mul(&f);
+        }
+    }
+    z
+}
+
+/// protowire-go's `roundDecimalLiteral` (#108, protowire-go#260): the
+/// literal's exact value, the digit integer `d` scaled by 10^`k`, rounded
+/// once to `prec` bits, ties to even. For `k >= 0` the value is an integer
+/// and is rounded once; for `k < 0` it is the quotient of two integers,
+/// each held exactly, and `Fl::quo` is correctly rounded.
+fn round_decimal_exact(d: &BigUint, k: i64, prec: u32) -> Fl {
+    if k >= 0 {
+        let v = d.mul(&pow10_exact(k as u64));
+        let bits = v.bit_len();
+        return Fl::round_into(v, bits as i64, prec, false);
+    }
+    let exact = |m: BigUint| {
+        let bits = m.bit_len();
+        Fl::Finite {
+            mant: m,
+            exp: bits as i64,
+            prec: bits as u32,
+        }
+    };
+    exact(d.clone()).quo(&exact(pow10_exact(k.unsigned_abs())), prec)
+}
+
+/// The binary exponent the first `MaxBigFloatExponent` check takes from a
+/// `Parse` that ran at [`BIG_FLOAT_CHECK_PREC`] when `capped`: rounding to
+/// fewer bits can only raise the exponent, and by one at most, so a
+/// positive `e` is taken as `e - 1`, and what is refused then is refused at
+/// any precision (protowire-go's `cappedExponent`).
+fn capped_exponent(e: i64, capped: bool) -> i64 {
+    if capped && e > 0 {
+        e - 1
+    } else {
+        e
+    }
+}
+
 /// protowire-go's `clipLiteral`: a long literal's first 24 bytes and an ellipsis.
 pub(crate) fn clip_literal(s: &str) -> String {
     if s.len() <= 24 {
@@ -677,6 +738,12 @@ pub fn parse_big_float(
     let d = BigUint::from_decimal_digits(&digits);
     let fcount = -(frac_part.len() as i64);
 
+    // Above BIG_FLOAT_CHECK_PREC, the Parse emulation runs at that
+    // precision (#109); where it is capped, a positive exponent is allowed
+    // one more before it is refused here, and the check after the exact
+    // rounding decides.
+    let capped = read_prec > BIG_FLOAT_CHECK_PREC;
+    let check_prec = read_prec.min(BIG_FLOAT_CHECK_PREC);
     let value = if d.is_zero() {
         Fl::Zero
     } else {
@@ -693,13 +760,13 @@ pub fn parse_big_float(
             prec: bits as u32,
         };
         if exp5 == 0 {
-            Fl::round_into(d, exp2, read_prec, false)
+            Fl::round_into(d.clone(), exp2, check_prec, false)
         } else {
-            let p = pow5(exp5.unsigned_abs(), read_prec + 64);
+            let p = pow5(exp5.unsigned_abs(), check_prec + 64);
             if exp5 < 0 {
-                exact.quo(&p, read_prec)
+                exact.quo(&p, check_prec)
             } else {
-                exact.mul(&p, read_prec)
+                exact.mul(&p, check_prec)
             }
         }
     };
@@ -719,22 +786,61 @@ pub fn parse_big_float(
             prec: if suffixed { read_prec } else { 0 },
             negative,
         }),
-        Fl::Finite { mant, exp, prec } => {
-            let wire_exp = exp - i64::from(prec);
-            if wire_exp < MIN_EXP {
+        Fl::Finite { exp, .. } => {
+            // The wire's mantissa is `prec` bits wide, and big.Float's
+            // precision is an int32-range uint, so a non-zero value is
+            // refused past 2^31 - 1 bits (#124). Only a
+            // MaxNumericLiteralDigits raised past 646 million admits a
+            // suffix that wide. A zero has no mantissa.
+            if read_prec > i32::MAX as u32 {
                 return Err(format!(
-                    "big float literal {} is below the wire's exponent range",
-                    clip_literal(s)
+                    "big float literal {}: precision p{} exceeds the widest mantissa big.Float can hold, {} bits",
+                    clip_literal(s),
+                    read_prec,
+                    i32::MAX
                 ));
             }
-            if exp.unsigned_abs() > max_exponent as u64 {
-                return Err(format!(
+            // The wire carries exp - prec as an int32 (pxf/bignum.proto).
+            let below_wire = |exp: i64| exp - i64::from(read_prec) < MIN_EXP;
+            let past_bound = |exp: i64| exp.unsigned_abs() > max_exponent as u64;
+            let exponent_error = |exp: i64| {
+                format!(
                     "big float literal {} has binary exponent {}, and MaxBigFloatExponent={} bounds its magnitude",
                     clip_literal(s),
                     exp,
                     max_exponent
-                ));
+                )
+            };
+            let wire_error = || {
+                format!(
+                    "big float literal {} is below the wire's exponent range",
+                    clip_literal(s)
+                )
+            };
+            if below_wire(exp) {
+                return Err(wire_error());
             }
+            if past_bound(capped_exponent(exp, capped)) {
+                return Err(exponent_error(exp));
+            }
+            // The Parse emulation scales by powers of ten at a working
+            // precision and rounds again, so a value within a hair of a tie
+            // can round the wrong way (#108). The value is the literal's
+            // exact value rounded once, ties to even. The checks above bound
+            // the decimal exponent and the digits, so the exact rational is
+            // of bounded size. Rounding it can carry the exponent past the
+            // bound, so it is asked again.
+            let k = fcount.checked_add(exp10).ok_or_else(invalid)?;
+            let Fl::Finite { mant, exp, prec } = round_decimal_exact(&d, k, read_prec) else {
+                return Err(invalid());
+            };
+            if past_bound(exp) {
+                return Err(exponent_error(exp));
+            }
+            if below_wire(exp) {
+                return Err(wire_error());
+            }
+            let wire_exp = exp - i64::from(prec);
             Ok(BigFloatLit {
                 mantissa: mant.to_be_bytes(),
                 exponent: wire_exp as i32,

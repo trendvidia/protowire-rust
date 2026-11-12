@@ -33,6 +33,11 @@ format changes.
 
 ### Fixed
 
+- **A `pxf.BigFloat` literal is read as protowire-go reads it** ([#108](https://github.com/trendvidia/protowire-rust/issues/108), [#109](https://github.com/trendvidia/protowire-rust/issues/109), [#124](https://github.com/trendvidia/protowire-rust/issues/124)). The port copied `big.Float.Parse` step by step and took its result as the value. protowire-go now uses `Parse` only to place a literal against the range checks, and so does this port.
+  - **Rounded once (#108, protowire-go#260):** the value is the literal's exact value rounded once to its precision, ties to even. `Parse` scales by powers of ten at a working precision and rounds again, so a literal within a hair of a tie came out wrong. The spec's write-gate literal `4.2026…e-4932p2` was mantissa 3 and is now 2.
+  - **Checks capped at 16384 bits (#109, protowire-go#274):** `Parse` now runs at no more than 16384 bits. Under a raised `MaxNumericLiteralDigits`, `1e-300p2147483647` took more than two minutes, and is now refused at once. A capped positive exponent is allowed one more before the first `MaxBigFloatExponent` check, and the check after the exact rounding decides.
+  - **Precision ceiling (#124):** a non-zero value with a precision suffix past 2^31 - 1 bits is refused, `precision p2147483648 exceeds the widest mantissa big.Float can hold, 2147483647 bits`. A zero keeps such a suffix, as in Go.
+  - **Tests:** `tests/bigfloat_as_go.rs` holds 100 literals to what protowire-go v1.17.0 gave for each, under the default limits and with `MaxNumericLiteralDigits` raised to 1.3 billion. Each must finish within 5 seconds.
 - **A duration literal is read as protowire-go reads it** ([#153](https://github.com/trendvidia/protowire-rust/issues/153)). protowire-go validates and values a duration with Go's `time.ParseDuration`, and `src/go_duration.rs` is now a line-for-line port of it, used by the lexer and the decoder.
   - **Now accepted:** a segment's fraction with no digit before it (`1h.5m`, `5m.5s`, `2.5h.25m`). It was refused as `invalid duration`.
   - **Long fractions:** a long fraction of an hour rounds as Go's float64 arithmetic rounds it. `0.333333333333333333333h` is 1200 s, where it was 1199.999999999 s.
