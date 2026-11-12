@@ -10,7 +10,11 @@ use prost_reflect::{
 
 use crate::codec::{check_group_header, Codec, GROUP_HEADER_SIZE, HEADER_SIZE};
 use crate::errors::SbeError;
-use crate::template::{FieldTemplate, GroupTemplate, MessageTemplate, SbeEncoding};
+use crate::gofmt::go_g;
+use crate::template::{
+    float_fits, in_range, int_string, kind_name, kind_range, FieldTemplate, GroupTemplate,
+    MessageTemplate, SbeEncoding,
+};
 
 /// Decode `data` into `msg` under the codec's limits: the input is refused
 /// past `MaxMessageSize` before the header is read, the header's template ID
@@ -131,16 +135,19 @@ fn read_field(
     let encoding = ft.encoding.expect("non-composite field has encoding");
 
     let value = match encoding {
-        SbeEncoding::Int8 => int_to_value(fd, (data[off] as i8) as i64),
-        SbeEncoding::Int16 => int_to_value(fd, read_i16_le(data, off) as i64),
-        SbeEncoding::Int32 => int_to_value(fd, read_i32_le(data, off) as i64),
-        SbeEncoding::Int64 => int_to_value(fd, read_i64_le(data, off)),
-        SbeEncoding::Uint8 => uint_to_value(fd, data[off] as u64),
-        SbeEncoding::Uint16 => uint_to_value(fd, read_u16_le(data, off) as u64),
-        SbeEncoding::Uint32 => uint_to_value(fd, read_u32_le(data, off) as u64),
-        SbeEncoding::Uint64 => uint_to_value(fd, read_u64_le(data, off)),
-        SbeEncoding::Float => Value::F32(read_f32_le(data, off)),
-        SbeEncoding::Double => Value::F64(read_f64_le(data, off)),
+        SbeEncoding::Float => float_value(fd, read_f32_le(data, off) as f64),
+        SbeEncoding::Double => {
+            let f = read_f64_le(data, off);
+            if matches!(fd.kind(), Kind::Float) && !float_fits(f) {
+                return Err(SbeError::new(format!(
+                    "sbe: field {}: wire value {} does not fit a float field, ±{}",
+                    fd.full_name(),
+                    go_g(f),
+                    go_g(f32::MAX as f64)
+                )));
+            }
+            float_value(fd, f)
+        }
         SbeEncoding::Char => {
             let slice = &data[off..off + ft.size];
             if matches!(fd.kind(), Kind::Bytes) {
@@ -155,67 +162,68 @@ fn read_field(
                 })?)
             }
         }
+        int => {
+            // An integer primitive, sign- or zero-extended per the primitive
+            // (draft -01 § SBE Annotations), then stored by the field's kind.
+            // A value the field cannot hold is refused rather than cut to its
+            // low bits.
+            let mut raw = [0u8; 8];
+            raw[..ft.size].copy_from_slice(&data[off..off + ft.size]);
+            let mut v = u64::from_le_bytes(raw);
+            let signed = int.is_signed();
+            if signed {
+                let shift = 64 - 8 * ft.size as u32;
+                v = (((v << shift) as i64) >> shift) as u64;
+            }
+            let kind = fd.kind();
+            // A bool reads any nonzero primitive as true.
+            if !matches!(kind, Kind::Bool) {
+                let (lo, hi) = kind_range(&kind);
+                if !in_range(v, !signed, lo, hi) {
+                    return Err(SbeError::new(format!(
+                        "sbe: field {}: wire value {} ({}) does not fit a {} field, [{}, {}]",
+                        fd.full_name(),
+                        int_string(v, !signed),
+                        int.name(),
+                        kind_name(&kind),
+                        lo,
+                        hi
+                    )));
+                }
+            }
+            integer_value(&kind, v)
+        }
     };
     parent.set_field(fd, value);
     Ok(())
 }
 
-/// Coerce a signed-int wire value into the proto field's expected [`Value`]
-/// variant. Mirrors `setIntField`/`setInt64Field` in the TS port.
-fn int_to_value(fd: &FieldDescriptor, v: i64) -> Value {
-    match fd.kind() {
-        Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => Value::I32(v as i32),
-        Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => Value::I64(v),
-        Kind::Uint32 | Kind::Fixed32 => Value::U32(v as u32),
-        Kind::Uint64 | Kind::Fixed64 => Value::U64(v as u64),
+/// An integer that fits `kind` as the [`Value`] that kind takes. `v` holds
+/// an `i64`'s bits or a `u64`, whichever the primitive was; once it fits,
+/// both read the same.
+fn integer_value(kind: &Kind, v: u64) -> Value {
+    match kind {
         Kind::Bool => Value::Bool(v != 0),
         Kind::Enum(_) => Value::EnumNumber(v as i32),
-        Kind::Float => Value::F32(v as f32),
-        Kind::Double => Value::F64(v as f64),
-        _ => Value::I64(v),
+        Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => Value::I32(v as i32),
+        Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => Value::I64(v as i64),
+        Kind::Uint32 | Kind::Fixed32 => Value::U32(v as u32),
+        _ => Value::U64(v),
     }
 }
 
-/// Coerce an unsigned-int wire value into the proto field's expected
-/// [`Value`] variant. Mirrors `setUintField`/`setUint64Field`.
-fn uint_to_value(fd: &FieldDescriptor, v: u64) -> Value {
+/// A float or double field's [`Value`]. The template pairs a float or
+/// double primitive with a float or double field only, but either with
+/// either.
+fn float_value(fd: &FieldDescriptor, f: f64) -> Value {
     match fd.kind() {
-        Kind::Bool => Value::Bool(v != 0),
-        Kind::Enum(_) => Value::EnumNumber(v as i32),
-        Kind::Uint32 | Kind::Fixed32 => Value::U32(v as u32),
-        Kind::Uint64 | Kind::Fixed64 => Value::U64(v),
-        Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => Value::I32(v as i32),
-        Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => Value::I64(v as i64),
-        _ => Value::U64(v),
+        Kind::Float => Value::F32(f as f32),
+        _ => Value::F64(f),
     }
 }
 
 fn read_u16_le(buf: &[u8], off: usize) -> u16 {
     u16::from_le_bytes([buf[off], buf[off + 1]])
-}
-
-fn read_i16_le(buf: &[u8], off: usize) -> i16 {
-    i16::from_le_bytes([buf[off], buf[off + 1]])
-}
-
-fn read_u32_le(buf: &[u8], off: usize) -> u32 {
-    u32::from_le_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]])
-}
-
-fn read_i32_le(buf: &[u8], off: usize) -> i32 {
-    i32::from_le_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]])
-}
-
-fn read_u64_le(buf: &[u8], off: usize) -> u64 {
-    let mut bytes = [0u8; 8];
-    bytes.copy_from_slice(&buf[off..off + 8]);
-    u64::from_le_bytes(bytes)
-}
-
-fn read_i64_le(buf: &[u8], off: usize) -> i64 {
-    let mut bytes = [0u8; 8];
-    bytes.copy_from_slice(&buf[off..off + 8]);
-    i64::from_le_bytes(bytes)
 }
 
 fn read_f32_le(buf: &[u8], off: usize) -> f32 {

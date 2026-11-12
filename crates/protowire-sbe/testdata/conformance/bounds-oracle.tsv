@@ -1,0 +1,207 @@
+# What protowire-go at f2baa11 does with each case of bounds-cases.tsv.
+# Produced by scripts/gen-sbe-oracle.sh. Do not edit.
+# Columns: the case's, then its result (see scripts/sbe-oracle/main.go).
+bind	bounds/composite-block-past.proto	ERR	sbe: composite bounds.composite_block_past.M.d: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
+bind	bounds/composite-in-group-past.proto	ERR	sbe: composite in group bounds.composite_in_group_past.E.d: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
+bind	bounds/composite-past.proto	ERR	sbe: composite bounds.composite_past.M.c: composite field bounds.composite_past.C.b: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
+bind	bounds/group-past.proto	ERR	sbe: group field bounds.group_past.E.b: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
+bind	bounds/kb-bool-float.proto	ERR	sbe: field bounds.kb_bool_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is bool
+bind	bounds/kb-bytes-int32.proto	ERR	sbe: field bounds.kb_bytes_int32.M.v: (sbe.encoding) = "int32" on a bytes field; it narrows a numeric field, and a bytes field takes (sbe.length)
+bind	bounds/kb-double-char.proto	ERR	sbe: field bounds.kb_double_char.M.v: unknown encoding "char"
+bind	bounds/kb-double-int32.proto	ERR	sbe: field bounds.kb_double_int32.M.v: (sbe.encoding) = "int32" is an integer primitive and the field is double
+bind	bounds/kb-enum-double.proto	ERR	sbe: field bounds.kb_enum_double.M.v: (sbe.encoding) = "double" is a floating-point primitive and the field is enum
+bind	bounds/kb-float-uint8.proto	ERR	sbe: field bounds.kb_float_uint8.M.v: (sbe.encoding) = "uint8" is an integer primitive and the field is float
+bind	bounds/kb-int32-float.proto	ERR	sbe: field bounds.kb_int32_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is int32
+bind	bounds/kb-string-uint8.proto	ERR	sbe: field bounds.kb_string_uint8.M.v: (sbe.encoding) = "uint8" on a string field; it narrows a numeric field, and a string field takes (sbe.length)
+bind	bounds/len-past.proto	ERR	sbe: field bounds.len_past.M.b: (sbe.length) = 65537 is past 65535, the largest blockLength SBE can state
+bind	bounds/mx-bool-double.proto	ERR	sbe: field bounds.mx_bool_double.M.v: (sbe.encoding) = "double" is a floating-point primitive and the field is bool
+bind	bounds/mx-bool-float.proto	ERR	sbe: field bounds.mx_bool_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is bool
+bind	bounds/mx-double-int16.proto	ERR	sbe: field bounds.mx_double_int16.M.v: (sbe.encoding) = "int16" is an integer primitive and the field is double
+bind	bounds/mx-double-int32.proto	ERR	sbe: field bounds.mx_double_int32.M.v: (sbe.encoding) = "int32" is an integer primitive and the field is double
+bind	bounds/mx-double-int64.proto	ERR	sbe: field bounds.mx_double_int64.M.v: (sbe.encoding) = "int64" is an integer primitive and the field is double
+bind	bounds/mx-double-int8.proto	ERR	sbe: field bounds.mx_double_int8.M.v: (sbe.encoding) = "int8" is an integer primitive and the field is double
+bind	bounds/mx-double-uint16.proto	ERR	sbe: field bounds.mx_double_uint16.M.v: (sbe.encoding) = "uint16" is an integer primitive and the field is double
+bind	bounds/mx-double-uint32.proto	ERR	sbe: field bounds.mx_double_uint32.M.v: (sbe.encoding) = "uint32" is an integer primitive and the field is double
+bind	bounds/mx-double-uint64.proto	ERR	sbe: field bounds.mx_double_uint64.M.v: (sbe.encoding) = "uint64" is an integer primitive and the field is double
+bind	bounds/mx-double-uint8.proto	ERR	sbe: field bounds.mx_double_uint8.M.v: (sbe.encoding) = "uint8" is an integer primitive and the field is double
+bind	bounds/mx-fixed64-double.proto	ERR	sbe: field bounds.mx_fixed64_double.M.v: (sbe.encoding) = "double" is a floating-point primitive and the field is fixed64
+bind	bounds/mx-fixed64-float.proto	ERR	sbe: field bounds.mx_fixed64_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is fixed64
+bind	bounds/mx-float-int16.proto	ERR	sbe: field bounds.mx_float_int16.M.v: (sbe.encoding) = "int16" is an integer primitive and the field is float
+bind	bounds/mx-float-int32.proto	ERR	sbe: field bounds.mx_float_int32.M.v: (sbe.encoding) = "int32" is an integer primitive and the field is float
+bind	bounds/mx-float-int64.proto	ERR	sbe: field bounds.mx_float_int64.M.v: (sbe.encoding) = "int64" is an integer primitive and the field is float
+bind	bounds/mx-float-int8.proto	ERR	sbe: field bounds.mx_float_int8.M.v: (sbe.encoding) = "int8" is an integer primitive and the field is float
+bind	bounds/mx-float-uint16.proto	ERR	sbe: field bounds.mx_float_uint16.M.v: (sbe.encoding) = "uint16" is an integer primitive and the field is float
+bind	bounds/mx-float-uint32.proto	ERR	sbe: field bounds.mx_float_uint32.M.v: (sbe.encoding) = "uint32" is an integer primitive and the field is float
+bind	bounds/mx-float-uint64.proto	ERR	sbe: field bounds.mx_float_uint64.M.v: (sbe.encoding) = "uint64" is an integer primitive and the field is float
+bind	bounds/mx-float-uint8.proto	ERR	sbe: field bounds.mx_float_uint8.M.v: (sbe.encoding) = "uint8" is an integer primitive and the field is float
+bind	bounds/mx-int32-double.proto	ERR	sbe: field bounds.mx_int32_double.M.v: (sbe.encoding) = "double" is a floating-point primitive and the field is int32
+bind	bounds/mx-int32-float.proto	ERR	sbe: field bounds.mx_int32_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is int32
+bind	bounds/mx-int64-double.proto	ERR	sbe: field bounds.mx_int64_double.M.v: (sbe.encoding) = "double" is a floating-point primitive and the field is int64
+bind	bounds/mx-int64-float.proto	ERR	sbe: field bounds.mx_int64_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is int64
+bind	bounds/mx-k-double.proto	ERR	sbe: field bounds.mx_k_double.M.v: (sbe.encoding) = "double" is a floating-point primitive and the field is enum
+bind	bounds/mx-k-float.proto	ERR	sbe: field bounds.mx_k_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is enum
+bind	bounds/mx-sint32-double.proto	ERR	sbe: field bounds.mx_sint32_double.M.v: (sbe.encoding) = "double" is a floating-point primitive and the field is sint32
+bind	bounds/mx-sint32-float.proto	ERR	sbe: field bounds.mx_sint32_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is sint32
+bind	bounds/mx-uint32-double.proto	ERR	sbe: field bounds.mx_uint32_double.M.v: (sbe.encoding) = "double" is a floating-point primitive and the field is uint32
+bind	bounds/mx-uint32-float.proto	ERR	sbe: field bounds.mx_uint32_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is uint32
+bind	bounds/mx-uint64-double.proto	ERR	sbe: field bounds.mx_uint64_double.M.v: (sbe.encoding) = "double" is a floating-point primitive and the field is uint64
+bind	bounds/mx-uint64-float.proto	ERR	sbe: field bounds.mx_uint64_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is uint64
+bind	bounds/nested-composite-past.proto	ERR	sbe: composite bounds.nested_composite_past.M.c: composite field bounds.nested_composite_past.C.y: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
+bind	bounds/ok.proto	OK
+bind	bounds/root-one-past.proto	ERR	sbe: field bounds.root_one_past.M.t: ends at byte 65536 of its block, past 65535, the largest blockLength SBE can state
+bind	bounds/root-past.proto	ERR	sbe: field bounds.root_past.M.c: ends at byte 90000 of its block, past 65535, the largest blockLength SBE can state
+bind	bounds/schema-max.proto	OK
+bind	bounds/schema-past.proto	ERR	sbe: file bounds/schema-past.proto: (sbe.schema_id) = 65536 is past 65535, the largest schemaId SBE can state
+bind	bounds/strlen-past.proto	ERR	sbe: field bounds.strlen_past.M.s: (sbe.length) = 70000 is past 65535, the largest blockLength SBE can state
+bind	bounds/template-past.proto	ERR	sbe: message bounds.template_past.M: (sbe.template_id) = 65537 is past 65535, the largest templateId SBE can state
+bind	bounds/version-max.proto	OK
+bind	bounds/version-past.proto	ERR	sbe: file bounds/version-past.proto: (sbe.version) = 65536 is past 65535, the largest version SBE can state
+marshal	bounds/ok.proto	bounds.ok.R01	v=127	OK	01000100010000007f	{v=127}
+marshal	bounds/ok.proto	bounds.ok.R01	v=-128	OK	010001000100000080	{v=-128}
+marshal	bounds/ok.proto	bounds.ok.R01	v=128	ERR	sbe: field bounds.ok.R01.v: value 128 is outside the range of int8, [-128, 127]
+marshal	bounds/ok.proto	bounds.ok.R01	v=-129	ERR	sbe: field bounds.ok.R01.v: value -129 is outside the range of int8, [-128, 127]
+marshal	bounds/ok.proto	bounds.ok.R01	v=300	ERR	sbe: field bounds.ok.R01.v: value 300 is outside the range of int8, [-128, 127]
+marshal	bounds/ok.proto	bounds.ok.R02	v=32767	OK	0200020001000000ff7f	{v=32767}
+marshal	bounds/ok.proto	bounds.ok.R02	v=-32768	OK	02000200010000000080	{v=-32768}
+marshal	bounds/ok.proto	bounds.ok.R02	v=32768	ERR	sbe: field bounds.ok.R02.v: value 32768 is outside the range of int16, [-32768, 32767]
+marshal	bounds/ok.proto	bounds.ok.R02	v=-32769	ERR	sbe: field bounds.ok.R02.v: value -32769 is outside the range of int16, [-32768, 32767]
+marshal	bounds/ok.proto	bounds.ok.R03	v=2147483647	OK	0400030001000000ffffff7f	{v=2147483647}
+marshal	bounds/ok.proto	bounds.ok.R03	v=-2147483648	OK	040003000100000000000080	{v=-2147483648}
+marshal	bounds/ok.proto	bounds.ok.R03	v=2147483648	ERR	sbe: field bounds.ok.R03.v: value 2147483648 is outside the range of int32, [-2147483648, 2147483647]
+marshal	bounds/ok.proto	bounds.ok.R03	v=-2147483649	ERR	sbe: field bounds.ok.R03.v: value -2147483649 is outside the range of int32, [-2147483648, 2147483647]
+marshal	bounds/ok.proto	bounds.ok.R04	v=9223372036854775807	OK	0800040001000000ffffffffffffff7f	{v=9223372036854775807}
+marshal	bounds/ok.proto	bounds.ok.R04	v=9223372036854775808	ERR	sbe: field bounds.ok.R04.v: value 9223372036854775808 is outside the range of int64, [-9223372036854775808, 9223372036854775807]
+marshal	bounds/ok.proto	bounds.ok.R05	v=255	OK	0100050001000000ff	{v=255}
+marshal	bounds/ok.proto	bounds.ok.R05	v=256	ERR	sbe: field bounds.ok.R05.v: value 256 is outside the range of uint8, [0, 255]
+marshal	bounds/ok.proto	bounds.ok.R06	v=65535	OK	0200060001000000ffff	{v=65535}
+marshal	bounds/ok.proto	bounds.ok.R06	v=65536	ERR	sbe: field bounds.ok.R06.v: value 65536 is outside the range of uint16, [0, 65535]
+marshal	bounds/ok.proto	bounds.ok.R06	v=70000	ERR	sbe: field bounds.ok.R06.v: value 70000 is outside the range of uint16, [0, 65535]
+marshal	bounds/ok.proto	bounds.ok.R07	v=4294967295	OK	0400070001000000ffffffff	{v=4294967295}
+marshal	bounds/ok.proto	bounds.ok.R07	v=4294967296	ERR	sbe: field bounds.ok.R07.v: value 4294967296 is outside the range of uint32, [0, 4294967295]
+marshal	bounds/ok.proto	bounds.ok.R08	v=0	OK	08000800010000000000000000000000	{v=0}
+marshal	bounds/ok.proto	bounds.ok.R08	v=9223372036854775807	OK	0800080001000000ffffffffffffff7f	{v=9223372036854775807}
+marshal	bounds/ok.proto	bounds.ok.R08	v=-1	ERR	sbe: field bounds.ok.R08.v: value -1 is outside the range of uint64, [0, 18446744073709551615]
+marshal	bounds/ok.proto	bounds.ok.R09	v=0	OK	010009000100000000	{v=0}
+marshal	bounds/ok.proto	bounds.ok.R09	v=255	OK	0100090001000000ff	{v=255}
+marshal	bounds/ok.proto	bounds.ok.R09	v=-1	ERR	sbe: field bounds.ok.R09.v: value -1 is outside the range of uint8, [0, 255]
+marshal	bounds/ok.proto	bounds.ok.R09	v=256	ERR	sbe: field bounds.ok.R09.v: value 256 is outside the range of uint8, [0, 255]
+marshal	bounds/ok.proto	bounds.ok.R10	v=127	OK	01000a00010000007f	{v=127}
+marshal	bounds/ok.proto	bounds.ok.R10	v=128	ERR	sbe: field bounds.ok.R10.v: value 128 is outside the range of int8, [-128, 127]
+marshal	bounds/ok.proto	bounds.ok.R11	v=0	OK	01000b000100000000	{v=0}
+marshal	bounds/ok.proto	bounds.ok.R11	v=255	OK	01000b0001000000ff	{v=255}
+marshal	bounds/ok.proto	bounds.ok.R11	v=256	ERR	sbe: field bounds.ok.R11.v: value 256 is outside the range of uint8, [0, 255]
+marshal	bounds/ok.proto	bounds.ok.R11	v=-1	ERR	sbe: field bounds.ok.R11.v: value -1 is outside the range of uint8, [0, 255]
+marshal	bounds/ok.proto	bounds.ok.R12	v=-32768	OK	02000c00010000000080	{v=-32768}
+marshal	bounds/ok.proto	bounds.ok.R12	v=32767	OK	02000c0001000000ff7f	{v=32767}
+marshal	bounds/ok.proto	bounds.ok.R12	v=32768	ERR	sbe: field bounds.ok.R12.v: value 32768 is outside the range of int16, [-32768, 32767]
+marshal	bounds/ok.proto	bounds.ok.F01	v=3.4028234663852886e+38	OK	04000d0001000000ffff7f7f	{v=f64:47efffffe0000000}
+marshal	bounds/ok.proto	bounds.ok.F01	v=-3.4028234663852886e+38	OK	04000d0001000000ffff7fff	{v=f64:c7efffffe0000000}
+marshal	bounds/ok.proto	bounds.ok.F01	v=inf	OK	04000d00010000000000807f	{v=f64:7ff0000000000000}
+marshal	bounds/ok.proto	bounds.ok.F01	v=-inf	OK	04000d0001000000000080ff	{v=f64:fff0000000000000}
+marshal	bounds/ok.proto	bounds.ok.F01	v=NaN	OK	04000d00010000000000c07f	{v=f64:7ff8000000000000}
+marshal	bounds/ok.proto	bounds.ok.F01	v=0.1	OK	04000d0001000000cdcccc3d	{v=f64:3fb99999a0000000}
+marshal	bounds/ok.proto	bounds.ok.F01	v=3.402823466385289e+38	ERR	sbe: field bounds.ok.F01.v: value 3.402823466385289e+38 is outside the range of float, ±3.4028234663852886e+38
+marshal	bounds/ok.proto	bounds.ok.F01	v=-3.402823466385289e+38	ERR	sbe: field bounds.ok.F01.v: value -3.402823466385289e+38 is outside the range of float, ±3.4028234663852886e+38
+marshal	bounds/ok.proto	bounds.ok.F01	v=1e+39	ERR	sbe: field bounds.ok.F01.v: value 1e+39 is outside the range of float, ±3.4028234663852886e+38
+marshal	bounds/ok.proto	bounds.ok.N	comp.c=127;grp+.e=255	OK	01000e00010000007f01000100ff	{comp={c=127} grp=[1]{e=255}}
+marshal	bounds/ok.proto	bounds.ok.N	comp.c=128;grp+.e=255	ERR	sbe: field bounds.ok.C.c: value 128 is outside the range of int8, [-128, 127]
+marshal	bounds/ok.proto	bounds.ok.N	comp.c=127;grp+.e=256	ERR	sbe: field bounds.ok.E.e: value 256 is outside the range of uint8, [0, 255]
+wire	bounds/ok.proto	bounds.ok.U01	7fffffff	OK	{v=2147483647}	08000f0001000000ffffff7f00000000
+wire	bounds/ok.proto	bounds.ok.U01	ffffffff80000000	OK	{v=-2147483648}	08000f000100000000000080ffffffff
+wire	bounds/ok.proto	bounds.ok.U01	80000000	ERR	sbe: field bounds.ok.U01.v: wire value 2147483648 (int64) does not fit a int32 field, [-2147483648, 2147483647]
+wire	bounds/ok.proto	bounds.ok.U01	ffffffff7fffffff	ERR	sbe: field bounds.ok.U01.v: wire value -2147483649 (int64) does not fit a int32 field, [-2147483648, 2147483647]
+wire	bounds/ok.proto	bounds.ok.U02	7fffffff	OK	{v=2147483647}	0400100001000000ffffff7f
+wire	bounds/ok.proto	bounds.ok.U02	80000000	ERR	sbe: field bounds.ok.U02.v: wire value 2147483648 (uint32) does not fit a int32 field, [-2147483648, 2147483647]
+wire	bounds/ok.proto	bounds.ok.U02	ffffffff	ERR	sbe: field bounds.ok.U02.v: wire value 4294967295 (uint32) does not fit a int32 field, [-2147483648, 2147483647]
+wire	bounds/ok.proto	bounds.ok.U03	7f	OK	{v=127}	01001100010000007f
+wire	bounds/ok.proto	bounds.ok.U03	0	OK	{v=0}	010011000100000000
+wire	bounds/ok.proto	bounds.ok.U03	ff	ERR	sbe: field bounds.ok.U03.v: wire value -1 (int8) does not fit a uint32 field, [0, 4294967295]
+wire	bounds/ok.proto	bounds.ok.U03	80	ERR	sbe: field bounds.ok.U03.v: wire value -128 (int8) does not fit a uint32 field, [0, 4294967295]
+wire	bounds/ok.proto	bounds.ok.U04	ffffffff	OK	{v=4294967295}	0800120001000000ffffffff00000000
+wire	bounds/ok.proto	bounds.ok.U04	100000000	ERR	sbe: field bounds.ok.U04.v: wire value 4294967296 (uint64) does not fit a uint32 field, [0, 4294967295]
+wire	bounds/ok.proto	bounds.ok.U05	7fffffffffffffff	OK	{v=9223372036854775807}	0800130001000000ffffffffffffff7f
+wire	bounds/ok.proto	bounds.ok.U05	ffffffffffffffff	ERR	sbe: field bounds.ok.U05.v: wire value -1 (int64) does not fit a uint64 field, [0, 18446744073709551615]
+wire	bounds/ok.proto	bounds.ok.U06	7fffffffffffffff	OK	{v=9223372036854775807}	0800140001000000ffffffffffffff7f
+wire	bounds/ok.proto	bounds.ok.U06	8000000000000000	ERR	sbe: field bounds.ok.U06.v: wire value 9223372036854775808 (uint64) does not fit a int64 field, [-9223372036854775808, 9223372036854775807]
+wire	bounds/ok.proto	bounds.ok.U07	7fffffff	OK	{v=2147483647}	0400150001000000ffffff7f
+wire	bounds/ok.proto	bounds.ok.U07	80000000	ERR	sbe: field bounds.ok.U07.v: wire value 2147483648 (uint32) does not fit a enum field, [-2147483648, 2147483647]
+wire	bounds/ok.proto	bounds.ok.U08	47efffffe0000000	OK	{v=f32:7f7fffff}	0800160001000000000000e0ffffef47
+wire	bounds/ok.proto	bounds.ok.U08	fff0000000000000	OK	{v=f32:ff800000}	0800160001000000000000000000f0ff
+wire	bounds/ok.proto	bounds.ok.U08	48078287f49c4a1d	ERR	sbe: field bounds.ok.U08.v: wire value 1e+39 does not fit a float field, ±3.4028234663852886e+38
+wire	bounds/ok.proto	bounds.ok.U08	c8078287f49c4a1d	ERR	sbe: field bounds.ok.U08.v: wire value -1e+39 does not fit a float field, ±3.4028234663852886e+38
+marshal	bounds/ok.proto	bounds.ok.X_int32_int8	v=1	OK	010017000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int32_int16	v=1	OK	02001800010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int32_int32	v=1	OK	040019000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int32_int64	v=1	OK	08001a00010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int32_uint8	v=1	OK	01001b000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int32_uint16	v=1	OK	02001c00010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int32_uint32	v=1	OK	04001d000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int32_uint64	v=1	OK	08001e00010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int64_int8	v=1	OK	01001f000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int64_int16	v=1	OK	02002000010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int64_int32	v=1	OK	040021000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int64_int64	v=1	OK	08002200010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int64_uint8	v=1	OK	010023000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int64_uint16	v=1	OK	02002400010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int64_uint32	v=1	OK	040025000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_int64_uint64	v=1	OK	08002600010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint32_int8	v=1	OK	010027000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint32_int16	v=1	OK	02002800010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint32_int32	v=1	OK	040029000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint32_int64	v=1	OK	08002a00010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint32_uint8	v=1	OK	01002b000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint32_uint16	v=1	OK	02002c00010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint32_uint32	v=1	OK	04002d000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint32_uint64	v=1	OK	08002e00010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint64_int8	v=1	OK	01002f000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint64_int16	v=1	OK	02003000010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint64_int32	v=1	OK	040031000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint64_int64	v=1	OK	08003200010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint64_uint8	v=1	OK	010033000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint64_uint16	v=1	OK	02003400010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint64_uint32	v=1	OK	040035000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_uint64_uint64	v=1	OK	08003600010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_sint32_int8	v=1	OK	010037000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_sint32_int16	v=1	OK	02003800010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_sint32_int32	v=1	OK	040039000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_sint32_int64	v=1	OK	08003a00010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_sint32_uint8	v=1	OK	01003b000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_sint32_uint16	v=1	OK	02003c00010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_sint32_uint32	v=1	OK	04003d000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_sint32_uint64	v=1	OK	08003e00010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_int8	v=1	OK	01003f000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_int16	v=1	OK	02004000010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_int32	v=1	OK	040041000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_int64	v=1	OK	08004200010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_uint8	v=1	OK	010043000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_uint16	v=1	OK	02004400010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_uint32	v=1	OK	040045000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_uint64	v=1	OK	08004600010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_float_float	v=1	OK	04004700010000000000803f	{v=f32:3f800000}
+marshal	bounds/ok.proto	bounds.ok.X_float_double	v=1	OK	0800480001000000000000000000f03f	{v=f32:3f800000}
+marshal	bounds/ok.proto	bounds.ok.X_double_float	v=1	OK	04004900010000000000803f	{v=f64:3ff0000000000000}
+marshal	bounds/ok.proto	bounds.ok.X_double_double	v=1	OK	08004a0001000000000000000000f03f	{v=f64:3ff0000000000000}
+marshal	bounds/ok.proto	bounds.ok.X_bool_int8	v=true	OK	01004b000100000001	{v=true}
+marshal	bounds/ok.proto	bounds.ok.X_bool_int16	v=true	OK	02004c00010000000100	{v=true}
+marshal	bounds/ok.proto	bounds.ok.X_bool_int32	v=true	OK	04004d000100000001000000	{v=true}
+marshal	bounds/ok.proto	bounds.ok.X_bool_int64	v=true	OK	08004e00010000000100000000000000	{v=true}
+marshal	bounds/ok.proto	bounds.ok.X_bool_uint8	v=true	OK	01004f000100000001	{v=true}
+marshal	bounds/ok.proto	bounds.ok.X_bool_uint16	v=true	OK	02005000010000000100	{v=true}
+marshal	bounds/ok.proto	bounds.ok.X_bool_uint32	v=true	OK	040051000100000001000000	{v=true}
+marshal	bounds/ok.proto	bounds.ok.X_bool_uint64	v=true	OK	08005200010000000100000000000000	{v=true}
+marshal	bounds/ok.proto	bounds.ok.X_K_int8	v=1	OK	010053000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_K_int16	v=1	OK	02005400010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_K_int32	v=1	OK	040055000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_K_int64	v=1	OK	08005600010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_K_uint8	v=1	OK	010057000100000001	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_K_uint16	v=1	OK	02005800010000000100	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_K_uint32	v=1	OK	040059000100000001000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.X_K_uint64	v=1	OK	08005a00010000000100000000000000	{v=1}
+marshal	bounds/ok.proto	bounds.ok.HLen		OK	ffff5b00010000000000000000000000..len=65543,fnv=7c70b1045a36b953	{b=bytes(65535)}
+marshal	bounds/ok.proto	bounds.ok.HBlock		OK	ffff5c00010000000000000000000000..len=65543,fnv=5b2565a91a0ea4b2	{a=bytes(65531) t=0}
+marshal	bounds/ok.proto	bounds.ok.HGroup	e*1	OK	00005d0001000000ffff010000000000..len=65547,fnv=9397610ddf8976ba	{e=[1]{a=bytes(40000) b=bytes(25535)}}
+marshal	bounds/ok.proto	bounds.ok.HTemplate		OK	0400ffff0100000000000000	{t=0}
+marshal	bounds/schema-max.proto	bounds.schema_max.M		OK	04000100ffff000000000000	{t=0}
+marshal	bounds/version-max.proto	bounds.version_max.M		OK	040001000100ffff00000000	{t=0}
+marshal	bounds/ok.proto	bounds.ok.GCount	e*65535	OK	00005e00010000000400ffff00000000..len=262152,fnv=5a211384e531fd64	{e=[65535]}
+marshal	bounds/ok.proto	bounds.ok.GCount	e*65536	ERR	sbe: field bounds.ok.GCount.e has 65536 entries, past 65535, the largest numInGroup SBE can state

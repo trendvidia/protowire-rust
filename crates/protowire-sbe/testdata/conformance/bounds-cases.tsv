@@ -1,0 +1,209 @@
+# SBE cases for the bounds oracle (#122); scripts/gen-sbe-oracle.sh runs them
+# through protowire-go into bounds-oracle.tsv. Columns: op, file, then
+#   bind:      nothing; the codec is built from the file alone
+#   marshal:   message, assignments path=value;... (grp+.e appends an entry, e*N appends N)
+#   wire:      message, primitive bits in hex, written little-endian over an empty message's block
+bind	bounds/composite-block-past.proto
+bind	bounds/composite-in-group-past.proto
+bind	bounds/composite-past.proto
+bind	bounds/group-past.proto
+bind	bounds/kb-bool-float.proto
+bind	bounds/kb-bytes-int32.proto
+bind	bounds/kb-double-char.proto
+bind	bounds/kb-double-int32.proto
+bind	bounds/kb-enum-double.proto
+bind	bounds/kb-float-uint8.proto
+bind	bounds/kb-int32-float.proto
+bind	bounds/kb-string-uint8.proto
+bind	bounds/len-past.proto
+bind	bounds/mx-bool-double.proto
+bind	bounds/mx-bool-float.proto
+bind	bounds/mx-double-int16.proto
+bind	bounds/mx-double-int32.proto
+bind	bounds/mx-double-int64.proto
+bind	bounds/mx-double-int8.proto
+bind	bounds/mx-double-uint16.proto
+bind	bounds/mx-double-uint32.proto
+bind	bounds/mx-double-uint64.proto
+bind	bounds/mx-double-uint8.proto
+bind	bounds/mx-fixed64-double.proto
+bind	bounds/mx-fixed64-float.proto
+bind	bounds/mx-float-int16.proto
+bind	bounds/mx-float-int32.proto
+bind	bounds/mx-float-int64.proto
+bind	bounds/mx-float-int8.proto
+bind	bounds/mx-float-uint16.proto
+bind	bounds/mx-float-uint32.proto
+bind	bounds/mx-float-uint64.proto
+bind	bounds/mx-float-uint8.proto
+bind	bounds/mx-int32-double.proto
+bind	bounds/mx-int32-float.proto
+bind	bounds/mx-int64-double.proto
+bind	bounds/mx-int64-float.proto
+bind	bounds/mx-k-double.proto
+bind	bounds/mx-k-float.proto
+bind	bounds/mx-sint32-double.proto
+bind	bounds/mx-sint32-float.proto
+bind	bounds/mx-uint32-double.proto
+bind	bounds/mx-uint32-float.proto
+bind	bounds/mx-uint64-double.proto
+bind	bounds/mx-uint64-float.proto
+bind	bounds/nested-composite-past.proto
+bind	bounds/ok.proto
+bind	bounds/root-one-past.proto
+bind	bounds/root-past.proto
+bind	bounds/schema-max.proto
+bind	bounds/schema-past.proto
+bind	bounds/strlen-past.proto
+bind	bounds/template-past.proto
+bind	bounds/version-max.proto
+bind	bounds/version-past.proto
+marshal	bounds/ok.proto	bounds.ok.R01	v=127
+marshal	bounds/ok.proto	bounds.ok.R01	v=-128
+marshal	bounds/ok.proto	bounds.ok.R01	v=128
+marshal	bounds/ok.proto	bounds.ok.R01	v=-129
+marshal	bounds/ok.proto	bounds.ok.R01	v=300
+marshal	bounds/ok.proto	bounds.ok.R02	v=32767
+marshal	bounds/ok.proto	bounds.ok.R02	v=-32768
+marshal	bounds/ok.proto	bounds.ok.R02	v=32768
+marshal	bounds/ok.proto	bounds.ok.R02	v=-32769
+marshal	bounds/ok.proto	bounds.ok.R03	v=2147483647
+marshal	bounds/ok.proto	bounds.ok.R03	v=-2147483648
+marshal	bounds/ok.proto	bounds.ok.R03	v=2147483648
+marshal	bounds/ok.proto	bounds.ok.R03	v=-2147483649
+marshal	bounds/ok.proto	bounds.ok.R04	v=9223372036854775807
+marshal	bounds/ok.proto	bounds.ok.R04	v=9223372036854775808
+marshal	bounds/ok.proto	bounds.ok.R05	v=255
+marshal	bounds/ok.proto	bounds.ok.R05	v=256
+marshal	bounds/ok.proto	bounds.ok.R06	v=65535
+marshal	bounds/ok.proto	bounds.ok.R06	v=65536
+marshal	bounds/ok.proto	bounds.ok.R06	v=70000
+marshal	bounds/ok.proto	bounds.ok.R07	v=4294967295
+marshal	bounds/ok.proto	bounds.ok.R07	v=4294967296
+marshal	bounds/ok.proto	bounds.ok.R08	v=0
+marshal	bounds/ok.proto	bounds.ok.R08	v=9223372036854775807
+marshal	bounds/ok.proto	bounds.ok.R08	v=-1
+marshal	bounds/ok.proto	bounds.ok.R09	v=0
+marshal	bounds/ok.proto	bounds.ok.R09	v=255
+marshal	bounds/ok.proto	bounds.ok.R09	v=-1
+marshal	bounds/ok.proto	bounds.ok.R09	v=256
+marshal	bounds/ok.proto	bounds.ok.R10	v=127
+marshal	bounds/ok.proto	bounds.ok.R10	v=128
+marshal	bounds/ok.proto	bounds.ok.R11	v=0
+marshal	bounds/ok.proto	bounds.ok.R11	v=255
+marshal	bounds/ok.proto	bounds.ok.R11	v=256
+marshal	bounds/ok.proto	bounds.ok.R11	v=-1
+marshal	bounds/ok.proto	bounds.ok.R12	v=-32768
+marshal	bounds/ok.proto	bounds.ok.R12	v=32767
+marshal	bounds/ok.proto	bounds.ok.R12	v=32768
+marshal	bounds/ok.proto	bounds.ok.F01	v=3.4028234663852886e+38
+marshal	bounds/ok.proto	bounds.ok.F01	v=-3.4028234663852886e+38
+marshal	bounds/ok.proto	bounds.ok.F01	v=inf
+marshal	bounds/ok.proto	bounds.ok.F01	v=-inf
+marshal	bounds/ok.proto	bounds.ok.F01	v=NaN
+marshal	bounds/ok.proto	bounds.ok.F01	v=0.1
+marshal	bounds/ok.proto	bounds.ok.F01	v=3.402823466385289e+38
+marshal	bounds/ok.proto	bounds.ok.F01	v=-3.402823466385289e+38
+marshal	bounds/ok.proto	bounds.ok.F01	v=1e+39
+marshal	bounds/ok.proto	bounds.ok.N	comp.c=127;grp+.e=255
+marshal	bounds/ok.proto	bounds.ok.N	comp.c=128;grp+.e=255
+marshal	bounds/ok.proto	bounds.ok.N	comp.c=127;grp+.e=256
+wire	bounds/ok.proto	bounds.ok.U01	7fffffff
+wire	bounds/ok.proto	bounds.ok.U01	ffffffff80000000
+wire	bounds/ok.proto	bounds.ok.U01	80000000
+wire	bounds/ok.proto	bounds.ok.U01	ffffffff7fffffff
+wire	bounds/ok.proto	bounds.ok.U02	7fffffff
+wire	bounds/ok.proto	bounds.ok.U02	80000000
+wire	bounds/ok.proto	bounds.ok.U02	ffffffff
+wire	bounds/ok.proto	bounds.ok.U03	7f
+wire	bounds/ok.proto	bounds.ok.U03	0
+wire	bounds/ok.proto	bounds.ok.U03	ff
+wire	bounds/ok.proto	bounds.ok.U03	80
+wire	bounds/ok.proto	bounds.ok.U04	ffffffff
+wire	bounds/ok.proto	bounds.ok.U04	100000000
+wire	bounds/ok.proto	bounds.ok.U05	7fffffffffffffff
+wire	bounds/ok.proto	bounds.ok.U05	ffffffffffffffff
+wire	bounds/ok.proto	bounds.ok.U06	7fffffffffffffff
+wire	bounds/ok.proto	bounds.ok.U06	8000000000000000
+wire	bounds/ok.proto	bounds.ok.U07	7fffffff
+wire	bounds/ok.proto	bounds.ok.U07	80000000
+wire	bounds/ok.proto	bounds.ok.U08	47efffffe0000000
+wire	bounds/ok.proto	bounds.ok.U08	fff0000000000000
+wire	bounds/ok.proto	bounds.ok.U08	48078287f49c4a1d
+wire	bounds/ok.proto	bounds.ok.U08	c8078287f49c4a1d
+marshal	bounds/ok.proto	bounds.ok.X_int32_int8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int32_int16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int32_int32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int32_int64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int32_uint8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int32_uint16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int32_uint32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int32_uint64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int64_int8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int64_int16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int64_int32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int64_int64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int64_uint8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int64_uint16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int64_uint32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_int64_uint64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint32_int8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint32_int16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint32_int32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint32_int64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint32_uint8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint32_uint16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint32_uint32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint32_uint64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint64_int8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint64_int16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint64_int32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint64_int64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint64_uint8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint64_uint16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint64_uint32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_uint64_uint64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_sint32_int8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_sint32_int16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_sint32_int32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_sint32_int64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_sint32_uint8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_sint32_uint16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_sint32_uint32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_sint32_uint64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_int8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_int16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_int32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_int64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_uint8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_uint16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_uint32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_fixed64_uint64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_float_float	v=1
+marshal	bounds/ok.proto	bounds.ok.X_float_double	v=1
+marshal	bounds/ok.proto	bounds.ok.X_double_float	v=1
+marshal	bounds/ok.proto	bounds.ok.X_double_double	v=1
+marshal	bounds/ok.proto	bounds.ok.X_bool_int8	v=true
+marshal	bounds/ok.proto	bounds.ok.X_bool_int16	v=true
+marshal	bounds/ok.proto	bounds.ok.X_bool_int32	v=true
+marshal	bounds/ok.proto	bounds.ok.X_bool_int64	v=true
+marshal	bounds/ok.proto	bounds.ok.X_bool_uint8	v=true
+marshal	bounds/ok.proto	bounds.ok.X_bool_uint16	v=true
+marshal	bounds/ok.proto	bounds.ok.X_bool_uint32	v=true
+marshal	bounds/ok.proto	bounds.ok.X_bool_uint64	v=true
+marshal	bounds/ok.proto	bounds.ok.X_K_int8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_K_int16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_K_int32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_K_int64	v=1
+marshal	bounds/ok.proto	bounds.ok.X_K_uint8	v=1
+marshal	bounds/ok.proto	bounds.ok.X_K_uint16	v=1
+marshal	bounds/ok.proto	bounds.ok.X_K_uint32	v=1
+marshal	bounds/ok.proto	bounds.ok.X_K_uint64	v=1
+marshal	bounds/ok.proto	bounds.ok.HLen	
+marshal	bounds/ok.proto	bounds.ok.HBlock	
+marshal	bounds/ok.proto	bounds.ok.HGroup	e*1
+marshal	bounds/ok.proto	bounds.ok.HTemplate	
+marshal	bounds/schema-max.proto	bounds.schema_max.M	
+marshal	bounds/version-max.proto	bounds.version_max.M	
+marshal	bounds/ok.proto	bounds.ok.GCount	e*65535
+marshal	bounds/ok.proto	bounds.ok.GCount	e*65536
