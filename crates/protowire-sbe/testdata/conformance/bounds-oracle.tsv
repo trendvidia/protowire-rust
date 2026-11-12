@@ -48,6 +48,8 @@ bind	bounds/mx-uint64-double.proto	ERR	sbe: field bounds.mx_uint64_double.M.v: (
 bind	bounds/mx-uint64-float.proto	ERR	sbe: field bounds.mx_uint64_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is uint64
 bind	bounds/nested-composite-past.proto	ERR	sbe: composite bounds.nested_composite_past.M.c: composite field bounds.nested_composite_past.C.y: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
 bind	bounds/ok.proto	OK
+bind	bounds/oneof-composite.proto	ERR	sbe: composite bounds.oneof_composite.M.c: composite bounds.oneof_composite.C contains oneof field a
+bind	bounds/oneof-root.proto	ERR	sbe: oneof field bounds.oneof_root.M.a not supported
 bind	bounds/root-one-past.proto	ERR	sbe: field bounds.root_one_past.M.t: ends at byte 65536 of its block, past 65535, the largest blockLength SBE can state
 bind	bounds/root-past.proto	ERR	sbe: field bounds.root_past.M.c: ends at byte 90000 of its block, past 65535, the largest blockLength SBE can state
 bind	bounds/schema-max.proto	OK
@@ -205,3 +207,5 @@ marshal	bounds/schema-max.proto	bounds.schema_max.M		OK	04000100ffff000000000000
 marshal	bounds/version-max.proto	bounds.version_max.M		OK	040001000100ffff00000000	{t=0}
 marshal	bounds/ok.proto	bounds.ok.GCount	e*65535	OK	00005e00010000000400ffff00000000..len=262152,fnv=5a211384e531fd64	{e=[65535]}
 marshal	bounds/ok.proto	bounds.ok.GCount	e*65536	ERR	sbe: field bounds.ok.GCount.e has 65536 entries, past 65535, the largest numInGroup SBE can state
+marshal	bounds/ok.proto	bounds.ok.Opt	x=5;comp.c=7	OK	08005f00010000000500000007000000	{x=5 comp={c=7}}
+marshal	bounds/ok.proto	bounds.ok.Opt		OK	08005f00010000000000000000000000	{x=0 comp={c=0}}

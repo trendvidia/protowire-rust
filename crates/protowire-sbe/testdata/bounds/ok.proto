@@ -509,3 +509,13 @@ message GCount {
   option (sbe.template_id) = 94;
   repeated GEntry e = 1;
 }
+
+message OptC {
+  optional uint32 c = 1;
+}
+
+message Opt {
+  option (sbe.template_id) = 95;
+  optional uint32 x = 1;
+  OptC comp = 2;
+}

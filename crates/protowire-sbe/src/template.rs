@@ -183,7 +183,9 @@ pub fn build_template(
                 fd.name()
             )));
         }
-        if fd.containing_oneof().is_some() {
+        // A proto3 `optional` field sits in a synthetic oneof of its own,
+        // which is not a oneof to SBE.
+        if fd.containing_oneof().is_some_and(|o| !o.is_synthetic()) {
             return Err(SbeError::new(format!(
                 "sbe: oneof field {}.{} not supported",
                 desc.full_name(),
@@ -333,7 +335,7 @@ fn build_composite_fields(md: &MessageDescriptor) -> Result<(usize, Vec<FieldTem
                 fd.name()
             ));
         }
-        if fd.containing_oneof().is_some() {
+        if fd.containing_oneof().is_some_and(|o| !o.is_synthetic()) {
             return Err(format!(
                 "composite {} contains oneof field {}",
                 md.full_name(),

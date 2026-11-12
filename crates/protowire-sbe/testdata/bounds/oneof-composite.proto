@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// What the SBE wire can hold (#122): each value, size and header field.
+// Mirrors protowire-go's encoding/sbe/{encoding_range,header_bounds}_test.go;
+// bounds-oracle.tsv holds what protowire-go does with each case.
+syntax = "proto3";
+package bounds.oneof_composite;
+
+import "sbe/annotations.proto";
+
+option (sbe.schema_id) = 1;
+option (sbe.version) = 0;
+
+message C {
+  oneof o {
+    uint32 a = 1;
+  }
+}
+message M {
+  option (sbe.template_id) = 1;
+  C c = 1;
+}
