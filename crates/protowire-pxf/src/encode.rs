@@ -258,7 +258,7 @@ impl<'a> Encoder<'a> {
                 continue;
             }
 
-            if !self.emit_defaults && !parent.has_field(&fd) {
+            if !self.emit_defaults && !parent.has_field(&fd) && !is_negative_zero(parent, &fd) {
                 continue;
             }
 
@@ -883,7 +883,7 @@ fn format_float_f32(f: f32) -> String {
     if f.is_infinite() {
         return if f > 0.0 { "inf" } else { "-inf" }.to_string();
     }
-    format!("{}", f)
+    go_shortest_g(&format!("{f:e}"))
 }
 
 fn format_float_f64(f: f64) -> String {
@@ -893,7 +893,81 @@ fn format_float_f64(f: f64) -> String {
     if f.is_infinite() {
         return if f > 0.0 { "inf" } else { "-inf" }.to_string();
     }
-    format!("{}", f)
+    go_shortest_g(&format!("{f:e}"))
+}
+
+/// Whether `fd` holds a float or double negative zero that `has_field`
+/// reports unset. prost-reflect compares a proto3 scalar with its default
+/// by `==`, and `-0.0 == 0.0`, so a decoded `-0` looks absent although the
+/// message keeps it. protobuf-go compares the bits, so protowire-go writes
+/// `f = -0`; leaving it out would read back as `+0`.
+fn is_negative_zero(parent: &DynamicMessage, fd: &FieldDescriptor) -> bool {
+    if fd.is_list() || fd.is_map() {
+        return false;
+    }
+    match parent.get_field(fd).as_ref() {
+        Value::F64(v) => *v == 0.0 && v.is_sign_negative(),
+        Value::F32(v) => *v == 0.0 && v.is_sign_negative(),
+        _ => false,
+    }
+}
+
+/// Lays out a finite float as Go's `strconv.FormatFloat(f, 'g', -1, bits)`
+/// does, which is what protowire-go writes. `sci` is Rust's `{:e}` of the
+/// value: the same shortest round-trip digits, as `d.ddde<exp>`.
+///
+/// Go uses the exponent form when the decimal exponent is below -4 or at
+/// least 6 (`1e+21`, `1.5e-07`, `1.234567e+06`), with a sign and at least
+/// two exponent digits; otherwise it writes the digits plainly (`100000`,
+/// `0.0001`). Rust's `{}` never uses an exponent, so it wrote
+/// `1000000000000000000000` where the reference writes `1e+21`.
+fn go_shortest_g(sci: &str) -> String {
+    let (neg, rest) = match sci.strip_prefix('-') {
+        Some(r) => (true, r),
+        None => (false, sci),
+    };
+    let (mant, exp) = rest
+        .split_once('e')
+        .expect("{:e} of a finite float has an exponent");
+    let exp: i32 = exp.parse().expect("{:e} exponent is an integer");
+    let digits: String = mant.chars().filter(|c| *c != '.').collect();
+    let mut out = String::with_capacity(digits.len() + 8);
+    if neg {
+        out.push('-');
+    }
+    if !(-4..6).contains(&exp) {
+        out.push_str(&digits[..1]);
+        if digits.len() > 1 {
+            out.push('.');
+            out.push_str(&digits[1..]);
+        }
+        out.push('e');
+        out.push(if exp < 0 { '-' } else { '+' });
+        let a = exp.unsigned_abs();
+        if a < 10 {
+            out.push('0');
+        }
+        out.push_str(&a.to_string());
+    } else if exp < 0 {
+        out.push_str("0.");
+        for _ in 0..(-exp - 1) {
+            out.push('0');
+        }
+        out.push_str(&digits);
+    } else {
+        let int_len = exp as usize + 1;
+        if digits.len() <= int_len {
+            out.push_str(&digits);
+            for _ in digits.len()..int_len {
+                out.push('0');
+            }
+        } else {
+            out.push_str(&digits[..int_len]);
+            out.push('.');
+            out.push_str(&digits[int_len..]);
+        }
+    }
+    out
 }
 
 const B64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -1145,4 +1219,62 @@ fn trim_fraction(value: i128, unit: i128) -> String {
     let rem_str = format!("{:0>width$}", remainder, width = frac_digits);
     let trimmed = rem_str.trim_end_matches('0');
     format!("{}.{}", whole, trimmed)
+}
+
+#[cfg(test)]
+mod float_text_tests {
+    use super::{format_float_f32, format_float_f64};
+
+    // Each right-hand side is what protowire-go writes:
+    // strconv.FormatFloat(v, 'g', -1, bits), printed by Go 1.25.
+    #[test]
+    fn doubles_are_written_as_protowire_go_writes_them() {
+        let cases: &[(f64, &str)] = &[
+            (0.0, "0"),
+            (-0.0, "-0"),
+            (1.0, "1"),
+            (-1.0, "-1"),
+            (0.1, "0.1"),
+            (0.0001, "0.0001"),
+            (0.00001, "1e-05"),
+            (1.5e-7, "1.5e-07"),
+            (100000.0, "100000"),
+            (999999.0, "999999"),
+            (1e6, "1e+06"),
+            (1234567.0, "1.234567e+06"),
+            (123456.7, "123456.7"),
+            (1e21, "1e+21"),
+            (1e-7, "1e-07"),
+            (5e-324, "5e-324"),
+            (f64::MAX, "1.7976931348623157e+308"),
+            (-2.5e-5, "-2.5e-05"),
+            (0.000123, "0.000123"),
+            (1.23456, "1.23456"),
+            (1e100, "1e+100"),
+            (12345678901234567890.0, "1.2345678901234567e+19"),
+            (f64::INFINITY, "inf"),
+            (f64::NEG_INFINITY, "-inf"),
+            (f64::NAN, "nan"),
+        ];
+        for (v, want) in cases {
+            assert_eq!(format_float_f64(*v), *want, "{v:?}");
+        }
+    }
+
+    #[test]
+    fn floats_are_written_as_protowire_go_writes_them() {
+        let cases: &[(f32, &str)] = &[
+            (1e10, "1e+10"),
+            (1e-6, "1e-06"),
+            (0.1, "0.1"),
+            (16777216.0, "1.6777216e+07"),
+            (f32::MAX, "3.4028235e+38"),
+            (f32::MIN_POSITIVE, "1.1754944e-38"),
+            (1.4e-45, "1e-45"),
+            (123456.7, "123456.7"),
+        ];
+        for (v, want) in cases {
+            assert_eq!(format_float_f32(*v), *want, "{v:?}");
+        }
+    }
 }
