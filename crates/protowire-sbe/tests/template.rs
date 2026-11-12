@@ -100,25 +100,25 @@ fn respects_sbe_encoding_overrides() {
     );
 }
 
-// ---------------- lookup by template ID ----------------
+// ---------------- lookup by schema ID and template ID ----------------
 
 #[test]
 fn looks_up_by_template_id() {
     let codec = load_codec();
     assert_eq!(
-        codec.template_by_id(1).unwrap().desc.full_name(),
+        codec.template_by_id(1, 1).unwrap().desc.full_name(),
         "test.v1.Order"
     );
     assert_eq!(
-        codec.template_by_id(2).unwrap().desc.full_name(),
+        codec.template_by_id(1, 2).unwrap().desc.full_name(),
         "test.v1.Simple"
     );
     assert_eq!(
-        codec.template_by_id(3).unwrap().desc.full_name(),
+        codec.template_by_id(1, 3).unwrap().desc.full_name(),
         "test.v1.WithComposite"
     );
     assert_eq!(
-        codec.template_by_id(4).unwrap().desc.full_name(),
+        codec.template_by_id(1, 4).unwrap().desc.full_name(),
         "test.v1.WithNarrow"
     );
 }

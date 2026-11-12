@@ -27,7 +27,8 @@ pub struct View<'a> {
 }
 
 impl Codec {
-    /// Construct a [`View`] over `data` by looking up its template ID. The
+    /// Construct a [`View`] over `data` by looking up the template its
+    /// header names by schema ID and template ID together. The
     /// input is refused past `MaxMessageSize` before the header is read,
     /// and a wire block shorter than the template's is rejected
     /// (HARDENING.md § SBE step 2); groups are validated as [`View::group`]
@@ -39,7 +40,8 @@ impl Codec {
         }
         let block_length = read_u16_le(data, 0) as usize;
         let template_id = read_u16_le(data, 2) as u32;
-        let tmpl = self.template_by_id(template_id)?;
+        let schema_id = read_u16_le(data, 4) as u32;
+        let tmpl = self.template_by_id(schema_id, template_id)?;
         if block_length < tmpl.block_length {
             return Err(SbeError::new(format!(
                 "sbe: wire block_length {} is below template block_length {}",

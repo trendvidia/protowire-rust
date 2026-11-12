@@ -13,7 +13,10 @@ use crate::errors::SbeError;
 use crate::template::{FieldTemplate, GroupTemplate, MessageTemplate, SbeEncoding};
 
 /// Decode `data` into `msg` under the codec's limits: the input is refused
-/// past `MaxMessageSize` before the header is read, a wire block shorter
+/// past `MaxMessageSize` before the header is read, the header's template ID
+/// and schema ID must be `msg`'s (a template ID is unique only within a
+/// schema, so bytes naming another schema are another message's; the
+/// version is not checked), a wire block shorter
 /// than the template's is rejected (HARDENING.md § SBE step 2), and each
 /// group's header is validated before any entry is allocated (steps 3 and
 /// 4, and `MaxRepeatedCount`).
@@ -41,6 +44,16 @@ fn unmarshal_message(
         return Err(SbeError::new(format!(
             "sbe: template ID mismatch: got {}, want {}",
             template_id, tmpl.template_id
+        )));
+    }
+    // A template id is unique only within a schema, so the template id
+    // alone does not say the bytes are this message's: they may be another
+    // schema's message with the same id.
+    let schema_id = read_u16_le(data, 4) as u32;
+    if schema_id != tmpl.schema_id {
+        return Err(SbeError::new(format!(
+            "sbe: schema ID mismatch: got {}, want {} for template {}",
+            schema_id, tmpl.schema_id, tmpl.template_id
         )));
     }
 

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 TrendVidia, LLC.
-//! SBE codec: registers proto messages by template ID and dispatches to the
-//! marshal / unmarshal / view paths. Mirrors `protowire/encoding/sbe/sbe.go`.
+//! SBE codec: registers proto messages by schema ID and template ID and
+//! dispatches to the marshal / unmarshal / view paths. Mirrors `protowire/encoding/sbe/sbe.go`.
 //!
 //! The header sizes are part of the SBE wire contract — see SBE 1.0 spec
 //! sections 2.1 (message header) and 2.4 (group header).
@@ -53,7 +53,10 @@ impl Default for Limits {
 #[derive(Debug, Clone, Default)]
 pub struct Codec {
     by_name: HashMap<String, MessageTemplate>,
-    by_id: HashMap<u32, MessageTemplate>,
+    /// Keyed by `(schema_id, template_id)`: a template id is unique only
+    /// within a schema (draft -01 § SBE Annotations), so two schemas in one
+    /// codec may each use it, and a header's schema id tells them apart.
+    by_id: HashMap<(u32, u32), MessageTemplate>,
     limits: Limits,
 }
 
@@ -97,10 +100,26 @@ impl Codec {
     ) -> Result<(), SbeError> {
         if has_template_id(desc) {
             let tmpl = build_template(desc, schema_id, version)?;
-            let id = tmpl.template_id;
+            // draft -01 § SBE Annotations: "sbe.template_id MUST be unique
+            // among messages within a schema". A second message with the
+            // same id would replace the first, and `view` would then read one
+            // as the other. The same message seen again, as when a file is
+            // passed twice, is not a duplicate.
+            let key = (schema_id, tmpl.template_id);
+            if let Some(prev) = self.by_id.get(&key) {
+                if prev.desc.full_name() != desc.full_name() {
+                    return Err(SbeError::new(format!(
+                        "sbe: messages {} and {} share (sbe.template_id) = {} in schema {}; it must be unique within a schema",
+                        prev.desc.full_name(),
+                        desc.full_name(),
+                        tmpl.template_id,
+                        schema_id
+                    )));
+                }
+            }
             self.by_name
                 .insert(desc.full_name().to_string(), tmpl.clone());
-            self.by_id.insert(id, tmpl);
+            self.by_id.insert(key, tmpl);
         }
         for nested in desc.child_messages() {
             self.register_message(&nested, schema_id, version)?;
@@ -114,17 +133,27 @@ impl Codec {
             .ok_or_else(|| SbeError::new(format!("sbe: no template registered for {}", type_name)))
     }
 
-    pub fn template_by_id(&self, id: u32) -> Result<&MessageTemplate, SbeError> {
-        self.by_id
-            .get(&id)
-            .ok_or_else(|| SbeError::new(format!("sbe: unknown template ID {}", id)))
+    /// The template a header names: its schema id and template id
+    /// together, since a template id is unique only within a schema.
+    pub fn template_by_id(
+        &self,
+        schema_id: u32,
+        template_id: u32,
+    ) -> Result<&MessageTemplate, SbeError> {
+        self.by_id.get(&(schema_id, template_id)).ok_or_else(|| {
+            SbeError::new(format!(
+                "sbe: unknown template ID {} in schema {}",
+                template_id, schema_id
+            ))
+        })
     }
 
     pub fn by_name(&self) -> &HashMap<String, MessageTemplate> {
         &self.by_name
     }
 
-    pub fn by_id(&self) -> &HashMap<u32, MessageTemplate> {
+    /// The templates keyed by `(schema_id, template_id)`.
+    pub fn by_id(&self) -> &HashMap<(u32, u32), MessageTemplate> {
         &self.by_id
     }
 

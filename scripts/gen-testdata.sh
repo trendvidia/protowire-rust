@@ -200,6 +200,18 @@ buf build --as-file-descriptor-set --exclude-source-info \
 
 echo "wrote crates/protowire-sbe/testdata/char-encoding.binpb (buf)"
 
+# One file per schema for the template-id rule (#121): each file is passed to
+# Codec::from_files on its own, so they share one descriptor set.
+template_id_paths=()
+for f in crates/protowire-sbe/testdata/template-ids-*.proto; do
+  template_id_paths+=(--path "$f")
+done
+buf build --as-file-descriptor-set --exclude-source-info \
+  "${template_id_paths[@]}" \
+  -o crates/protowire-sbe/testdata/template-ids.binpb
+
+echo "wrote crates/protowire-sbe/testdata/template-ids.binpb (buf)"
+
 buf build --as-file-descriptor-set --exclude-source-info \
   --path crates/protowire-pxf/testdata/bench-test.proto \
   -o crates/protowire-pxf/testdata/bench-test.binpb
