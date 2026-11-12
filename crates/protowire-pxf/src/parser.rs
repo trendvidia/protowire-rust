@@ -593,10 +593,10 @@ impl<'a> Parser<'a> {
             }
             TokenKind::Bytes => {
                 let raw = std::mem::take(&mut self.current.value);
-                let decoded = crate::decode::decode_base64(&raw).ok_or_else(|| {
+                let decoded = crate::go_strconv::decode_base64_descriptor(&raw).map_err(|e| {
                     PxfError::new(
                         self.current.pos,
-                        "@proto descriptor body: invalid base64".to_string(),
+                        format!("@proto descriptor body: invalid base64: {e}"),
                     )
                 })?;
                 let end_offset = self.current.pos.offset + raw.len() + 3; // b" … "
@@ -800,7 +800,9 @@ impl<'a> Parser<'a> {
                 Ok(Value::Bool(BoolVal { pos, value }))
             }
             TokenKind::Bytes => {
-                let decoded = decode_base64(&self.current.value);
+                // The lexer took it, so one of the four encodings decodes it.
+                let decoded = crate::go_strconv::decode_base64_lenient(&self.current.value)
+                    .unwrap_or_default();
                 self.advance();
                 Ok(Value::Bytes(BytesVal {
                     pos,
@@ -1164,37 +1166,6 @@ impl BraceMatch {
         }
         (i, BraceState::Open)
     }
-}
-
-/// Decode a base64-encoded string (standard or raw — the lexer accepts both).
-/// Padding (`=`) is treated as a stop marker; the lexer already rejected
-/// length-mod-4 == 1 inputs.
-fn decode_base64(s: &str) -> Vec<u8> {
-    let bytes = s.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len() * 3 / 4);
-    let mut buf: u32 = 0;
-    let mut bits: u32 = 0;
-    for &b in bytes {
-        if b == b'=' {
-            break;
-        }
-        let v: u8 = match b {
-            b'A'..=b'Z' => b - b'A',
-            b'a'..=b'z' => b - b'a' + 26,
-            b'0'..=b'9' => b - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            _ => continue,
-        };
-        buf = (buf << 6) | v as u32;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push(((buf >> bits) & 0xff) as u8);
-            buf &= (1u32 << bits).wrapping_sub(1);
-        }
-    }
-    out
 }
 
 #[cfg(test)]

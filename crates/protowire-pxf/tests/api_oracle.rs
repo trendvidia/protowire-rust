@@ -25,12 +25,13 @@ use protowire_pxf::{
 const ORACLE: &str = include_str!("../testdata/conformance/api-oracle.tsv");
 
 fn pools() -> HashMap<&'static str, DescriptorPool> {
-    let sets: [(&str, &[u8]); 2] = [
+    let sets: [(&str, &[u8]); 3] = [
         (
             "layered-test.binpb",
             include_bytes!("../testdata/layered-test.binpb"),
         ),
         ("d4-test.binpb", include_bytes!("../testdata/d4-test.binpb")),
+        ("test.binpb", include_bytes!("../testdata/test.binpb")),
     ];
     sets.into_iter()
         .map(|(name, fds)| (name, DescriptorPool::decode(fds).expect(name)))
@@ -63,38 +64,26 @@ fn unhex(s: &str) -> Vec<u8> {
         .collect()
 }
 
-/// Whether protowire-go's error ends in a standard-library error it wraps
-/// (`strconv`, `encoding/base64`, `time`). This port reads a default literal
-/// with its own parsers, so it does not have those texts yet (#167). Until it
-/// does, these rows are compared up to the field the error names, and their
-/// count is pinned: #167 removes this.
-fn go_library_tail(want: &str) -> bool {
-    ["strconv.", "illegal base64 data", "parsing time "]
-        .iter()
-        .any(|m| want.contains(m))
-}
-
-/// An error's text up to and including the field it names:
-/// `invalid default int32 "x" for field "i32"`.
-fn head(e: &str) -> &str {
-    let at = e.find(" for field \"").expect("names a field") + " for field \"".len();
-    let end = at + e[at..].find('"').expect("closing quote") + 1;
-    &e[..end]
-}
-
-/// Two messages are the same when their bytes decode to the same message:
-/// map order on the wire is not the contract.
+/// Two messages are the same when their bytes decode to the same message,
+/// since map order on the wire is not the contract, or when the bytes are
+/// equal, since a NaN equals nothing, not even itself.
 fn same(desc: &MessageDescriptor, got: &DynamicMessage, want_hex: &str) -> bool {
+    let got_bytes = got.encode_to_vec();
     let want = DynamicMessage::decode(desc.clone(), unhex(want_hex).as_slice()).expect("oracle");
-    let got = DynamicMessage::decode(desc.clone(), got.encode_to_vec().as_slice()).unwrap();
-    got == want
+    let got = DynamicMessage::decode(desc.clone(), got_bytes.as_slice()).unwrap();
+    got == want || got_bytes == unhex(want_hex)
 }
+
+/// Rows that differ for a reason of their own, tracked elsewhere: a float
+/// field set to -0, which prost-reflect does not write because it counts it
+/// as unset, where protowire-go writes it (#98, held for prost-reflect).
+/// The test fails the day one of them matches, so the pin is removed.
+const WAITS_ON_98: &[(&str, &str)] = &[("f32", "-0")];
 
 /// Checks every row, and returns the differences and the rows run by op.
-fn run() -> (Vec<String>, HashMap<String, usize>, usize) {
+fn run() -> (Vec<String>, HashMap<String, usize>) {
     let pools = pools();
     let mut diffs = Vec::new();
-    let mut tails = 0;
     let mut ops: HashMap<String, usize> = HashMap::new();
     for line in ORACLE.lines().filter(|l| !l.starts_with('#')) {
         let c: Vec<&str> = line.split('\t').collect();
@@ -144,12 +133,6 @@ fn run() -> (Vec<String>, HashMap<String, usize>, usize) {
                 match (apply_default(&mut m, &field(), c[4]), c[5]) {
                     (Ok(()), "OK") => (!same(&desc, &m, c[6]))
                         .then(|| format!("message\n   got: {m}\n  want: {}", c[6])),
-                    (Err(e), "ERR") if go_library_tail(c[6]) => {
-                        tails += 1;
-                        let (got, want) = (e.to_string(), unescape(c[6]));
-                        (head(&got) != head(&want))
-                            .then(|| format!("error head\n   got: {got}\n  want: {want}"))
-                    }
                     (Err(e), "ERR") => (e.to_string() != unescape(c[6]))
                         .then(|| format!("error\n   got: {e}\n  want: {}", unescape(c[6]))),
                     (Ok(()), _) => Some(format!("applied ({m}); want: {}", unescape(c[6]))),
@@ -168,16 +151,20 @@ fn run() -> (Vec<String>, HashMap<String, usize>, usize) {
             }
             other => panic!("op {other:?}"),
         };
-        if let Some(d) = diff {
-            diffs.push(format!("{message} {op} {:?}: {d}", &c[3..]));
+        let pinned = op == "apply" && WAITS_ON_98.contains(&(c[3], c[4]));
+        match (diff, pinned) {
+            (Some(_), true) => *ops.entry("pinned".into()).or_default() += 1,
+            (None, true) => diffs.push(format!("{c:?}: matches now; remove its #98 pin")),
+            (Some(d), false) => diffs.push(format!("{message} {op} {:?}: {d}", &c[3..])),
+            (None, false) => {}
         }
     }
-    (diffs, ops, tails)
+    (diffs, ops)
 }
 
 #[test]
 fn every_case_meets_the_reference() {
-    let (diffs, ops, tails) = run();
+    let (diffs, ops) = run();
     // A positive marker: every op ran as often as the cases ask.
     let count = |op: &str| ops.get(op).copied().unwrap_or(0);
     assert_eq!(
@@ -190,10 +177,9 @@ fn every_case_meets_the_reference() {
             "default"
         ]
         .map(count),
-        [13, 13, 1, 46, 3, 9]
+        [25, 13, 1, 130, 3, 9]
     );
-    // The rows compared up to their field, for a standard-library tail.
-    assert_eq!(tails, 8);
+    assert_eq!(count("pinned"), WAITS_ON_98.len());
     assert!(
         diffs.is_empty(),
         "{} rows differ from protowire-go:\n{}",

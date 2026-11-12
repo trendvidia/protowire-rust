@@ -26,6 +26,7 @@ use crate::bigfloat::{clip_literal, parse_big_float, parse_big_float_default, Bi
 use crate::bignum::{parse_big_int, parse_decimal, BigIntLit, DecimalLit};
 use crate::dataset_paths::column_path_error;
 use crate::errors::PxfError;
+use crate::go_strconv::{decode_base64_lenient, parse_float, parse_int, parse_uint, quote};
 use crate::keyed::{
     duplicate_key_error, empty_name_error, key_field, quoted_name_unkeyed_error, KeyedElemState,
 };
@@ -579,9 +580,10 @@ impl<'a> Decoder<'a> {
                         }
                         TokenKind::Bytes => {
                             let raw = std::mem::take(&mut self.current.value);
-                            let decoded = decode_base64(&raw).ok_or_else(|| {
-                                self.err("@proto descriptor body: invalid base64")
-                            })?;
+                            let decoded = crate::go_strconv::decode_base64_descriptor(&raw)
+                                .map_err(|e| {
+                                    self.err(format!("@proto descriptor body: invalid base64: {e}"))
+                                })?;
                             self.advance();
                             (ProtoShape::Descriptor, String::new(), decoded)
                         }
@@ -1599,9 +1601,13 @@ impl<'a> Decoder<'a> {
                         self.err_at(pos, format!("expected bytes for field {:?}", fd.name()))
                     );
                 }
-                let decoded = decode_base64(&self.current.value).ok_or_else(|| {
-                    self.err_at(pos, format!("invalid base64 for field {:?}", fd.name()))
-                })?;
+                let decoded = crate::go_strconv::decode_base64_lenient(&self.current.value)
+                    .map_err(|e| {
+                        self.err_at(
+                            pos,
+                            format!("invalid base64 for field {:?}: {e}", fd.name()),
+                        )
+                    })?;
                 self.advance();
                 Ok(Value::Bytes(decoded.into()))
             }
@@ -2094,12 +2100,18 @@ fn parse_scalar_default(
     def: &str,
     pos: Position,
 ) -> Result<Value, PxfError> {
-    fn err(pos: Position, kind: &str, def: &str, name: &str) -> PxfError {
+    // protowire-go's text: its own words, then the error of the Go parser
+    // that refused the literal (#167).
+    let err = |kind: &str, why: String| {
         PxfError::new(
             pos,
-            format!("invalid default {} {:?} for field {:?}", kind, def, name),
+            format!(
+                "invalid default {kind} {} for field {}: {why}",
+                quote(def),
+                quote(name)
+            ),
         )
-    }
+    };
     Ok(match fd.kind() {
         Kind::String => Value::String(def.to_string()),
         // A PXF bool literal is exactly `true` or `false`, as the document
@@ -2117,26 +2129,36 @@ fn parse_scalar_default(
             }
         }),
         Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => {
-            Value::I32(def.parse().map_err(|_| err(pos, "int32", def, name))?)
+            Value::I32(parse_int(def, 32).map_err(|e| err("int32", e))? as i32)
         }
         Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => {
-            Value::I64(def.parse().map_err(|_| err(pos, "int64", def, name))?)
+            Value::I64(parse_int(def, 64).map_err(|e| err("int64", e))?)
         }
         Kind::Uint32 | Kind::Fixed32 => {
-            Value::U32(def.parse().map_err(|_| err(pos, "uint32", def, name))?)
+            Value::U32(parse_uint(def, 32).map_err(|e| err("uint32", e))? as u32)
         }
         Kind::Uint64 | Kind::Fixed64 => {
-            Value::U64(def.parse().map_err(|_| err(pos, "uint64", def, name))?)
+            Value::U64(parse_uint(def, 64).map_err(|e| err("uint64", e))?)
         }
         Kind::Float => {
-            Value::F32(parse_f32_literal(def).ok_or_else(|| err(pos, "float", def, name))?)
+            let f = parse_float(def, 32).map_err(|e| err("float", e))? as f32;
+            Value::F32(if f.is_nan() {
+                f32::from_bits(CANONICAL_NAN_32)
+            } else {
+                f
+            })
         }
         Kind::Double => {
-            Value::F64(parse_f64_literal(def).ok_or_else(|| err(pos, "double", def, name))?)
+            let f = parse_float(def, 64).map_err(|e| err("double", e))?;
+            Value::F64(if f.is_nan() {
+                f64::from_bits(CANONICAL_NAN_64)
+            } else {
+                f
+            })
         }
         Kind::Bytes => Value::Bytes(
-            decode_base64(def)
-                .ok_or_else(|| err(pos, "bytes", def, name))?
+            decode_base64_lenient(def)
+                .map_err(|e| err("bytes", e))?
                 .into(),
         ),
         other => {
@@ -2165,19 +2187,17 @@ fn apply_message_default(
     let mut sub = DynamicMessage::new(inner_desc.clone());
 
     if full == "google.protobuf.Timestamp" {
-        let (s, n) = crate::rfc3339::parse(def)
-            .ok_or("not an RFC 3339 timestamp")
-            .map_err(|e| {
-                PxfError::new(
-                    pos,
-                    format!(
-                        "invalid default timestamp {:?} for field {:?}: {}",
-                        def,
-                        fd.name(),
-                        e
-                    ),
-                )
-            })?;
+        let (s, n) = crate::rfc3339::parse(def).ok_or_else(|| {
+            PxfError::new(
+                pos,
+                format!(
+                    "invalid default timestamp {} for field {}: {}",
+                    quote(def),
+                    quote(fd.name()),
+                    crate::go_strconv::timestamp_error(def)
+                ),
+            )
+        })?;
         set_seconds_nanos(&mut sub, s, n);
         parent.set_field(fd, Value::Message(sub));
         return Ok(());
@@ -2424,49 +2444,4 @@ fn decode_map_key(
 fn parse_go_duration(s: &str) -> Result<(i64, i32), String> {
     let d = crate::go_duration::parse(s)?;
     Ok((d / 1_000_000_000, (d % 1_000_000_000) as i32))
-}
-
-/// Decode a base64 string, accepting both standard (padded) and raw (unpadded)
-/// alphabets — matching the Go reference's `StdEncoding`/`RawStdEncoding`
-/// fallback. The lexer has already validated the alphabet, so we only need to
-/// handle padding here.
-pub(crate) fn decode_base64(s: &str) -> Option<Vec<u8>> {
-    if s.is_empty() {
-        return Some(Vec::new());
-    }
-    let bytes = s.as_bytes();
-    let mut padded: Vec<u8>;
-    let input: &[u8] = if bytes.len() % 4 == 0 {
-        bytes
-    } else {
-        padded = Vec::with_capacity(bytes.len() + 4);
-        padded.extend_from_slice(bytes);
-        while padded.len() % 4 != 0 {
-            padded.push(b'=');
-        }
-        &padded
-    };
-    let mut out = Vec::with_capacity(input.len() / 4 * 3);
-    let mut buf: u32 = 0;
-    let mut bits: u32 = 0;
-    for &b in input {
-        if b == b'=' {
-            break;
-        }
-        let v = match b {
-            b'A'..=b'Z' => b - b'A',
-            b'a'..=b'z' => b - b'a' + 26,
-            b'0'..=b'9' => b - b'0' + 52,
-            b'+' => 62,
-            b'/' => 63,
-            _ => return None,
-        };
-        buf = (buf << 6) | v as u32;
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            out.push(((buf >> bits) & 0xff) as u8);
-        }
-    }
-    Some(out)
 }

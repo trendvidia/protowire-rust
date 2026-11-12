@@ -90,3 +90,99 @@ layered-test.binpb	layered_test.v1.AllScalars	default	color	true	RED
 layered-test.binpb	layered_test.v1.AllScalars	default	no_default	false	
 layered-test.binpb	layered_test.v1.AllScalars	default	optional_no_anno	false	
 layered-test.binpb	layered_test.v1.AllScalars	default	req	false	
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGk-	OK	4a0368693e
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGk_	OK	4a0368693f
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aG k=	ERR	invalid default bytes "aG k=" for field "raw": illegal base64 data at input byte 2
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGVsbG8==	ERR	invalid default bytes "aGVsbG8==" for field "raw": illegal base64 data at input byte 8
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGVsbG9=	OK	4a0568656c6c6f
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	=	ERR	invalid default bytes "=" for field "raw": illegal base64 data at input byte 0
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	+5	OK	1805
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	3000000000x	ERR	invalid default int32 "3000000000x" for field "i32": strconv.ParseInt: parsing "3000000000x": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	1_000	ERR	invalid default int32 "1_000" for field "i32": strconv.ParseInt: parsing "1_000": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	 5	ERR	invalid default int32 " 5" for field "i32": strconv.ParseInt: parsing " 5": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	u32	+5	ERR	invalid default uint32 "+5" for field "u32": strconv.ParseUint: parsing "+5": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1p-2	OK	3d0000803e
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1_000.5	OK	3d00207a44
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	inf	OK	3d0000807f
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1e400	ERR	invalid default float "1e400" for field "f32": strconv.ParseFloat: parsing "1e400": value out of range
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	.5	OK	41000000000000e03f
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	5.	OK	410000000000001440
+layered-test.binpb	layered_test.v1.AllScalars	apply	b	True	ERR	invalid default bool "True" for field "b": a PXF bool literal is exactly "true" or "false", case-sensitive
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00+01:00	OK	0a0608b0a7fccf06
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09 12:00:00Z	ERR	invalid default timestamp "2026-05-09 12:00:00Z" for field "t": parsing time "2026-05-09 12:00:00Z" as "2006-01-02T15:04:05Z07:00": cannot parse " 12:00:00Z" as "T"
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-5-09T12:00:00Z	ERR	invalid default timestamp "2026-5-09T12:00:00Z" for field "t": parsing time "2026-5-09T12:00:00Z" as "2006-01-02T15:04:05Z07:00": cannot parse "5-09T12:00:00Z" as "01"
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00.123456789Z	OK	0a0b08c0c3fccf0610959aef3a
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09t12:00:00z	ERR	invalid default timestamp "2026-05-09t12:00:00z" for field "t": parsing time "2026-05-09t12:00:00z" as "2006-01-02T15:04:05Z07:00": cannot parse "t12:00:00z" as "T"
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	d	1.5h	OK	120308982a
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	d	-1s	OK	120b08ffffffffffffffffff01
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	d	1d	ERR	invalid default duration "1d" for field "d": time: unknown unit "d" in duration "1d"
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGk-"	OK	4a0368693e	bytes_field	
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGk_"	OK	4a0368693f	bytes_field	
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGk="	OK	4a026869	bytes_field	
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGk"	OK	4a026869	bytes_field	
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGVsbG8=="	ERR	1:15: invalid base64 in bytes literal		
+test.binpb	test.v1.AllTypes	full	bytes_field = b"="	ERR	1:15: invalid base64 in bytes literal		
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aG k="	ERR	1:15: invalid base64 in bytes literal		
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGVsbG9="	OK	4a0568656c6c6f	bytes_field	
+test.binpb	test.v1.AllTypes	full	bytes_field = b"aGk-="	ERR	1:15: invalid base64 in bytes literal		
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1.8p1	OK	3d00004040
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1p	ERR	invalid default float "0x1p" for field "f32": strconv.ParseFloat: parsing "0x1p": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1	ERR	invalid default float "0x1" for field "f32": strconv.ParseFloat: parsing "0x1": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1__0.5	ERR	invalid default float "1__0.5" for field "f32": strconv.ParseFloat: parsing "1__0.5": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	_1.5	ERR	invalid default float "_1.5" for field "f32": strconv.ParseFloat: parsing "_1.5": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1.5_	ERR	invalid default float "1.5_" for field "f32": strconv.ParseFloat: parsing "1.5_": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	Infinity	OK	3d0000807f
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	-Inf	OK	3d000080ff
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	+nan	ERR	invalid default float "+nan" for field "f32": strconv.ParseFloat: parsing "+nan": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	NaN	OK	3d0000c07f
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1e	ERR	invalid default float "1e" for field "f32": strconv.ParseFloat: parsing "1e": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1e+	ERR	invalid default float "1e+" for field "f32": strconv.ParseFloat: parsing "1e+": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1p-149	OK	3d01000000
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1p-150	OK	
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1e-50	OK	
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	3.4028235e38	OK	3dffff7f7f
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	3.4028236e38	ERR	invalid default float "3.4028236e38" for field "f32": strconv.ParseFloat: parsing "3.4028236e38": value out of range
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1.fffffep127	OK	3dffff7f7f
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0x1p128	ERR	invalid default float "0x1p128" for field "f32": strconv.ParseFloat: parsing "0x1p128": value out of range
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	0X1P-2	OK	3d0000803e
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	-0	OK	3d00000080
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	0x1p-1074	OK	410100000000000000
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	0x1p-1075	OK	
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	0x1.8p-1074	OK	410200000000000000
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	0x1.fffffffffffff8p0	OK	410000000000000040
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	1e308	OK	41a0c8eb85f3cce17f
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	2e308	ERR	invalid default double "2e308" for field "f64": strconv.ParseFloat: parsing "2e308": value out of range
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	4.9e-324	OK	410100000000000000
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	2.4e-324	OK	
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	-0	OK	
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	0x10	ERR	invalid default int32 "0x10" for field "i32": strconv.ParseInt: parsing "0x10": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	00012	OK	180c
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	-2147483648	OK	1880808080f8ffffffff01
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	-2147483649	ERR	invalid default int32 "-2147483649" for field "i32": strconv.ParseInt: parsing "-2147483649": value out of range
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	9999999999x	ERR	invalid default int32 "9999999999x" for field "i32": strconv.ParseInt: parsing "9999999999x": value out of range
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32		ERR	invalid default int32 "" for field "i32": strconv.ParseInt: parsing "": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	i64	-9223372036854775808	OK	2080808080808080808001
+layered-test.binpb	layered_test.v1.AllScalars	apply	i64	9223372036854775808	ERR	invalid default int64 "9223372036854775808" for field "i64": strconv.ParseInt: parsing "9223372036854775808": value out of range
+layered-test.binpb	layered_test.v1.AllScalars	apply	u64	18446744073709551615	OK	30ffffffffffffffffff01
+layered-test.binpb	layered_test.v1.AllScalars	apply	u64	18446744073709551616	ERR	invalid default uint64 "18446744073709551616" for field "u64": strconv.ParseUint: parsing "18446744073709551616": value out of range
+layered-test.binpb	layered_test.v1.AllScalars	apply	u64	-0	ERR	invalid default uint64 "-0" for field "u64": strconv.ParseUint: parsing "-0": invalid syntax
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T1:00:00Z	OK	0a0608908efacf06
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00,5Z	OK	0a0c08c0c3fccf061080cab5ee01
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T24:00:00Z	ERR	invalid default timestamp "2026-05-09T24:00:00Z" for field "t": parsing time "2026-05-09T24:00:00Z": hour out of range
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-02-30T00:00:00Z	ERR	invalid default timestamp "2026-02-30T00:00:00Z" for field "t": parsing time "2026-02-30T00:00:00Z": day out of range
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2024-02-29T00:00:00Z	OK	0a06088092ffae06
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:60Z	ERR	invalid default timestamp "2026-05-09T12:00:60Z" for field "t": parsing time "2026-05-09T12:00:60Z": second out of range
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00+25:00	ERR	invalid default timestamp "2026-05-09T12:00:00+25:00" for field "t": parsing time "2026-05-09T12:00:00+25:00": time zone offset hour out of range
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00+0100	ERR	invalid default timestamp "2026-05-09T12:00:00+0100" for field "t": parsing time "2026-05-09T12:00:00+0100" as "2006-01-02T15:04:05Z07:00": cannot parse "+0100" as "Z07:00"
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00Zjunk	ERR	invalid default timestamp "2026-05-09T12:00:00Zjunk" for field "t": parsing time "2026-05-09T12:00:00Zjunk": extra text: "junk"
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-13-01T00:00:00Z	ERR	invalid default timestamp "2026-13-01T00:00:00Z" for field "t": parsing time "2026-13-01T00:00:00Z": month out of range
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:60:00Z	ERR	invalid default timestamp "2026-05-09T12:60:00Z" for field "t": parsing time "2026-05-09T12:60:00Z": minute out of range
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	26-05-09T12:00:00Z	ERR	invalid default timestamp "26-05-09T12:00:00Z" for field "t": parsing time "26-05-09T12:00:00Z" as "2006-01-02T15:04:05Z07:00": cannot parse "26-05-09T12:00:00Z" as "2006"
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00.Z	ERR	invalid default timestamp "2026-05-09T12:00:00.Z" for field "t": parsing time "2026-05-09T12:00:00.Z" as "2006-01-02T15:04:05Z07:00": cannot parse ".Z" as "Z07:00"
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00-00:00	OK	0a0608c0c3fccf06
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t		ERR	invalid default timestamp "" for field "t": parsing time "" as "2006-01-02T15:04:05Z07:00": cannot parse "" as "2006"
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bytv	aGk-	OK	5a050a0368693e
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bytv	aGk=	OK	5a040a026869
+test.binpb	test.v1.AllTypes	full	@proto b"aGk"	ERR	1:8: @proto descriptor body: invalid base64: illegal base64 data at input byte 0		
+test.binpb	test.v1.AllTypes	full	@proto b"aGk-aGk="	OK			
+test.binpb	test.v1.AllTypes	full	@proto b"aGk_"	OK			

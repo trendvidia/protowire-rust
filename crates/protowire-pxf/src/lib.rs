@@ -18,6 +18,7 @@ pub mod errors;
 pub mod format;
 mod go_duration;
 mod go_print;
+mod go_strconv;
 pub mod keyed;
 pub mod lexer;
 pub mod limits;
