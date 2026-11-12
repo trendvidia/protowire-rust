@@ -1325,12 +1325,14 @@ impl<'a> Decoder<'a> {
         if full == "google.protobuf.Timestamp" && matches!(self.current.kind, TokenKind::Timestamp)
         {
             let pos = self.current.pos;
-            let (seconds, nanos) = parse_rfc3339(&self.current.value).map_err(|e| {
-                PxfError::new(
-                    pos,
-                    format!("invalid timestamp {:?}: {}", self.current.value, e),
-                )
-            })?;
+            let (seconds, nanos) = crate::rfc3339::parse(&self.current.value)
+                .ok_or("not an RFC 3339 timestamp")
+                .map_err(|e| {
+                    PxfError::new(
+                        pos,
+                        format!("invalid timestamp {:?}: {}", self.current.value, e),
+                    )
+                })?;
             set_seconds_nanos(target, seconds, nanos);
             self.advance();
             return Ok(true);
@@ -2034,17 +2036,19 @@ fn apply_message_default(
     let mut sub = DynamicMessage::new(inner_desc);
 
     if full == "google.protobuf.Timestamp" {
-        let (s, n) = parse_rfc3339(def).map_err(|e| {
-            PxfError::new(
-                pos,
-                format!(
-                    "invalid default timestamp {:?} for field {:?}: {}",
-                    def,
-                    fd.name(),
-                    e
-                ),
-            )
-        })?;
+        let (s, n) = crate::rfc3339::parse(def)
+            .ok_or("not an RFC 3339 timestamp")
+            .map_err(|e| {
+                PxfError::new(
+                    pos,
+                    format!(
+                        "invalid default timestamp {:?} for field {:?}: {}",
+                        def,
+                        fd.name(),
+                        e
+                    ),
+                )
+            })?;
         set_seconds_nanos(&mut sub, s, n);
         parent.set_field(fd, Value::Message(sub));
         return Ok(());
@@ -2271,86 +2275,6 @@ fn decode_map_key(
             format!("unsupported map key kind: {:?}", other),
         )),
     }
-}
-
-/// Parse an RFC 3339 timestamp into seconds-since-epoch and a non-negative
-/// nanos remainder. The lexer has already validated syntactic shape, so this
-/// only reads the slots it knows are there. Hand-rolled to avoid pulling in
-/// a chrono/time crate dependency just for two well-defined formats.
-fn parse_rfc3339(s: &str) -> Result<(i64, i32), String> {
-    let bytes = s.as_bytes();
-    if bytes.len() < 20 {
-        return Err("too short".into());
-    }
-    let year = parse_int_n(&bytes[0..4])? as i32;
-    let month = parse_int_n(&bytes[5..7])? as u32;
-    let day = parse_int_n(&bytes[8..10])? as u32;
-    let hour = parse_int_n(&bytes[11..13])? as i64;
-    let minute = parse_int_n(&bytes[14..16])? as i64;
-    let second = parse_int_n(&bytes[17..19])? as i64;
-
-    let mut i = 19;
-    let mut nanos: i32 = 0;
-    if i < bytes.len() && bytes[i] == b'.' {
-        i += 1;
-        let frac_start = i;
-        while i < bytes.len() && bytes[i].is_ascii_digit() {
-            i += 1;
-        }
-        let mut digits: Vec<u8> = bytes[frac_start..i].to_vec();
-        if digits.len() > 9 {
-            digits.truncate(9);
-        }
-        while digits.len() < 9 {
-            digits.push(b'0');
-        }
-        nanos = parse_int_n(&digits)? as i32;
-    }
-
-    let mut offset_seconds: i64 = 0;
-    if i >= bytes.len() {
-        return Err("missing zone".into());
-    }
-    match bytes[i] {
-        b'Z' | b'z' => {}
-        b'+' | b'-' => {
-            if bytes.len() < i + 6 {
-                return Err("malformed offset".into());
-            }
-            let neg = bytes[i] == b'-';
-            let off_h = parse_int_n(&bytes[i + 1..i + 3])? as i64;
-            let off_m = parse_int_n(&bytes[i + 4..i + 6])? as i64;
-            offset_seconds = (off_h * 3600 + off_m * 60) * if neg { -1 } else { 1 };
-        }
-        _ => return Err("unexpected zone".into()),
-    }
-
-    let days = days_from_civil(year, month, day);
-    let seconds = days * 86400 + hour * 3600 + minute * 60 + second - offset_seconds;
-    Ok((seconds, nanos))
-}
-
-fn parse_int_n(bytes: &[u8]) -> Result<u64, String> {
-    let mut n: u64 = 0;
-    for &b in bytes {
-        if !b.is_ascii_digit() {
-            return Err("non-digit".into());
-        }
-        n = n * 10 + (b - b'0') as u64;
-    }
-    Ok(n)
-}
-
-/// Howard Hinnant's "days from civil" — converts a (year, month, day) in the
-/// proleptic Gregorian calendar to days since the Unix epoch (1970-01-01).
-fn days_from_civil(y: i32, m: u32, d: u32) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = if y >= 0 { y / 400 } else { (y - 399) / 400 };
-    let yoe = (y - era * 400) as u32;
-    let m_shift = if m > 2 { m - 3 } else { m + 9 };
-    let doy = (153 * m_shift + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era as i64 * 146097 + doe as i64 - 719468
 }
 
 /// Parse a Go-style duration (`1h30m`, `-2.5s`, `100ms`, …) into proto

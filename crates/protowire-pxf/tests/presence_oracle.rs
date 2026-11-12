@@ -7,6 +7,8 @@
 //! `scripts/gen-presence-oracle.sh` regenerates it. The documents cover
 //! `(pxf.default)` and `(pxf.required)` in every message body
 //! (protowire-go#161) and a keyed entry's name (protowire-go#214, #215).
+//! `timestamp-oracle.tsv`, made the same way, holds timestamp literals to
+//! what protowire-go's lexer and `time.Parse` decide (#118).
 
 use std::collections::HashMap;
 
@@ -15,9 +17,11 @@ use prost_reflect::{DescriptorPool, DynamicMessage, ReflectMessage, Value};
 use protowire_pxf::{unmarshal, unmarshal_full, PoolResolver, UnmarshalOptions};
 
 const ORACLE: &str = include_str!("../testdata/conformance/presence-oracle.tsv");
+const TIMESTAMP_ORACLE: &str = include_str!("../testdata/conformance/timestamp-oracle.tsv");
 
 fn pools() -> HashMap<&'static str, DescriptorPool> {
-    let sets: [(&str, &[u8]); 3] = [
+    let sets: [(&str, &[u8]); 4] = [
+        ("test.binpb", include_bytes!("../testdata/test.binpb")),
         (
             "element-defaults-test.binpb",
             include_bytes!("../testdata/element-defaults-test.binpb"),
@@ -121,9 +125,21 @@ fn check(
 
 #[test]
 fn every_document_meets_the_reference() {
+    // A positive marker: the rows ran, and both verdicts are among them.
+    assert_eq!(run(ORACLE), (63, 21));
+}
+
+#[test]
+fn every_timestamp_literal_meets_the_reference() {
+    assert_eq!(run(TIMESTAMP_ORACLE), (66, 34));
+}
+
+/// Checks every row of `oracle`, and returns how many rows there were and
+/// how many the reference rejected.
+fn run(oracle: &str) -> (usize, usize) {
     let pools = pools();
     let (mut rows, mut rejected) = (0, 0);
-    for line in ORACLE.lines().filter(|l| !l.starts_with('#')) {
+    for line in oracle.lines().filter(|l| !l.starts_with('#')) {
         let c: Vec<&str> = line.split('\t').collect();
         assert_eq!(c.len(), 9, "{line}");
         let (set, message, doc) = (c[0], c[1], c[2]);
@@ -157,6 +173,5 @@ fn every_document_meets_the_reference() {
         rows += 1;
         rejected += usize::from(c[3] == "ERR");
     }
-    // A positive marker: the rows ran, and both verdicts are among them.
-    assert_eq!((rows, rejected), (63, 21));
+    (rows, rejected)
 }
