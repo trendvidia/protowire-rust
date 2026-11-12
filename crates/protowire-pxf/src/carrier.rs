@@ -21,7 +21,9 @@
 
 use prost_reflect::{FieldDescriptor, Kind, Value};
 
-use crate::bigfloat::{big_float_digits, big_float_value_exponent, format_big_float};
+use crate::bigfloat::{
+    big_float_digits, big_float_rounded_exponent, big_float_value_exponent, format_big_float,
+};
 use crate::bignum::{format_big_int, format_decimal};
 use crate::limits::{MAX_BIG_FLOAT_EXPONENT, MAX_NUMERIC_LITERAL_DIGITS};
 
@@ -262,6 +264,15 @@ fn big_float_literal(mut b: &[u8]) -> Result<String, String> {
             ));
         }
     }
+    // The bound applies after rounding to prec (protowire#410), which can
+    // carry the mantissa one bit past the exponent checked above (#111).
+    if let Some(e) = big_float_rounded_exponent(mantissa, exponent, prec) {
+        if e.unsigned_abs() > MAX_BIG_FLOAT_EXPONENT as u64 {
+            return Err(format!(
+                "@default's big_float_value has binary exponent {e} after rounding to prec {prec}, and MaxBigFloatExponent={MAX_BIG_FLOAT_EXPONENT} bounds its magnitude"
+            ));
+        }
+    }
     let digits = big_float_digits(prec);
     if digits > MAX_NUMERIC_LITERAL_DIGITS as u64 {
         return Err(format!(
@@ -402,5 +413,34 @@ mod tests {
         assert_eq!((f.number, f.value, f.len), (1, 150, 3));
         let f = next_field(&[0x12, 0x02, b'h', b'i', 0xff]).unwrap();
         assert_eq!((f.number, f.bytes, f.len), (2, &b"hi"[..], 4));
+    }
+
+    /// `pxf.BigFloat { mantissa, exponent, prec = 3 }`'s bytes.
+    fn big_float(mantissa: &[u8], exponent: u32) -> Vec<u8> {
+        let mut b = vec![0x0a, mantissa.len() as u8];
+        b.extend_from_slice(mantissa);
+        b.push(0x10); // exponent, a varint
+        let mut v = exponent;
+        while v >= 0x80 {
+            b.push((v as u8) | 0x80);
+            v >>= 7;
+        }
+        b.push(v as u8);
+        b.extend_from_slice(&[0x18, 0x03]); // prec 3
+        b
+    }
+
+    /// An `@default` whose value, rounded to its precision, is past
+    /// MaxBigFloatExponent has no literal (#111): 2^54 - 1 at exponent 16330
+    /// is at the bound as stored and 16385 at prec 3. The text is
+    /// protowire-go's carrier.go `bigFloatLiteral`, read, not run.
+    #[test]
+    fn a_default_rounded_past_the_bound_is_refused() {
+        let ones = [0x3f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+        assert_eq!(
+            big_float_literal(&big_float(&ones, 16330)),
+            Err("@default's big_float_value has binary exponent 16385 after rounding to prec 3, and MaxBigFloatExponent=16384 bounds its magnitude".to_string())
+        );
+        assert!(big_float_literal(&big_float(&ones, 16329)).is_ok());
     }
 }

@@ -622,6 +622,26 @@ pub fn big_float_value_exponent(mantissa: &[u8], exponent: i32) -> Option<i64> {
     Some(i64::from(exponent) + bits)
 }
 
+/// The binary exponent of `mantissa × 2^exponent` once the mantissa is
+/// rounded to `prec` bits, as protowire-go's `readBigFloat` rounds it, or
+/// `None` for a zero. Rounding can carry the mantissa to the next power of
+/// two, one past the stored exponent: 2^54 - 1 at prec 3 is 2^54. Nothing
+/// `prec` bits wide is built.
+pub(crate) fn big_float_rounded_exponent(mantissa: &[u8], exponent: i32, prec: u32) -> Option<i64> {
+    let m = BigUint::from_be_bytes(mantissa);
+    if m.is_zero() {
+        return None;
+    }
+    let bits = m.bit_len();
+    if bits <= u64::from(prec) {
+        return Some(i64::from(exponent) + bits as i64);
+    }
+    match Fl::round_into(m, bits as i64, prec, false) {
+        Fl::Finite { exp, .. } => Some(i64::from(exponent) + exp),
+        _ => None,
+    }
+}
+
 /// Parse a schema's `pxf.BigFloat` literal, whose suffix is part of the
 /// string: `(pxf.default) = "1.5p53"`. Under the constants, as a schema
 /// literal stays.
@@ -876,6 +896,19 @@ pub fn format_big_float(
             return Err(format!(
                 "pxf.BigFloat binary exponent {} exceeds MaxBigFloatExponent={}",
                 e, MAX_BIG_FLOAT_EXPONENT
+            ));
+        }
+    }
+    // The bound applies to the value after rounding to prec (protowire#410),
+    // and rounding can carry the mantissa to the next power of two. Such a
+    // value reads off the wire at the bound, and its literal is past it,
+    // which every reader refuses, so the producer fails (draft -01 §
+    // Mandatory Limits, protowire-go#261, #111).
+    if let Some(e) = big_float_rounded_exponent(mantissa, exponent, prec) {
+        if e.unsigned_abs() > MAX_BIG_FLOAT_EXPONENT as u64 {
+            return Err(format!(
+                "pxf.BigFloat binary exponent {} after rounding to prec {} exceeds MaxBigFloatExponent={}",
+                e, prec, MAX_BIG_FLOAT_EXPONENT
             ));
         }
     }
