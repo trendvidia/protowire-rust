@@ -132,7 +132,7 @@ fn top_directives(doc: &Document) -> Vec<TopDirective<'_>> {
     all.into_iter().map(|(_, d)| d).collect()
 }
 
-/// `val` as its PXF source literal: the text [`format`] writes for that
+/// `val` as its PXF source literal: the text [`format()`] writes for that
 /// value inside a document. protowire-go's `FormatValue`. A tool that
 /// splices a rendered value into a buffer calls it rather than rendering
 /// string quoting, numbers, base64, enum identifiers, durations and
