@@ -104,10 +104,10 @@ impl Fault {
         match self {
             Fault::NoLiteral(msg) => msg,
             Fault::TooDeep(limit) => {
-                format!("nesting depth exceeds MaxNestingDepth={limit}")
+                format!("pxf: nesting depth exceeds MaxNestingDepth={limit}")
             }
             Fault::RequiredUnset(field) => {
-                format!("{field} is unset, and the field is (pxf.required)")
+                format!("pxf: {field} is unset, and the field is (pxf.required)")
             }
         }
     }
