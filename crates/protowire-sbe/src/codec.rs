@@ -12,7 +12,7 @@ use prost_reflect::{FileDescriptor, MessageDescriptor};
 
 use crate::annotations::{file_uint32, has_template_id, EXT_SCHEMA_ID, EXT_VERSION};
 use crate::errors::SbeError;
-use crate::template::{build_template, MessageTemplate};
+use crate::template::{build_template, MessageTemplate, MAX_UINT16};
 
 /// Message header size: `block_length(2) + template_id(2) + schema_id(2) + version(2)`.
 pub const HEADER_SIZE: usize = 8;
@@ -85,6 +85,24 @@ impl Codec {
                 ))
             })?;
             let version = file_uint32(file, EXT_VERSION).unwrap_or(0);
+            // Every SBE header field is a u16, so a schema stating a larger
+            // id or version could only be written narrowed, as another one.
+            if schema_id as usize > MAX_UINT16 {
+                return Err(SbeError::new(format!(
+                    "sbe: file {}: (sbe.schema_id) = {} is past {}, the largest schemaId SBE can state",
+                    file.name(),
+                    schema_id,
+                    MAX_UINT16
+                )));
+            }
+            if version as usize > MAX_UINT16 {
+                return Err(SbeError::new(format!(
+                    "sbe: file {}: (sbe.version) = {} is past {}, the largest version SBE can state",
+                    file.name(),
+                    version,
+                    MAX_UINT16
+                )));
+            }
             for desc in file.messages() {
                 codec.register_message(&desc, schema_id, version)?;
             }

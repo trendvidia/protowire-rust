@@ -17,7 +17,11 @@ use prost_reflect::{DynamicMessage, FieldDescriptor, Kind, ReflectMessage, Value
 
 use crate::codec::{Codec, GROUP_HEADER_SIZE, HEADER_SIZE};
 use crate::errors::SbeError;
-use crate::template::{FieldTemplate, GroupTemplate, MessageTemplate, SbeEncoding};
+use crate::gofmt::go_g;
+use crate::template::{
+    float_fits, in_range, int_string, FieldTemplate, GroupTemplate, MessageTemplate, SbeEncoding,
+    MAX_UINT16,
+};
 
 pub fn marshal(codec: &Codec, msg: &DynamicMessage) -> Result<Vec<u8>, SbeError> {
     let tmpl = codec.template(msg.descriptor().full_name())?;
@@ -28,6 +32,17 @@ fn marshal_message(msg: &DynamicMessage, tmpl: &MessageTemplate) -> Result<Vec<u
     let mut total = HEADER_SIZE + tmpl.block_length;
     for gt in &tmpl.groups {
         let n = list_len(msg, &gt.fd);
+        // numInGroup is a u16: a larger count would be written as its low
+        // 16 bits, and a reader would take the entries past them for
+        // trailing bytes.
+        if n > MAX_UINT16 {
+            return Err(SbeError::new(format!(
+                "sbe: field {} has {} entries, past {}, the largest numInGroup SBE can state",
+                gt.fd.full_name(),
+                n,
+                MAX_UINT16
+            )));
+        }
         total += GROUP_HEADER_SIZE + n * gt.block_length;
     }
 
@@ -101,21 +116,22 @@ fn write_field(
     let encoding = ft.encoding.expect("non-composite field has encoding");
 
     match encoding {
-        SbeEncoding::Int8 => write_i64_as(buf, off, 1, value_as_i64(&value)),
-        SbeEncoding::Int16 => write_i64_as(buf, off, 2, value_as_i64(&value)),
-        SbeEncoding::Int32 => write_i64_as(buf, off, 4, value_as_i64(&value)),
-        SbeEncoding::Int64 => write_i64_as(buf, off, 8, value_as_i64(&value)),
-        SbeEncoding::Uint8 => write_u64_as(buf, off, 1, value_as_u64(&value)),
-        SbeEncoding::Uint16 => write_u64_as(buf, off, 2, value_as_u64(&value)),
-        SbeEncoding::Uint32 => write_u64_as(buf, off, 4, value_as_u64(&value)),
-        SbeEncoding::Uint64 => write_u64_as(buf, off, 8, value_as_u64(&value)),
         SbeEncoding::Float => {
             let f = match &value {
-                Value::F32(v) => *v,
-                Value::F64(v) => *v as f32,
+                Value::F32(v) => *v as f64,
+                Value::F64(v) => *v,
                 _ => 0.0,
             };
-            buf[off..off + 4].copy_from_slice(&f.to_le_bytes());
+            // A double narrowed to float must be within float's range.
+            if matches!(ft.fd.kind(), Kind::Double) && !float_fits(f) {
+                return Err(SbeError::new(format!(
+                    "sbe: field {}: value {} is outside the range of float, ±{}",
+                    ft.fd.full_name(),
+                    go_g(f),
+                    go_g(f32::MAX as f64)
+                )));
+            }
+            buf[off..off + 4].copy_from_slice(&(f as f32).to_le_bytes());
         }
         SbeEncoding::Double => {
             let f = match &value {
@@ -134,63 +150,39 @@ fn write_field(
             buf[off..off + bytes.len()].copy_from_slice(bytes);
             // Remaining bytes already zero from the initial allocation.
         }
+        int => {
+            // An integer primitive. The value is read by the field's kind,
+            // and written as the low bytes of its two's complement once it
+            // is known to fit: draft -01 § SBE Annotations, "Emitters MUST
+            // reject values that fall outside the narrowed type's range".
+            let (v, unsigned) = match value {
+                Value::Bool(b) => (b as u64, true),
+                Value::EnumNumber(n) => (n as i64 as u64, false),
+                Value::U32(n) => (n as u64, true),
+                Value::U64(n) => (n, true),
+                Value::I32(n) => (n as i64 as u64, false),
+                Value::I64(n) => (n as u64, false),
+                _ => (0, true),
+            };
+            let (lo, hi) = int.int_range(ft.size);
+            if !in_range(v, unsigned, lo, hi) {
+                return Err(SbeError::new(format!(
+                    "sbe: field {}: value {} is outside the range of {}, [{}, {}]",
+                    ft.fd.full_name(),
+                    int_string(v, unsigned),
+                    int.name(),
+                    lo,
+                    hi
+                )));
+            }
+            buf[off..off + ft.size].copy_from_slice(&v.to_le_bytes()[..ft.size]);
+        }
     }
     Ok(())
 }
 
 fn write_u16_le(buf: &mut [u8], off: usize, v: u16) {
     buf[off..off + 2].copy_from_slice(&v.to_le_bytes());
-}
-
-fn write_i64_as(buf: &mut [u8], off: usize, width: usize, v: i64) {
-    match width {
-        1 => buf[off] = (v as i8) as u8,
-        2 => buf[off..off + 2].copy_from_slice(&(v as i16).to_le_bytes()),
-        4 => buf[off..off + 4].copy_from_slice(&(v as i32).to_le_bytes()),
-        8 => buf[off..off + 8].copy_from_slice(&v.to_le_bytes()),
-        _ => unreachable!("invalid signed width {}", width),
-    }
-}
-
-fn write_u64_as(buf: &mut [u8], off: usize, width: usize, v: u64) {
-    match width {
-        1 => buf[off] = v as u8,
-        2 => buf[off..off + 2].copy_from_slice(&(v as u16).to_le_bytes()),
-        4 => buf[off..off + 4].copy_from_slice(&(v as u32).to_le_bytes()),
-        8 => buf[off..off + 8].copy_from_slice(&v.to_le_bytes()),
-        _ => unreachable!("invalid unsigned width {}", width),
-    }
-}
-
-/// Coerce a [`Value`] to an `i64` for signed-int encoding writes. Bool maps
-/// to 0/1, enum to its number, floats truncate. Default 0 covers unset
-/// fields (whose `get_field` returns the kind-default).
-fn value_as_i64(v: &Value) -> i64 {
-    match v {
-        Value::I32(n) => *n as i64,
-        Value::I64(n) => *n,
-        Value::U32(n) => *n as i64,
-        Value::U64(n) => *n as i64,
-        Value::Bool(b) => *b as i64,
-        Value::EnumNumber(n) => *n as i64,
-        Value::F32(f) => *f as i64,
-        Value::F64(f) => *f as i64,
-        _ => 0,
-    }
-}
-
-fn value_as_u64(v: &Value) -> u64 {
-    match v {
-        Value::U32(n) => *n as u64,
-        Value::U64(n) => *n,
-        Value::I32(n) => *n as u64,
-        Value::I64(n) => *n as u64,
-        Value::Bool(b) => *b as u64,
-        Value::EnumNumber(n) => *n as u64,
-        Value::F32(f) => *f as u64,
-        Value::F64(f) => *f as u64,
-        _ => 0,
-    }
 }
 
 /// Shorten `s` to at most `n` bytes without splitting a UTF-8 character

@@ -11,6 +11,7 @@
 pub mod annotations;
 pub mod codec;
 pub mod errors;
+pub(crate) mod gofmt;
 pub mod marshal;
 pub mod prototoxml;
 pub mod saxlite;

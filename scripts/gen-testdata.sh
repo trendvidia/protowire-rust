@@ -212,6 +212,19 @@ buf build --as-file-descriptor-set --exclude-source-info \
 
 echo "wrote crates/protowire-sbe/testdata/template-ids.binpb (buf)"
 
+# What the SBE wire can hold (#122): one schema per file, since a codec is
+# built from one file and a refused message refuses its whole file. After
+# changing them, rerun scripts/gen-sbe-oracle.sh for bounds-oracle.tsv.
+bounds_paths=()
+for f in crates/protowire-sbe/testdata/bounds/*.proto; do
+  bounds_paths+=(--path "$f")
+done
+buf build --as-file-descriptor-set --exclude-source-info \
+  "${bounds_paths[@]}" \
+  -o crates/protowire-sbe/testdata/bounds.binpb
+
+echo "wrote crates/protowire-sbe/testdata/bounds.binpb (buf)"
+
 buf build --as-file-descriptor-set --exclude-source-info \
   --path crates/protowire-pxf/testdata/bench-test.proto \
   -o crates/protowire-pxf/testdata/bench-test.binpb
