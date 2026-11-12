@@ -18,6 +18,8 @@ use crate::schema::MAX_CACHED_DESCRIPTORS;
 /// One field of a message, in `MessageDescriptor::fields` order.
 #[derive(Debug)]
 pub(crate) struct PlanField {
+    /// The field's number; the plan is sorted by it.
+    pub number: u32,
     pub required: bool,
     pub default: Option<String>,
     /// The field holds message bodies (a message, or a list or map of them)
@@ -48,6 +50,7 @@ pub(crate) fn post_decode_plan(desc: &MessageDescriptor) -> Plan {
         .map(|fd| {
             let a = field_annotations(&fd);
             PlanField {
+                number: fd.number(),
                 required: a.required,
                 default: a.default,
                 visit: body_of(&fd)

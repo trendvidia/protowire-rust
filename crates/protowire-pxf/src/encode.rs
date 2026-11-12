@@ -18,6 +18,7 @@ use prost_reflect::{
     DynamicMessage, FieldDescriptor, Kind, MapKey, MessageDescriptor, ReflectMessage, Value,
 };
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use crate::annotations::find_null_mask_field;
 use crate::bigfloat::format_big_float;
@@ -26,6 +27,7 @@ use crate::decode::{is_secret, shown_key, unmarshal_full, TypeResolver, Unmarsha
 use crate::errors::PxfError;
 use crate::keyed::{ident_safe_entry_name, key_field};
 use crate::limits::{Limits, MAX_NESTING_DEPTH};
+use crate::post_decode_plan::{post_decode_plan, PlanField};
 use crate::result::Presence;
 use crate::token::Position;
 
@@ -92,6 +94,9 @@ enum Fault {
     NoLiteral(String),
     /// A block or list past the writer's `max_nesting_depth`.
     TooDeep(usize),
+    /// An unset `(pxf.required)` field with presence: no text reads back as
+    /// it, since a reader rejects it absent and rejects it `null`.
+    RequiredUnset(String),
 }
 
 impl Fault {
@@ -100,6 +105,9 @@ impl Fault {
             Fault::NoLiteral(msg) => msg,
             Fault::TooDeep(limit) => {
                 format!("nesting depth exceeds MaxNestingDepth={limit}")
+            }
+            Fault::RequiredUnset(field) => {
+                format!("{field} is unset, and the field is (pxf.required)")
             }
         }
     }
@@ -240,6 +248,8 @@ impl<'a> Encoder<'a> {
         if !self.check_depth(level) {
             return;
         }
+        // The fields' annotations, read at the first unset field.
+        let mut plan: Option<Arc<[PlanField]>> = None;
         for fd in declaration_order(&desc) {
             if let Some(null_fd) = &self.null_mask_fd {
                 if self.path_prefix.is_empty() && fd.number() == null_fd.number() {
@@ -258,8 +268,34 @@ impl<'a> Encoder<'a> {
                 continue;
             }
 
-            if !self.emit_defaults && !parent.has_field(&fd) && !is_negative_zero(parent, &fd) {
-                continue;
+            if !parent.has_field(&fd) && !is_negative_zero(parent, &fd) {
+                let plan = plan.get_or_insert_with(|| post_decode_plan(&desc));
+                match unset_field(parent, &fd, plan) {
+                    Unset::Skip if !self.emit_defaults => continue,
+                    Unset::Null => {
+                        self.write_field_prefix(level, fd.name());
+                        self.buf.push_str("null\n");
+                        continue;
+                    }
+                    Unset::Write if fd.is_list() || fd.is_map() => {
+                        if !self.check_depth(level + 1) {
+                            continue;
+                        }
+                        self.write_field_prefix(level, fd.name());
+                        self.buf.push_str(if fd.is_map() { "{}\n" } else { "[]\n" });
+                        continue;
+                    }
+                    Unset::Required if !self.emit_defaults => {
+                        self.error
+                            .get_or_insert(Fault::RequiredUnset(fd.full_name().to_string()));
+                        continue;
+                    }
+                    // The zero value, written out below. With `emit_defaults`
+                    // so is every other unset field, as before: an unset
+                    // required field with presence then reads back set to
+                    // zero, which a reader accepts.
+                    _ => {}
+                }
             }
 
             if fd.is_map() {
@@ -697,8 +733,9 @@ impl<'a> Encoder<'a> {
         let body = std::mem::replace(&mut self.buf, out);
         let fault = std::mem::replace(&mut self.error, prior);
         match fault {
-            // The value is too deep to unpack here; its bytes are not.
-            Some(Fault::TooDeep(_)) => return false,
+            // The value is too deep to unpack here, or its body would be
+            // rejected for an unset required field; its bytes are neither.
+            Some(Fault::TooDeep(_) | Fault::RequiredUnset(_)) => return false,
             Some(f) => {
                 self.error.get_or_insert(f);
                 return true;
@@ -968,6 +1005,54 @@ fn go_shortest_g(sci: &str) -> String {
         }
     }
     out
+}
+
+/// How `marshal` writes a field the message does not set, under the
+/// field's annotations (protowire-go's `unsetField`, protowire-go#259). A
+/// reader applies `(pxf.default)` to an absent field and checks
+/// `(pxf.required)`, so leaving an annotated field out would not read back
+/// as the message.
+enum Unset {
+    /// Leave it out: it has no annotation, or no text would read back as it.
+    Skip,
+    /// Write its zero value, `[]` or `{}`: it has no presence, so the zero
+    /// counts as supplied and the default does not replace it.
+    Write,
+    /// Write `null`: a message-typed field with a default, which `null`
+    /// keeps unset and keeps the default off.
+    Null,
+    /// Refuse the message: an unset required field with presence.
+    Required,
+}
+
+fn unset_field(parent: &DynamicMessage, fd: &FieldDescriptor, plan: &[PlanField]) -> Unset {
+    let Ok(i) = plan.binary_search_by_key(&fd.number(), |p| p.number) else {
+        return Unset::Skip;
+    };
+    let (required, has_default) = (plan[i].required, plan[i].default.is_some());
+    if !required && !has_default {
+        return Unset::Skip;
+    }
+    if !fd.supports_presence() {
+        return Unset::Write;
+    }
+    if required {
+        return Unset::Required;
+    }
+    // A set sibling keeps the default off, so the member reads back unset.
+    if let Some(oneof) = fd.containing_oneof() {
+        if !oneof.is_synthetic() && oneof.fields().any(|m| parent.has_field(&m)) {
+            return Unset::Skip;
+        }
+    }
+    // An unset `optional` scalar with a default stays out and reads back as
+    // its default: the owner's choice on protowire-go#267, which draft -01
+    // § Common Schema Layer names as an exception to the round trip.
+    if matches!(fd.kind(), Kind::Message(_)) {
+        Unset::Null
+    } else {
+        Unset::Skip
+    }
 }
 
 /// `desc`'s fields in the order the schema declares them, as protowire-go
