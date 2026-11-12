@@ -187,6 +187,12 @@ buf build --as-file-descriptor-set --exclude-source-info \
 echo "wrote crates/protowire-pxf/testdata/bignum-test.binpb (buf)"
 
 buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/layered-test.proto \
+  -o crates/protowire-pxf/testdata/layered-test.binpb
+
+echo "wrote crates/protowire-pxf/testdata/layered-test.binpb (buf)"
+
+buf build --as-file-descriptor-set --exclude-source-info \
   --path crates/protowire-sbe/testdata/sbe-test.proto \
   -o crates/protowire-sbe/testdata/sbe-test.binpb
 

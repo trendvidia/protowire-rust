@@ -36,7 +36,9 @@ pub use ast::{
     NullVal, StringVal, TimestampVal, TypeEntry, Value,
 };
 pub use dataset_reader::{bind_row, DatasetReader, DatasetTail, DEFAULT_HEADER_MAX_BYTES};
-pub use decode::{unmarshal, unmarshal_full, PoolResolver, TypeResolver, UnmarshalOptions};
+pub use decode::{
+    apply_default, unmarshal, unmarshal_full, PoolResolver, TypeResolver, UnmarshalOptions,
+};
 pub use encode::{marshal, MarshalOptions};
 pub use errors::PxfError;
 pub use format::{format, format_with_options, FormatOptions};

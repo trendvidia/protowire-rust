@@ -72,6 +72,17 @@ pub struct UnmarshalOptions<'a> {
     /// it; a block without a type entry is the Any's own `type_url` and
     /// `value` fields either way.
     pub type_resolver: Option<&'a dyn TypeResolver>,
+    /// Decode without the post-decode pass: `(pxf.default)` values are not
+    /// applied to absent fields and `(pxf.required)` fields are not checked,
+    /// at the root, in list elements and map values, and in `Any` bodies.
+    /// Presence, and with it the root's `_null` mask, is still recorded. A
+    /// layered-config caller sets it because defaults and required belong
+    /// to the merged result, not to one layer: a base layer may omit a
+    /// required field a higher layer supplies. It then runs its own pass
+    /// with [`crate::apply_default`] and [`crate::annotations::is_required`]
+    /// over [`crate::Presence::present_fields`]. protowire-go's
+    /// `SkipPostDecode`.
+    pub skip_post_decode: bool,
     /// Skip the per-call schema reserved-name check (draft §3.13).
     /// Callers that have already validated their descriptors (typically
     /// via [`crate::validate_descriptor`] in a one-time codegen or
@@ -140,6 +151,7 @@ fn unmarshal_inner(
         track_presence,
         options.limits,
     );
+    decoder.post_decode_any = !options.skip_post_decode;
     decoder.advance();
     decoder.consume_directives()?;
 
@@ -149,7 +161,9 @@ fn unmarshal_inner(
     let presence = if track_presence {
         let null_mask_fd = find_null_mask_field(desc);
         let presence = decoder.into_presence();
-        post_decode(&mut msg, &presence, null_mask_fd.as_ref(), "")?;
+        if !options.skip_post_decode {
+            post_decode(&mut msg, &presence, null_mask_fd.as_ref(), "")?;
+        }
         // Mirror null paths into the root's _null FieldMask, if any.
         if let Some(null_mask_fd) = null_mask_fd {
             // A FieldMask path names fields, not list elements or map
@@ -206,6 +220,9 @@ struct Decoder<'a> {
     /// of a keyed repeated field (draft -01 §3.13), whose key-field
     /// assignments are checked against the entry name.
     keyed_elem: Option<KeyedElemState>,
+    /// Whether an `Any` body takes the post-decode pass before it is
+    /// packed: false under [`UnmarshalOptions::skip_post_decode`].
+    post_decode_any: bool,
 }
 
 impl<'a> Decoder<'a> {
@@ -241,6 +258,7 @@ impl<'a> Decoder<'a> {
             depth: 0,
             limits,
             keyed_elem: None,
+            post_decode_any: true,
         }
     }
 
@@ -939,8 +957,13 @@ impl<'a> Decoder<'a> {
         }
         if let Kind::Message(inner_desc) = fd.kind() {
             let mut sub = DynamicMessage::new(inner_desc);
-            if self.try_decode_wkt(&mut sub)? {
+            if let Some(inner) = self.try_decode_wkt(&mut sub)? {
                 msg.set_field(fd, Value::Message(sub));
+                if let Some(p) = self.presence.as_mut() {
+                    for name in inner {
+                        p.mark_present(format!("{}{}.{name}", self.path_prefix, fd.name()));
+                    }
+                }
                 return Ok(());
             }
             if !matches!(self.current.kind, TokenKind::LBrace) {
@@ -1010,7 +1033,7 @@ impl<'a> Decoder<'a> {
             let v = match &element_kind {
                 Kind::Message(inner_desc) => {
                     let mut sub = DynamicMessage::new(inner_desc.clone());
-                    if !self.try_decode_wkt(&mut sub)? {
+                    if self.try_decode_wkt(&mut sub)?.is_none() {
                         if !matches!(self.current.kind, TokenKind::LBrace) {
                             return Err(self.err(format!(
                                 "expected '{{' for repeated message element, got {}",
@@ -1256,7 +1279,7 @@ impl<'a> Decoder<'a> {
 
             let value = if let Kind::Message(inner_desc) = val_fd.kind() {
                 let mut sub = DynamicMessage::new(inner_desc);
-                if !self.try_decode_wkt(&mut sub)? {
+                if self.try_decode_wkt(&mut sub)?.is_none() {
                     if !matches!(self.current.kind, TokenKind::LBrace) {
                         return Err(self.err(format!(
                             "expected '{{' for map message value, got {}",
@@ -1329,7 +1352,7 @@ impl<'a> Decoder<'a> {
         decoded?;
         // Packed to bytes below, the body is out of reach of the pass over
         // the root, so it takes that pass here, under the Any's own path.
-        if let Some(presence) = &self.presence {
+        if let Some(presence) = self.presence.as_ref().filter(|_| self.post_decode_any) {
             post_decode(&mut inner, presence, None, &self.path_prefix)?;
         }
         // In key order, so the bytes don't depend on the map's hash order.
@@ -1358,9 +1381,15 @@ impl<'a> Decoder<'a> {
     }
 
     /// Try to consume a Timestamp / Duration / wrapper sugar value into `target`.
-    /// Returns `Ok(true)` if a WKT shortcut matched and was consumed, `Ok(false)`
-    /// to fall through to a regular `{ ... }` block decode.
-    fn try_decode_wkt(&mut self, target: &mut DynamicMessage) -> Result<bool, PxfError> {
+    /// Returns the inner fields the literal set if a WKT shortcut matched and
+    /// was consumed, `None` to fall through to a regular `{ ... }` block
+    /// decode. A singular field marks those inner fields present, as
+    /// protowire-go's `markInnerPresent` does; a list element or map value
+    /// does not.
+    fn try_decode_wkt(
+        &mut self,
+        target: &mut DynamicMessage,
+    ) -> Result<Option<&'static [&'static str]>, PxfError> {
         let desc = target.descriptor();
         // A message with a well-known type's name and not its shape has no
         // literal form (draft -01 §wkt-shapes): its name matches none here.
@@ -1379,7 +1408,7 @@ impl<'a> Decoder<'a> {
                 })?;
             set_seconds_nanos(target, seconds, nanos);
             self.advance();
-            return Ok(true);
+            return Ok(Some(&["seconds", "nanos"]));
         }
         if full == "google.protobuf.Duration" && matches!(self.current.kind, TokenKind::Duration) {
             let pos = self.current.pos;
@@ -1391,7 +1420,7 @@ impl<'a> Decoder<'a> {
             })?;
             set_seconds_nanos(target, seconds, nanos);
             self.advance();
-            return Ok(true);
+            return Ok(Some(&["seconds", "nanos"]));
         }
         if is_wrapper_full_name(&full) && !matches!(self.current.kind, TokenKind::LBrace) {
             let value_fd = desc.get_field_by_name("value").ok_or_else(|| {
@@ -1399,7 +1428,7 @@ impl<'a> Decoder<'a> {
             })?;
             let v = self.consume_scalar(&value_fd)?;
             target.set_field(&value_fd, v);
-            return Ok(true);
+            return Ok(Some(&["value"]));
         }
         // Arbitrary-precision literal forms (protowire-rust#34): a bare
         // integer on a pxf.BigInt field, an integer or decimal literal on a
@@ -1413,7 +1442,7 @@ impl<'a> Decoder<'a> {
                 .map_err(|e| PxfError::new(pos, e))?;
             set_big_int_fields(target, &lit);
             self.advance();
-            return Ok(true);
+            return Ok(Some(&["abs", "negative"]));
         }
         if full == "pxf.Decimal" && matches!(self.current.kind, TokenKind::Int | TokenKind::Float) {
             self.no_precision(&full)?;
@@ -1422,7 +1451,7 @@ impl<'a> Decoder<'a> {
                 .map_err(|e| PxfError::new(pos, e))?;
             set_decimal_fields(target, &lit);
             self.advance();
-            return Ok(true);
+            return Ok(Some(&["unscaled", "scale", "negative"]));
         }
         // A pxf.Secret written as a string literal sets its value alone
         // (draft -01 § pxf.Secret): `pw = "x"`, in a field, a list element
@@ -1433,7 +1462,7 @@ impl<'a> Decoder<'a> {
                 .expect("checked by dispatch_name");
             let v = self.consume_scalar(&value_fd)?;
             target.set_field(&value_fd, v);
-            return Ok(true);
+            return Ok(Some(&["value"]));
         }
         if full == "pxf.BigFloat" && matches!(self.current.kind, TokenKind::Int | TokenKind::Float)
         {
@@ -1447,9 +1476,9 @@ impl<'a> Decoder<'a> {
             .map_err(|e| PxfError::new(pos, e))?;
             set_big_float_fields(target, &lit);
             self.advance();
-            return Ok(true);
+            return Ok(Some(&["mantissa", "exponent", "prec", "negative"]));
         }
-        Ok(false)
+        Ok(None)
     }
 
     /// Reject a precision suffix on the current literal, which binds to
@@ -1818,7 +1847,7 @@ fn post_decode(
             }
             if let Some(def) = &p.default {
                 if !oneof_already_chosen(&fd, presence, path_prefix) {
-                    apply_default(parent, &fd, def, pos)?;
+                    apply_default_at(parent, &fd, def, pos)?;
                 }
             }
         } else if p.visit && !presence.is_null(&path) && parent.has_field(&fd) {
@@ -1981,7 +2010,31 @@ fn set_decimal_fields(target: &mut DynamicMessage, lit: &DecimalLit) {
     }
 }
 
-fn apply_default(
+/// Apply one default literal, `def`, to `fd` of `msg`, as the post-decode
+/// pass applies a `(pxf.default)` to an absent field: protowire-go's
+/// `ApplyDefault`. It is for a layered-config caller that decodes each layer
+/// with [`UnmarshalOptions::skip_post_decode`], merges them, and runs its own
+/// defaults pass over the merged message. A literal that does not parse as
+/// the field's type, and a field no single literal can denote (a list, a
+/// map, a message other than a well-known type with a literal form), is an
+/// error.
+///
+/// One guard is the caller's, as it is in protowire-go: for a member of a
+/// non-synthetic oneof, call this only when no member of that oneof is
+/// present (draft -01 §annotation-extensions, "Oneof Members"). Setting a
+/// member clears the others, so a default applied over a chosen sibling
+/// destroys the merged value rather than standing in for an absent one.
+/// [`crate::Presence::present_fields`] holds the presence the pass tests,
+/// a member bound to `null` counting as present.
+pub fn apply_default(
+    msg: &mut DynamicMessage,
+    fd: &FieldDescriptor,
+    def: &str,
+) -> Result<(), PxfError> {
+    apply_default_at(msg, fd, def, Position::default())
+}
+
+fn apply_default_at(
     parent: &mut DynamicMessage,
     fd: &FieldDescriptor,
     def: &str,
@@ -2027,22 +2080,42 @@ fn apply_default(
     if let Kind::Message(_) = fd.kind() {
         return apply_message_default(parent, fd, def, pos);
     }
-    let v = parse_scalar_default(fd, def, pos)?;
+    let v = parse_scalar_default(fd, fd.name(), def, pos)?;
     parent.set_field(fd, v);
     Ok(())
 }
 
-fn parse_scalar_default(fd: &FieldDescriptor, def: &str, pos: Position) -> Result<Value, PxfError> {
+/// The value of default literal `def` for a field of `fd`'s kind. `name` is
+/// the field the error names: `fd`'s own, or for a wrapper's `value` the
+/// field holding the wrapper, as protowire-go names it.
+fn parse_scalar_default(
+    fd: &FieldDescriptor,
+    name: &str,
+    def: &str,
+    pos: Position,
+) -> Result<Value, PxfError> {
     fn err(pos: Position, kind: &str, def: &str, name: &str) -> PxfError {
         PxfError::new(
             pos,
             format!("invalid default {} {:?} for field {:?}", kind, def, name),
         )
     }
-    let name = fd.name();
     Ok(match fd.kind() {
         Kind::String => Value::String(def.to_string()),
-        Kind::Bool => Value::Bool(def == "true"),
+        // A PXF bool literal is exactly `true` or `false`, as the document
+        // grammar has it; protowire-go's parseBoolDefault.
+        Kind::Bool => Value::Bool(match def {
+            "true" => true,
+            "false" => false,
+            _ => {
+                return Err(PxfError::new(
+                    pos,
+                    format!(
+                        "invalid default bool {def:?} for field {name:?}: a PXF bool literal is exactly \"true\" or \"false\", case-sensitive"
+                    ),
+                ))
+            }
+        }),
         Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => {
             Value::I32(def.parse().map_err(|_| err(pos, "int32", def, name))?)
         }
@@ -2132,7 +2205,7 @@ fn apply_message_default(
                 format!("internal: wrapper {} missing 'value' field", full),
             )
         })?;
-        let v = parse_scalar_default(&value_fd, def, pos)?;
+        let v = parse_scalar_default(&value_fd, fd.name(), def, pos)?;
         sub.set_field(&value_fd, v);
         parent.set_field(fd, Value::Message(sub));
         return Ok(());
@@ -2143,7 +2216,12 @@ fn apply_message_default(
         let lit = parse_big_int(def, MAX_NUMERIC_LITERAL_DIGITS).map_err(|e| {
             PxfError::new(
                 pos,
-                format!("invalid default for field {:?}: {}", fd.name(), e),
+                format!(
+                    "invalid default big integer {:?} for field {:?}: {}",
+                    def,
+                    fd.name(),
+                    e
+                ),
             )
         })?;
         set_big_int_fields(&mut sub, &lit);
@@ -2154,7 +2232,12 @@ fn apply_message_default(
         let lit = parse_decimal(def, MAX_NUMERIC_LITERAL_DIGITS).map_err(|e| {
             PxfError::new(
                 pos,
-                format!("invalid default for field {:?}: {}", fd.name(), e),
+                format!(
+                    "invalid default decimal {:?} for field {:?}: {}",
+                    def,
+                    fd.name(),
+                    e
+                ),
             )
         })?;
         set_decimal_fields(&mut sub, &lit);
@@ -2165,7 +2248,12 @@ fn apply_message_default(
         let lit = parse_big_float_default(def).map_err(|e| {
             PxfError::new(
                 pos,
-                format!("invalid default for field {:?}: {}", fd.name(), e),
+                format!(
+                    "invalid default big float {:?} for field {:?}: {}",
+                    def,
+                    fd.name(),
+                    e
+                ),
             )
         })?;
         set_big_float_fields(&mut sub, &lit);

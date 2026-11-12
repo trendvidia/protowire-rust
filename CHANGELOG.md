@@ -13,6 +13,12 @@ format changes.
 
 ### Added
 
+- **The pxf API for layered configuration** ([#127](https://github.com/trendvidia/protowire-rust/issues/127), protowire-go's `SkipPostDecode`, `ApplyDefault`, `Result.PresentFields`). A layered-config caller merges several documents, and the defaults and required checks belong to the merged result, not to one layer. These pieces let it run them there:
+  - `UnmarshalOptions::skip_post_decode` decodes without applying `(pxf.default)` or checking `(pxf.required)`. This holds at the root, in list elements and map values, and in `Any` bodies. Presence and the root's `_null` mask are still recorded.
+  - `Presence::present_fields` gives every path the document set, to a value or to `null`.
+  - `apply_default` applies one default literal to a field, with the post-decode pass's rules.
+  - `crates/protowire-pxf/tests/api_oracle.rs` holds them, and `is_required` and `get_default`, to protowire-go on its `layered_config_test.go` cases and more (`scripts/gen-api-oracle.sh`).
+  - **Breaking:** `UnmarshalOptions` has a new public field, so a struct literal without `..Default::default()` no longer compiles.
 - **`protowire-pb` binds `pxf.BigInt`, `pxf.Decimal` and `pxf.BigFloat` fields** ([#142](https://github.com/trendvidia/protowire-rust/issues/142), decided on [#89](https://github.com/trendvidia/protowire-rust/issues/89)). A struct can now hold a big number and write the bytes protowire-go writes for a `*big.Int`, `*big.Rat` or `*big.Float`. The new `protowire_pb::big` module has byte-backed `BigInt`, `Decimal` and `BigFloat` types, following protowire-cpp's `pb_big.h`.
   - **Writing:** a Decimal goes out at its smallest scale >= 0 (`1.00` as `1`). A BigFloat goes out as a prec-bit mantissa, rounded half to even. A zero singular field is left out (`write_big_int`, `write_decimal`, `write_big_float`), while a list element or map value is always written, a null one as the empty message.
   - **Refusals:** a value a reader would refuse is refused on write too, with protowire-go's text.
@@ -35,6 +41,12 @@ format changes.
 
 ### Fixed
 
+- **A default literal is read as protowire-go reads it** ([#127](https://github.com/trendvidia/protowire-rust/issues/127)). These came to light once `apply_default` could be held to protowire-go's `ApplyDefault`.
+  - A bool default other than `true` or `false` was read as `false`; it is now an error, with protowire-go's text.
+  - A wrapper's default error names the field holding the wrapper, not its inner `value`.
+  - A big-number default error now names its type: `invalid default big integer "x" for field "bi": …`.
+  - A Timestamp, Duration, wrapper, big-number or Secret literal on a singular field now marks its inner fields present (`t.seconds`, `bi.abs`), as protowire-go's `markInnerPresent` does.
+  - **Not yet matched:** protowire-go ends some of these errors with the Go standard library's own text, for example `strconv.ParseInt: parsing "x": invalid syntax`, and reads the literal with those parsers. This port does not yet; that is [#167](https://github.com/trendvidia/protowire-rust/issues/167), and the test pins the 8 such rows until it lands.
 - **`protowire-pb` writes a NaN as the canonical quiet NaN** ([#125](https://github.com/trendvidia/protowire-rust/issues/125), protowire-go#241, draft -01 § Numeric Literals). `Writer::double` and `Writer::float` wrote a NaN's bits as given, so a struct holding Go's `math.NaN()` (`0x7FF8000000000001`), a negative NaN or a signalling one went out with that payload. protowire-go writes every NaN in a struct field as `0x7FF8000000000000` (double) or `0x7FC00000` (float), and so does this port now, in singular, packed and map-value positions. `Writer::fixed64` and `Writer::fixed32` still write bits as given. `tests/nan.rs` holds the bytes to protowire-go's, for four NaNs.
 - **A descriptor compiled before protowire v1.12.0 is diagnosed, not bound silently** ([#133](https://github.com/trendvidia/protowire-rust/issues/133), STABILITY.md promise 3, draft -01). Such a descriptor carries its options at the extension numbers retired in v1.12.0 (50000 and up). This port reads only the registered numbers, so the schema bound without a word, and its `(pxf.required)` and `(pxf.default)` did nothing.
   - **pxf:** bind-time validation now reports each retired number as `ViolationKind::RetiredNumber`, with protowire-go's text: what the number was, what it is now, and which file to recompile against. As in protowire-go, a number counts only on the options kind it was allocated on, and only in a file that imports one of protowire's annotation files.

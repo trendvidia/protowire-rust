@@ -1,0 +1,92 @@
+# What protowire-go at f2baa11's pxf API does with each case of api-cases.tsv.
+# Produced by scripts/gen-api-oracle.sh. Do not edit.
+# Columns: descriptor set, message, op, its arguments, then the verdict:
+# full / full-skip: OK, pb hex, sorted present paths, sorted null paths; or ERR.
+# marshal: OK and the text, or ERR. apply: OK and the pb hex, or ERR.
+# required: the answer. default: whether there is one, and the literal.
+# Tabs, newlines and backslashes in a verdict are escaped.
+layered-test.binpb	layered_test.v1.AllScalars	full	i32 = 99	ERR	1:1: required field "req" is absent		
+layered-test.binpb	layered_test.v1.AllScalars	full	req = "x"	OK	0a0568656c6c6f10011820204028c0023080053d0000c03f411f85eb51b81e09404a0568656c6c6f50015802720178	req	
+layered-test.binpb	layered_test.v1.AllScalars	full	s = "explicit" i32 = 42 req = "r"	OK	0a086578706c696369741001182a204028c0023080053d0000c03f411f85eb51b81e09404a0568656c6c6f50015802720172	i32,req,s	
+layered-test.binpb	layered_test.v1.AllScalars	full		ERR	1:1: required field "req" is absent		
+layered-test.binpb	layered_test.v1.Nested	full	outer = "x"  inner = null	OK	120178	inner,outer	inner
+layered-test.binpb	layered_test.v1.Nested	full	outer = "x"  inner { req = "y" }	OK	0a2f0a0568656c6c6f10011820204028c0023080053d0000c03f411f85eb51b81e09404a0568656c6c6f50015802720179120178	inner,inner.req,outer	
+layered-test.binpb	layered_test.v1.Nested	full	outer = "x"  inner { s = "y" }	ERR	1:1: required field "inner.req" is absent		
+layered-test.binpb	layered_test.v1.WKTContainer	full	t = 2026-05-09T12:00:00Z d = 1h30m sv = "hello" bi = 100 dec = 3.14 bf = 2.71828	OK	0a0608c0c3fccf06120308982a1a070a0568656c6c6f22030a01642a060a02013a100232300a20adf84cad57bc7f77af640639d5e4a38327674d1633482be8bc169c23b7952d231082feffffffffffffff01188002	bf,bf.exponent,bf.mantissa,bf.negative,bf.prec,bi,bi.abs,bi.negative,d,d.nanos,d.seconds,dec,dec.negative,dec.scale,dec.unscaled,sv,sv.value,t,t.nanos,t.seconds	
+layered-test.binpb	layered_test.v1.WKTContainer	full	bi = -7 dec = -0.5	OK	22050a010710012a070a010510011801	bi,bi.abs,bi.negative,dec,dec.negative,dec.scale,dec.unscaled	
+layered-test.binpb	layered_test.v1.WKTMaps	full	when = { "start": 2026-05-09T12:00:00Z "end": 2026-05-10T18:30:00Z } howlong = { "fast": 100ms "slow": 5s } labels = { "env": "prod" "tier": "free" } counts = { "errors": 42 "warnings": 7 } ratios = { "small": 0.5 "large": 1024.0 }	OK	0a0d0a03656e64120608a89d83d0060a0f0a057374617274120608c0c3fccf06120d0a046661737412051080c2d72f120a0a04736c6f77120208051a0d0a03656e7612060a0470726f641a0e0a047469657212060a0466726565220c0a066572726f72731202082a220e0a087761726e696e6773120208072a390a056c6172676512300a208000000000000000000000000000000000000000000000000000000000000000108bfeffffffffffffff011880022a390a05736d616c6c12300a2080000000000000000000000000000000000000000000000000000000000000001080feffffffffffffff01188002	counts,howlong,labels,ratios,when	
+d4-test.binpb	d4_test.v1.WithNullMask	full	value = null	OK	a206070a0576616c7565	value	value
+d4-test.binpb	d4_test.v1.WithNullMask	full	value = 3	OK	1003	value	
+d4-test.binpb	d4_test.v1.WithDefault	full	count = 1	OK	0a09616e6f6e796d6f757310011801	count	
+layered-test.binpb	layered_test.v1.AllScalars	full-skip	i32 = 99	OK	1863	i32	
+layered-test.binpb	layered_test.v1.AllScalars	full-skip	req = "x"	OK	720178	req	
+layered-test.binpb	layered_test.v1.AllScalars	full-skip	s = "explicit" i32 = 42 req = "r"	OK	0a086578706c69636974182a720172	i32,req,s	
+layered-test.binpb	layered_test.v1.AllScalars	full-skip		OK			
+layered-test.binpb	layered_test.v1.Nested	full-skip	outer = "x"  inner = null	OK	120178	inner,outer	inner
+layered-test.binpb	layered_test.v1.Nested	full-skip	outer = "x"  inner { req = "y" }	OK	0a03720179120178	inner,inner.req,outer	
+layered-test.binpb	layered_test.v1.Nested	full-skip	outer = "x"  inner { s = "y" }	OK	0a030a0179120178	inner,inner.s,outer	
+layered-test.binpb	layered_test.v1.WKTContainer	full-skip	t = 2026-05-09T12:00:00Z d = 1h30m sv = "hello" bi = 100 dec = 3.14 bf = 2.71828	OK	0a0608c0c3fccf06120308982a1a070a0568656c6c6f22030a01642a060a02013a100232300a20adf84cad57bc7f77af640639d5e4a38327674d1633482be8bc169c23b7952d231082feffffffffffffff01188002	bf,bf.exponent,bf.mantissa,bf.negative,bf.prec,bi,bi.abs,bi.negative,d,d.nanos,d.seconds,dec,dec.negative,dec.scale,dec.unscaled,sv,sv.value,t,t.nanos,t.seconds	
+layered-test.binpb	layered_test.v1.WKTContainer	full-skip	bi = -7 dec = -0.5	OK	22050a010710012a070a010510011801	bi,bi.abs,bi.negative,dec,dec.negative,dec.scale,dec.unscaled	
+layered-test.binpb	layered_test.v1.WKTMaps	full-skip	when = { "start": 2026-05-09T12:00:00Z "end": 2026-05-10T18:30:00Z } howlong = { "fast": 100ms "slow": 5s } labels = { "env": "prod" "tier": "free" } counts = { "errors": 42 "warnings": 7 } ratios = { "small": 0.5 "large": 1024.0 }	OK	0a0d0a03656e64120608a89d83d0060a0f0a057374617274120608c0c3fccf06120d0a046661737412051080c2d72f120a0a04736c6f77120208051a0d0a03656e7612060a0470726f641a0e0a047469657212060a0466726565220c0a066572726f72731202082a220e0a087761726e696e6773120208072a390a056c6172676512300a208000000000000000000000000000000000000000000000000000000000000000108bfeffffffffffffff011880022a390a05736d616c6c12300a2080000000000000000000000000000000000000000000000000000000000000001080feffffffffffffff01188002	counts,howlong,labels,ratios,when	
+d4-test.binpb	d4_test.v1.WithNullMask	full-skip	value = null	OK	a206070a0576616c7565	value	value
+d4-test.binpb	d4_test.v1.WithNullMask	full-skip	value = 3	OK	1003	value	
+d4-test.binpb	d4_test.v1.WithDefault	full-skip	count = 1	OK	1001	count	
+layered-test.binpb	layered_test.v1.WKTMaps	marshal	when = { "start": 2026-05-09T12:00:00Z "end": 2026-05-10T18:30:00Z } howlong = { "fast": 100ms "slow": 5s } labels = { "env": "prod" "tier": "free" } counts = { "errors": 42 "warnings": 7 } ratios = { "small": 0.5 "large": 1024.0 }	OK	when = {\n  end: 2026-05-10T18:30:00Z\n  start: 2026-05-09T12:00:00Z\n}\nhowlong = {\n  fast: 100ms\n  slow: 5s\n}\nlabels = {\n  env: "prod"\n  tier: "free"\n}\ncounts = {\n  errors: 42\n  warnings: 7\n}\nratios = {\n  large: 1024p256\n  small: 0.5p256\n}\n
+layered-test.binpb	layered_test.v1.AllScalars	apply	s	hello	OK	0a0568656c6c6f
+layered-test.binpb	layered_test.v1.AllScalars	apply	b	true	OK	1001
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	32	OK	1820
+layered-test.binpb	layered_test.v1.AllScalars	apply	i64	64	OK	2040
+layered-test.binpb	layered_test.v1.AllScalars	apply	u32	320	OK	28c002
+layered-test.binpb	layered_test.v1.AllScalars	apply	u64	640	OK	308005
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1.5	OK	3d0000c03f
+layered-test.binpb	layered_test.v1.AllScalars	apply	f64	3.14	OK	411f85eb51b81e0940
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGVsbG8=	OK	4a0568656c6c6f
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	aGVsbG8	OK	4a0568656c6c6f
+layered-test.binpb	layered_test.v1.AllScalars	apply	raw	!!!not-base64!!!	ERR	invalid default bytes "!!!not-base64!!!" for field "raw": illegal base64 data at input byte 0
+layered-test.binpb	layered_test.v1.AllScalars	apply	color	RED	OK	5001
+layered-test.binpb	layered_test.v1.AllScalars	apply	color	BLUE	OK	5002
+layered-test.binpb	layered_test.v1.AllScalars	apply	color_by_num	2	OK	5802
+layered-test.binpb	layered_test.v1.AllScalars	apply	color	PURPLE	ERR	invalid default enum "PURPLE" for field "color"
+layered-test.binpb	layered_test.v1.AllScalars	apply	color	7	OK	5007
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	not-an-int	ERR	invalid default int32 "not-an-int" for field "i32": strconv.ParseInt: parsing "not-an-int": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	i32	99999999999	ERR	invalid default int32 "99999999999" for field "i32": strconv.ParseInt: parsing "99999999999": value out of range
+layered-test.binpb	layered_test.v1.AllScalars	apply	u32	-1	ERR	invalid default uint32 "-1" for field "u32": strconv.ParseUint: parsing "-1": invalid syntax
+layered-test.binpb	layered_test.v1.AllScalars	apply	b	yes	ERR	invalid default bool "yes" for field "b": a PXF bool literal is exactly "true" or "false", case-sensitive
+layered-test.binpb	layered_test.v1.AllScalars	apply	f32	1e39	ERR	invalid default float "1e39" for field "f32": strconv.ParseFloat: parsing "1e39": value out of range
+layered-test.binpb	layered_test.v1.AllScalars	apply	s		OK	
+layered-test.binpb	layered_test.v1.AllScalars	apply	no_default	x	OK	620178
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	2026-05-09T12:00:00Z	OK	0a0608c0c3fccf06
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	d	1h30m	OK	120308982a
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	sv	hello	OK	1a070a0568656c6c6f
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	i32v	42	OK	2202082a
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	i64v	9000000000	OK	2a060880b4c4c321
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	u32v	100	OK	32020864
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	u64v	200	OK	3a0308c801
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bv	true	OK	42020801
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	fv	1.5	OK	4a050d0000c03f
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	dv	3.14	OK	5209091f85eb51b81e0940
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bytv	aGVsbG8=	OK	5a070a0568656c6c6f
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bi	12345	OK	62040a023039
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	dec	3.14	OK	6a060a02013a1002
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bf	2.71828	OK	72300a20adf84cad57bc7f77af640639d5e4a38327674d1633482be8bc169c23b7952d231082feffffffffffffff01188002
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	t	not-a-timestamp	ERR	invalid default timestamp "not-a-timestamp" for field "t": parsing time "not-a-timestamp" as "2006-01-02T15:04:05Z07:00": cannot parse "not-a-timestamp" as "2006"
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	d	not-a-duration	ERR	invalid default duration "not-a-duration" for field "d": time: invalid duration "not-a-duration"
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	i32v	not-a-number	ERR	invalid default int32 "not-a-number" for field "i32v": strconv.ParseInt: parsing "not-a-number": invalid syntax
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bi	not-a-bigint	ERR	invalid default big integer "not-a-bigint" for field "bi": invalid big integer: not-a-bigint
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	dec	not-a-decimal	ERR	invalid default decimal "not-a-decimal" for field "dec": invalid decimal: not-a-decimal
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bf	not-a-bigfloat	ERR	invalid default big float "not-a-bigfloat" for field "bf": invalid big float: not-a-bigfloat
+layered-test.binpb	layered_test.v1.WKTDefaults	apply	bytv	not base64!	ERR	invalid default bytes "not base64!" for field "bytv": illegal base64 data at input byte 3
+layered-test.binpb	layered_test.v1.Nested	apply	inner	x	ERR	default values not supported for message type layered_test.v1.AllScalars (field "inner")
+layered-test.binpb	layered_test.v1.WKTMaps	apply	when	x	ERR	default values not supported for map field "when"
+layered-test.binpb	layered_test.v1.AllScalars	required	req	true
+layered-test.binpb	layered_test.v1.AllScalars	required	b	false
+layered-test.binpb	layered_test.v1.AllScalars	required	no_default	false
+layered-test.binpb	layered_test.v1.AllScalars	default	s	true	hello
+layered-test.binpb	layered_test.v1.AllScalars	default	b	true	true
+layered-test.binpb	layered_test.v1.AllScalars	default	i32	true	32
+layered-test.binpb	layered_test.v1.AllScalars	default	f64	true	3.14
+layered-test.binpb	layered_test.v1.AllScalars	default	raw	true	aGVsbG8=
+layered-test.binpb	layered_test.v1.AllScalars	default	color	true	RED
+layered-test.binpb	layered_test.v1.AllScalars	default	no_default	false	
+layered-test.binpb	layered_test.v1.AllScalars	default	optional_no_anno	false	
+layered-test.binpb	layered_test.v1.AllScalars	default	req	false	
