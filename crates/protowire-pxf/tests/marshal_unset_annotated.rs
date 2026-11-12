@@ -145,12 +145,11 @@ fn unset_required_optional_refused() {
     let mut m = DynamicMessage::new(d.clone());
     set_i32(&mut m, "plain", 1);
 
-    // protowire-go's text after its "pxf: " prefix. This port prints every
-    // marshal error after a 0:0 position instead (#138).
+    // protowire-go's text, word for word, with no position (#138).
     let err = marshal(&m, &d, MarshalOptions::default()).unwrap_err();
     assert_eq!(
         err.to_string(),
-        "0:0: unsetann.v1.ReqOpt.o is unset, and the field is (pxf.required)"
+        "pxf: unsetann.v1.ReqOpt.o is unset, and the field is (pxf.required)"
     );
 
     let out = marshal(

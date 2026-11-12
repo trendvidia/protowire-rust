@@ -184,6 +184,11 @@ fn max_nesting_depth_is_per_call() {
     let three = deep(&d, DynamicMessage::new(d.clone()), 3);
     let err = marshal(&three, &d, two).unwrap_err();
     assert!(err.msg.contains("MaxNestingDepth=2"), "{}", err.msg);
+    // protowire-go's text, with no position (#138).
+    assert_eq!(
+        err.to_string(),
+        "pxf: nesting depth exceeds MaxNestingDepth=2"
+    );
 }
 
 /// A T whose payload holds `value` as a T.

@@ -39,13 +39,15 @@ fn header_exposes_type_and_columns() {
 #[test]
 fn no_table_returns_error() {
     let err = reader("@type foo.Msg\nname = \"x\"\n").err().expect("err");
-    assert!(err.to_string().contains("no @dataset"));
+    // protowire-go's ErrNoDataset, word for word, with no position (#138).
+    assert_eq!(err.to_string(), "pxf: no @dataset directive in stream");
 }
 
 #[test]
 fn empty_input_returns_error() {
     let err = reader("").err().expect("err");
-    assert!(err.to_string().contains("no @dataset"));
+    // protowire-go's ErrNoDataset, word for word, with no position (#138).
+    assert_eq!(err.to_string(), "pxf: no @dataset directive in stream");
 }
 
 #[test]
