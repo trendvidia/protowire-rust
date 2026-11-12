@@ -1,0 +1,56 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for writing an unset annotated field so that it reads back
+// (#116, protowire-go#259). Mirrors unsetAnnotatedProtoSrc in
+// protowire-go's encoding/pxf/marshal_unset_annotated_test.go, plus the
+// _null-mask message of its TestMarshal_UnsetDefaultedInNullMaskMessageHasNoText.
+syntax = "proto3";
+package unsetann.v1;
+
+import "google/protobuf/field_mask.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "pxf/annotations.proto";
+
+message M {
+  int32 n = 1 [(pxf.default) = "5"];
+  string s = 2 [(pxf.default) = "\"dflt\""];
+  bool b = 3 [(pxf.default) = "true"];
+  int32 req = 4 [(pxf.required) = true];
+  repeated int32 rl = 5 [(pxf.required) = true];
+  map<string, int32> rm = 6 [(pxf.required) = true];
+  google.protobuf.Int32Value w = 7 [(pxf.default) = "7"];
+  google.protobuf.Timestamp ts = 8 [(pxf.default) = "2024-01-01T00:00:00Z"];
+  oneof o {
+    int32 a = 9 [(pxf.default) = "8"];
+    string other = 10;
+  }
+  int32 plain = 11;
+  Sub sub = 12;
+}
+
+message Sub {
+  int32 k = 1 [(pxf.default) = "3"];
+  int32 plain = 2;
+}
+
+message Opt {
+  optional int32 o = 1 [(pxf.default) = "6"];
+}
+
+message ReqOpt {
+  optional int32 o = 1 [(pxf.required) = true];
+  int32 plain = 2;
+}
+
+message N {
+  google.protobuf.Int32Value w = 1 [(pxf.default) = "7"];
+  int32 plain = 2;
+  google.protobuf.FieldMask _null = 3;
+}
+
+// Annotated messages reached through a list, a map value and an Any.
+message Holder {
+  repeated Sub subs = 1;
+  map<string, Sub> by_name = 2;
+}

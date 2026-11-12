@@ -240,18 +240,19 @@ fn written_only_when_it_reads_back() {
             len_field(1, &varint_field(1, 1 << 40)),
             false,
         ),
-        // A reader's annotation rules would change or refuse the body.
+        // An unset annotated field is written so that it reads back (#116,
+        // protowire-go#259), so the body gives back the bytes.
         (
             "default unset",
             "anyback.v1.Defaulted",
             varint_field(2, 1),
-            false,
+            true,
         ),
         (
             "required unset",
             "anyback.v1.Required",
             len_field(2, b"s"),
-            false,
+            true,
         ),
         // Never unpacked at all.
         ("unresolved", "anyback.v1.Nope", tag_t.clone(), false),
