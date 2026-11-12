@@ -22,7 +22,7 @@ use crate::annotations::find_null_mask_field;
 use crate::ast::{
     DatasetDirective, DatasetRow, Directive, ProtoDirective, ProtoShape, Value as AstValue,
 };
-use crate::bigfloat::{parse_big_float, parse_big_float_default, BigFloatLit};
+use crate::bigfloat::{clip_literal, parse_big_float, parse_big_float_default, BigFloatLit};
 use crate::bignum::{parse_big_int, parse_decimal, BigIntLit, DecimalLit};
 use crate::dataset_paths::column_path_error;
 use crate::errors::PxfError;
@@ -31,7 +31,10 @@ use crate::keyed::{
 };
 use crate::lexer::Lexer;
 use crate::limits::{Limits, MAX_NUMERIC_LITERAL_DIGITS};
-use crate::parser::{find_matching_brace, read_value};
+use crate::parser::{
+    find_matching_brace, non_name_assign_error, non_name_block_error, read_value,
+    top_level_map_entry_error,
+};
 use crate::post_decode_plan::post_decode_plan;
 use crate::result::Presence;
 use crate::token::{Position, Token, TokenKind};
@@ -368,7 +371,7 @@ impl<'a> Decoder<'a> {
                     if !matches!(self.current.kind, TokenKind::Ident | TokenKind::String) {
                         return Err(self.err(format!(
                             "expected type name after @type, got {}",
-                            self.current.kind
+                            self.token_err_msg()
                         )));
                     }
                     self.advance();
@@ -700,33 +703,34 @@ impl<'a> Decoder<'a> {
             if matches!(key_kind, TokenKind::AtType) {
                 return Err(self.err_at(pos, TYPE_ENTRY_MISPLACED));
             }
+            // The grammar's key set (parseEntry), so a bool or integer key
+            // before '=' or '{' gets the parser's error below, not this one.
             if !matches!(
                 key_kind,
-                TokenKind::Ident | TokenKind::String | TokenKind::Int
+                TokenKind::Ident | TokenKind::String | TokenKind::Int | TokenKind::Bool
             ) {
                 return Err(self.err_at(
                     pos,
                     format!(
-                        "expected identifier, string, or integer, got {} ({:?})",
-                        key_kind, self.current.value
-                    ),
-                ));
-            }
-            if !self.current.prec.is_empty() {
-                return Err(self.err_at(
-                    pos,
-                    format!(
-                        "a key cannot carry a precision suffix (p{})",
-                        self.current.prec
+                        "expected identifier, string, integer, or bool, got {}",
+                        self.token_err_msg()
                     ),
                 ));
             }
             let key_quoted = matches!(key_kind, TokenKind::String);
             let key = std::mem::take(&mut self.current.value);
+            // Only an integer key carries a suffix; the grammar errors below
+            // write it as part of the key, as protowire-go's keyPrec does.
+            let key_prec = std::mem::take(&mut self.current.prec);
             self.advance();
 
             match self.current.kind {
                 TokenKind::Equals => {
+                    // No field has an integer or bool name, so this is the
+                    // parser's error whatever discard_unknown says.
+                    if matches!(key_kind, TokenKind::Int | TokenKind::Bool) {
+                        return Err(non_name_assign_error(pos, key_kind, &key, &key_prec));
+                    }
                     self.advance();
                     if key_quoted {
                         // The grammar accepts a string at entry-name position
@@ -777,6 +781,9 @@ impl<'a> Decoder<'a> {
                     self.decode_field_value(msg, &fd)?;
                 }
                 TokenKind::LBrace => {
+                    if matches!(key_kind, TokenKind::Int | TokenKind::Bool) {
+                        return Err(non_name_block_error(pos, key_kind, &key, &key_prec));
+                    }
                     if key_quoted {
                         return Err(quoted_name_unkeyed_error(pos, &key));
                     }
@@ -862,6 +869,12 @@ impl<'a> Decoder<'a> {
                     msg.set_field(&fd, Value::Message(sub));
                 }
                 TokenKind::Colon => {
+                    if !in_block {
+                        // The parser's grammar error: no map entry stands
+                        // at the top level of a document, whatever the
+                        // schema.
+                        return Err(top_level_map_entry_error(pos));
+                    }
                     return Err(self.err_at(
                         pos,
                         "unexpected ':' in message context, use '=' for field assignments",
@@ -1072,11 +1085,11 @@ impl<'a> Decoder<'a> {
                     )));
                 }
                 TokenKind::Ident | TokenKind::String => {}
-                other => {
+                _ => {
                     return Err(self.err(format!(
                         "expected entry name (identifier or string) in keyed field {:?}, got {}",
                         fd.name(),
-                        other
+                        self.token_err_msg()
                     )));
                 }
             }
@@ -1173,7 +1186,6 @@ impl<'a> Decoder<'a> {
         while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof) {
             let pos = self.current.pos;
             let tk = self.current.kind;
-            self.illegal()?;
             if map.len() >= self.limits.max_repeated_count {
                 return Err(self.err_at(
                     pos,
@@ -1188,7 +1200,10 @@ impl<'a> Decoder<'a> {
                 tk,
                 TokenKind::Ident | TokenKind::String | TokenKind::Int | TokenKind::Bool
             ) {
-                return Err(self.err_at(pos, format!("expected map key, got {}", tk)));
+                return Err(self.err_at(
+                    pos,
+                    format!("expected map key, got {}", self.token_err_msg()),
+                ));
             }
             if !self.current.prec.is_empty() {
                 return Err(self.err_at(
@@ -1196,7 +1211,7 @@ impl<'a> Decoder<'a> {
                     format!(
                         "map field {:?}: a key cannot carry a precision suffix (p{})",
                         fd.name(),
-                        self.current.prec
+                        clip_literal(&self.current.prec)
                     ),
                 ));
             }
@@ -1280,11 +1295,17 @@ impl<'a> Decoder<'a> {
     fn decode_any_body(&mut self, target: &mut DynamicMessage) -> Result<(), PxfError> {
         self.advance(); // consume @type
         if !matches!(self.current.kind, TokenKind::Equals) {
-            return Err(self.err("expected '=' after @type"));
+            return Err(self.err(format!(
+                "expected '=' after @type, got {}",
+                self.token_err_msg()
+            )));
         }
         self.advance();
         if !matches!(self.current.kind, TokenKind::String) {
-            return Err(self.err("expected a string type URL after @type ="));
+            return Err(self.err(format!(
+                "expected a string type URL after @type =, got {}",
+                self.token_err_msg()
+            )));
         }
         let type_url = std::mem::take(&mut self.current.value);
         let url_pos = self.current.pos;

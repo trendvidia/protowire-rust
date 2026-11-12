@@ -512,7 +512,8 @@ fn pow5(n: u64, prec: u32) -> Fl {
     z
 }
 
-fn clip_literal(s: &str) -> String {
+/// protowire-go's `clipLiteral`: a long literal's first 24 bytes and an ellipsis.
+pub(crate) fn clip_literal(s: &str) -> String {
     if s.len() <= 24 {
         return s.to_string();
     }
