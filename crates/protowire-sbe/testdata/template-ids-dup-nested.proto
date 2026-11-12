@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Template ids are unique within a schema, not across schemas (#121).
+// Mirrors protowire-go's encoding/sbe/template_id_test.go.
+syntax = "proto3";
+package ids.dupnested;
+
+import "sbe/annotations.proto";
+
+option (sbe.schema_id) = 1;
+option (sbe.version) = 0;
+
+message A {
+  option (sbe.template_id) = 7;
+  uint32 x = 1;
+  message N {
+    option (sbe.template_id) = 7;
+    uint32 z = 1;
+  }
+}
