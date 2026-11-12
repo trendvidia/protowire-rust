@@ -59,6 +59,8 @@ pub struct DatasetReader<R: Read> {
     src_eof: bool,
     finished: bool,
     err: Option<PxfError>,
+    /// The iterator has yielded `err`, and ends.
+    err_yielded: bool,
     type_: String,
     columns: Vec<String>,
     directives: Vec<Directive>,
@@ -91,6 +93,7 @@ impl<R: Read> DatasetReader<R> {
             src_eof: false,
             finished: false,
             err: None,
+            err_yielded: false,
             type_: String::new(),
             columns: Vec::new(),
             directives: Vec::new(),
@@ -125,7 +128,9 @@ impl<R: Read> DatasetReader<R> {
     }
 
     /// Read the next row. Returns `None` once the table's row sequence
-    /// is exhausted; after a sticky error, also returns `None`.
+    /// is exhausted. An error is sticky, as protowire-go's `Next` is: after
+    /// one, every later call returns the same error. The [`Iterator`] impl
+    /// yields it once and then ends.
     pub fn next_row(&mut self) -> Option<Result<DatasetRow, PxfError>> {
         if let Some(e) = &self.err {
             return Some(Err(e.clone()));
@@ -310,10 +315,21 @@ impl<R: Read> DatasetReader<R> {
     }
 }
 
+/// Rows until the end of the table. A row error is yielded once, and the
+/// iterator ends after it: `next_row` keeps returning the error, as
+/// protowire-go's `Next` does, which in a `for` loop that logs it and
+/// carries on would never end (#132).
 impl<R: Read> Iterator for DatasetReader<R> {
     type Item = Result<DatasetRow, PxfError>;
     fn next(&mut self) -> Option<Self::Item> {
-        self.next_row()
+        if self.err_yielded {
+            return None;
+        }
+        let row = self.next_row();
+        if matches!(row, Some(Err(_))) {
+            self.err_yielded = true;
+        }
+        row
     }
 }
 
