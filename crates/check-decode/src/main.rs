@@ -638,7 +638,7 @@ fn pb_render(input: &Path, schema: &str, proto: &Path, print: bool) -> Result<()
             let mut msg = DynamicMessage::new(desc.clone());
             stock_merge(&mut msg, &bytes, 0).map_err(|e| format!("protobuf runtime: {e}"))?;
             let out = protowire_pxf::marshal(&msg, &desc, protowire_pxf::MarshalOptions::default())
-                .map_err(|e| format!("pxf: {e}"))
+                .map_err(|e| e.to_string())
                 .and_then(|text| {
                     if print {
                         use std::io::Write as _;
@@ -740,7 +740,7 @@ fn pxf_decode(input: &Path, schema: &str, proto: &Path, limits: &LimitFlags) -> 
     };
     pxf_unmarshal(&text, &desc, options)
         .map(|_| ())
-        .map_err(|e| format!("pxf: {e}"))
+        .map_err(|e| e.to_string())
 }
 
 /// The PB bytes for a PXF document, on stdout, for the write gate
@@ -758,7 +758,7 @@ fn pxf_pb(input: &Path, schema: &str, proto: &Path, limits: &LimitFlags) -> Resu
         ..Default::default()
     };
     let (msg, _) =
-        protowire_pxf::unmarshal_full(&text, &desc, options).map_err(|e| format!("pxf: {e}"))?;
+        protowire_pxf::unmarshal_full(&text, &desc, options).map_err(|e| e.to_string())?;
     let mut out = Vec::new();
     deterministic::encode(&msg, &mut out);
     std::io::stdout()
