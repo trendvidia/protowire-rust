@@ -24,6 +24,7 @@ pub mod limits;
 pub mod parser;
 mod post_decode_plan;
 pub mod result;
+mod retired;
 mod rfc3339;
 pub mod schema;
 pub mod token;

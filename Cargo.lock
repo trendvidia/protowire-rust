@@ -332,6 +332,8 @@ dependencies = [
 name = "protowire"
 version = "1.2.0"
 dependencies = [
+ "prost",
+ "prost-reflect",
  "protowire-envelope",
  "protowire-pb",
  "protowire-pxf",

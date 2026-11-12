@@ -142,6 +142,12 @@ protowire-go's own compiler, and the oracle holds its descriptor set, since
 two redefinitions of one type cannot share a `.binpb`. Regenerate with
 `scripts/gen-wkt-shape-oracle.sh`.
 
+`crates/protowire/tests/retired_oracle.rs` holds pxf validation and the SBE
+codec to protowire-go on descriptors whose options sit at the extension
+numbers retired in v1.12.0. The umbrella crate hosts it because it needs
+both. Each case's descriptor set, imports compiled from `proto/`, is in the
+oracle; regenerate with `scripts/gen-retired-oracle.sh`.
+
 ## TS pitfalls that may transfer
 
 - The shared `test.proto` is intentionally NOT modified for port-specific

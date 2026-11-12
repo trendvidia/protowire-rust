@@ -10,7 +10,9 @@ use std::collections::HashMap;
 
 use prost_reflect::{FileDescriptor, MessageDescriptor};
 
-use crate::annotations::{file_uint32, has_template_id, EXT_SCHEMA_ID, EXT_VERSION};
+use crate::annotations::{
+    file_uint32, has_template_id, stale_file_error, stale_message_error, EXT_SCHEMA_ID, EXT_VERSION,
+};
 use crate::errors::SbeError;
 use crate::template::{build_template, MessageTemplate, MAX_UINT16};
 
@@ -79,10 +81,12 @@ impl Codec {
         };
         for file in files {
             let schema_id = file_uint32(file, EXT_SCHEMA_ID).ok_or_else(|| {
-                SbeError::new(format!(
-                    "sbe: file {} missing (sbe.schema_id) option",
-                    file.name()
-                ))
+                stale_file_error(file).unwrap_or_else(|| {
+                    SbeError::new(format!(
+                        "sbe: file {} missing (sbe.schema_id) option",
+                        file.name()
+                    ))
+                })
             })?;
             let version = file_uint32(file, EXT_VERSION).unwrap_or(0);
             // Every SBE header field is a u16, so a schema stating a larger
@@ -138,6 +142,8 @@ impl Codec {
             self.by_name
                 .insert(desc.full_name().to_string(), tmpl.clone());
             self.by_id.insert(key, tmpl);
+        } else if let Some(err) = stale_message_error(desc) {
+            return Err(err);
         }
         for nested in desc.child_messages() {
             self.register_message(&nested, schema_id, version)?;
