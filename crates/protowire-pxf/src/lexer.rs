@@ -175,15 +175,21 @@ impl<'a> Lexer<'a> {
         // Name the whole character rather than its first byte: the input
         // is a `&str`, so a non-ASCII lead byte is followed by its
         // continuation bytes, and reporting each of them as its own token
-        // would spell "μ" as two illegal tokens.
+        // would spell "μ" as two illegal tokens. The text is protowire-go's
+        // lexIllegalRune: "unexpected character" and the character as Go's
+        // `%q` writes it.
         let start = self.pos;
         self.advance();
         while self.pos < self.input.len() && (self.input[self.pos] & 0xC0) == 0x80 {
             self.advance();
         }
+        let ch = slice_to_string(&self.input[start..self.pos])
+            .chars()
+            .next()
+            .unwrap_or(char::REPLACEMENT_CHARACTER);
         Token::new(
             TokenKind::Illegal,
-            slice_to_string(&self.input[start..self.pos]),
+            format!("unexpected character {}", go_quote_rune(ch)),
             pos,
         )
     }
@@ -324,7 +330,7 @@ impl<'a> Lexer<'a> {
                 // holds a line break.
                 return Token::new(
                     TokenKind::Illegal,
-                    "raw newline in string: write \\n, or use a triple-quoted string",
+                    r#"newline in string literal: write it as \n, or use a """triple-quoted""" string"#,
                     pos,
                 );
             }
@@ -503,7 +509,11 @@ impl<'a> Lexer<'a> {
         }
         let name = slice_to_string(&self.input[start..self.pos]);
         if name.is_empty() {
-            return Token::new(TokenKind::Illegal, "@", pos);
+            return Token::new(
+                TokenKind::Illegal,
+                r#""@" must be followed by a directive name"#,
+                pos,
+            );
         }
         if name == "type" {
             return Token::new(TokenKind::AtType, "@type", pos);
@@ -538,11 +548,15 @@ impl<'a> Lexer<'a> {
                 return Token::new(TokenKind::Float, text, pos);
             }
             if sign == b'+' {
-                return Token::new(TokenKind::Illegal, "+", pos);
+                return Token::new(TokenKind::Illegal, r#""+" is valid only in "+inf""#, pos);
             }
             neg = true;
             if self.pos >= self.input.len() || !is_digit(self.peek()) {
-                return Token::new(TokenKind::Illegal, "-", pos);
+                return Token::new(
+                    TokenKind::Illegal,
+                    r#""-" must be followed by a digit or "inf""#,
+                    pos,
+                );
             }
         }
 
@@ -916,6 +930,35 @@ fn is_valid_go_duration(s: &str) -> bool {
     groups > 0
 }
 
+/// A character as Go's `%q` (`strconv.QuoteRune`) writes it: in single
+/// quotes, as itself when `strconv.IsPrint` calls it printable, otherwise
+/// escaped.
+pub(crate) fn go_quote_rune(c: char) -> String {
+    let r = c as u32;
+    let body = match c {
+        '\'' => "\\'".to_string(),
+        '\\' => "\\\\".to_string(),
+        _ if go_is_print(r) => c.to_string(),
+        '\u{07}' => "\\a".to_string(),
+        '\u{08}' => "\\b".to_string(),
+        '\u{0c}' => "\\f".to_string(),
+        '\n' => "\\n".to_string(),
+        '\r' => "\\r".to_string(),
+        '\t' => "\\t".to_string(),
+        '\u{0b}' => "\\v".to_string(),
+        _ if r < 0x20 || r == 0x7f => format!("\\x{r:02x}"),
+        _ if r < 0x10000 => format!("\\u{r:04x}"),
+        _ => format!("\\U{r:08x}"),
+    };
+    format!("'{body}'")
+}
+
+fn go_is_print(r: u32) -> bool {
+    use crate::go_print::GO_PRINT_RANGES;
+    let i = GO_PRINT_RANGES.partition_point(|&(_, hi)| hi < r);
+    i < GO_PRINT_RANGES.len() && GO_PRINT_RANGES[i].0 <= r
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1270,7 +1313,14 @@ mod tests {
             // time.ParseDuration would accept it, and must not sneak in via
             // the lexer. It falls to the Illegal path, which names the whole
             // character rather than each of its two bytes.
-            ("2μs", &[(Int, "2"), (Illegal, "μ"), (Ident, "s")]),
+            (
+                "2μs",
+                &[
+                    (Int, "2"),
+                    (Illegal, "unexpected character 'μ'"),
+                    (Ident, "s"),
+                ],
+            ),
             // A bare micro sign with no "s" is not a unit either.
             ("2µ", &[(Illegal, "invalid duration: 2µ")]),
             ("2µm", &[(Illegal, "invalid duration: 2µm")]),

@@ -9,8 +9,8 @@
 //!
 //! Each row is what protowire-go v1.17.0 gave for the document: `Unmarshal`
 //! and `UnmarshalFull` with `DiscardUnknown` off, then on (the two decoders
-//! agreed on every row), then `Parse`. Rows whose token is illegal to the
-//! lexer, such as `$`, wait on the lexer's texts (#149).
+//! agreed on every row), then `Parse`. The two `$` rows name the illegal
+//! token with the lexer's text (#149).
 
 use prost_reflect::{DescriptorPool, MessageDescriptor};
 use protowire_pxf::{parse, unmarshal, unmarshal_full, PoolResolver, UnmarshalOptions};
@@ -95,6 +95,8 @@ const ROWS: &[Row] = &[
     (ALL, r#"@type 5"#, Some(r#"1:7: expected type name after @type, got integer ("5")"#), Some(r#"1:7: expected type name after @type, got integer ("5")"#), Some(r#"1:7: expected type name after @type, got integer"#)),
     (ALL, r#"@type ["#, Some(r#"1:7: expected type name after @type, got [ ("[")"#), Some(r#"1:7: expected type name after @type, got [ ("[")"#), Some(r#"1:7: expected type name after @type, got ["#)),
     (ALL, r#"@type "abc"#, Some(r#"1:7: expected type name after @type, got unterminated string"#), Some(r#"1:7: expected type name after @type, got unterminated string"#), Some(r#"1:7: expected type name after @type, got ILLEGAL"#)),
+    (ALL, r#"$ = 1"#, Some(r#"1:1: expected identifier, string, integer, or bool, got unexpected character '$'"#), Some(r#"1:1: expected identifier, string, integer, or bool, got unexpected character '$'"#), Some(r#"1:1: expected identifier, string, integer, or bool, got unexpected character '$'"#)),
+    (ALL, r#"nested_field { $ = 1 }"#, Some(r#"1:16: expected identifier, string, integer, or bool, got unexpected character '$'"#), Some(r#"1:16: expected identifier, string, integer, or bool, got unexpected character '$'"#), Some(r#"1:16: expected identifier, string, integer, or bool, got unexpected character '$'"#)),
 ];
 
 fn verdict<T>(r: Result<T, protowire_pxf::PxfError>) -> Option<String> {
@@ -133,5 +135,5 @@ fn an_entry_key_is_read_as_protowire_go_reads_it() {
         );
         checked += 1;
     }
-    assert_eq!(checked, 60);
+    assert_eq!(checked, 62);
 }

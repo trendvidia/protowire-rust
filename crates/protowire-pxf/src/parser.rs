@@ -827,13 +827,14 @@ impl<'a> Parser<'a> {
             }
             TokenKind::LBracket => self.parse_list(),
             TokenKind::LBrace => self.parse_block_val(),
-            other => Err(PxfError::new(
+            // An illegal token is reported as the lexer's own diagnostic, as
+            // the decoder reports it at every value position and as
+            // protowire-go's parseValue does: "expected value" adds nothing
+            // to "invalid duration: 5seconds".
+            TokenKind::Illegal => Err(PxfError::new(pos, self.current.value.clone())),
+            _ => Err(PxfError::new(
                 pos,
-                format!(
-                    "expected value, got {} ({:?})",
-                    other.name(),
-                    self.current.value
-                ),
+                format!("expected value, got {}", self.token_err_msg()),
             )),
         }
     }
