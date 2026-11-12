@@ -33,6 +33,8 @@ format changes.
 
 ### Fixed
 
+- **An illegal token is named as protowire-go names it** ([#149](https://github.com/trendvidia/protowire-rust/issues/149)). A character no token starts with was named by itself, so `$ = 1` read `got $` and a control character printed raw. It is now `unexpected character '$'`, with the character written as Go's `%q` writes it: escaped (`'\x00'`, `'\u00a0'`, `'\U000e0001'`) wherever Go's `strconv.IsPrint` refuses it. The new `src/go_print.rs` table holds that set, generated from Go by `scripts/gen-go-print-ranges.sh`. A bare `@`, `+` or `-`, and a raw newline in a string, now carry Go's sentences (`"+" is valid only in "+inf"`). At a value, `parse` reports the lexer's text alone, as Go's `parseValue` does. Before, it gave `expected value, got ILLEGAL ("+")`.
+  - **Tests:** `tests/illegal_tokens.rs` holds 55 documents to protowire-go v1.17.0's `Parse` text, and `tests/entry_keys.rs` takes back its two `$` rows.
 - **`parse` keeps every comment, and `format` writes it back where it was** ([#119](https://github.com/trendvidia/protowire-rust/issues/119), protowire-go#279). `format` used to lose 13 of protowire-go's 14 comment test documents. A comment was kept only if an entry followed it, so one at the end of a document or block, or around `@dataset` rows, was dropped or moved onto the next entry. A comment after a value on its line was dropped too. They now land as protowire-go's parser files them:
   - **Same line:** after a value, in `Assignment`, `MapEntry` and `TypeEntry` `trailing_comment`.
   - **Before a `}`:** in `Block` and `BlockVal` `trailing_comments`.
