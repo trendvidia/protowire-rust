@@ -223,6 +223,6 @@ fn bounds_as_protowire_go() {
         diffs.len(),
         diffs.join("\n")
     );
-    // 55 files bound, 126 marshals, 23 wire reads: bounds-cases.tsv.
-    assert_eq!(checked, 204);
+    // 57 files bound, 128 marshals, 23 wire reads: bounds-cases.tsv.
+    assert_eq!(checked, 208);
 }
