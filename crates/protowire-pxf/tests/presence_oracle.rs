@@ -8,7 +8,9 @@
 //! `(pxf.default)` and `(pxf.required)` in every message body
 //! (protowire-go#161) and a keyed entry's name (protowire-go#214, #215).
 //! `timestamp-oracle.tsv`, made the same way, holds timestamp literals to
-//! what protowire-go's lexer and `time.Parse` decide (#118).
+//! what protowire-go's lexer and `time.Parse` decide (#118), and
+//! `message-forms-oracle.tsv` the error for a token no message value opens
+//! (#147).
 
 use std::collections::HashMap;
 
@@ -18,10 +20,19 @@ use protowire_pxf::{unmarshal, unmarshal_full, PoolResolver, UnmarshalOptions};
 
 const ORACLE: &str = include_str!("../testdata/conformance/presence-oracle.tsv");
 const TIMESTAMP_ORACLE: &str = include_str!("../testdata/conformance/timestamp-oracle.tsv");
+const MESSAGE_FORMS_ORACLE: &str = include_str!("../testdata/conformance/message-forms-oracle.tsv");
 
 fn pools() -> HashMap<&'static str, DescriptorPool> {
-    let sets: [(&str, &[u8]); 4] = [
+    let sets: [(&str, &[u8]); 6] = [
         ("test.binpb", include_bytes!("../testdata/test.binpb")),
+        (
+            "bignum-test.binpb",
+            include_bytes!("../testdata/bignum-test.binpb"),
+        ),
+        (
+            "secret-literal-test.binpb",
+            include_bytes!("../testdata/secret-literal-test.binpb"),
+        ),
         (
             "element-defaults-test.binpb",
             include_bytes!("../testdata/element-defaults-test.binpb"),
@@ -127,6 +138,13 @@ fn check(
 fn every_document_meets_the_reference() {
     // A positive marker: the rows ran, and both verdicts are among them.
     assert_eq!(run(ORACLE), (63, 21));
+}
+
+/// A token that opens no value of a message field: the error names the
+/// forms the field takes and the token it got (#147).
+#[test]
+fn every_wrong_token_for_a_message_reads_as_the_reference() {
+    assert_eq!(run(MESSAGE_FORMS_ORACLE), (27, 27));
 }
 
 #[test]
