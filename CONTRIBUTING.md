@@ -109,6 +109,6 @@ Cutting a release:
 2. Add a `## [X.Y.Z]` section to `CHANGELOG.md`.
 3. Tag `vX.Y.Z` on `main`.
 4. The `.github/workflows/publish.yml` workflow runs `cargo publish`
-   in dependency order (`protowire-pb` → `protowire-envelope`,
-   `protowire-pxf`, `protowire-sbe` → `protowire`) and posts a GitHub
-   Release.
+   in dependency order (`protowire-check` → `protowire-pb` →
+   `protowire-envelope`, `protowire-pxf`, `protowire-sbe` → `protowire`)
+   and posts a GitHub Release.

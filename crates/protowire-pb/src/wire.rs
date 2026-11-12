@@ -104,6 +104,14 @@ pub enum Error {
     /// wire form; the text is protowire-go's.
     #[error("{0}")]
     BigNumber(String),
+    /// The [`crate::UnmarshalOptions::validator`] reported violations; the
+    /// error holds its report.
+    #[error(transparent)]
+    Check(protowire_check::Error),
+    /// The [`crate::UnmarshalOptions::validator`] could not run: its own
+    /// error, as it returned it.
+    #[error(transparent)]
+    Validator(protowire_check::BoxError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

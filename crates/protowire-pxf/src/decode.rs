@@ -108,6 +108,22 @@ pub struct UnmarshalOptions<'a> {
     /// "<path>": <error>`. The plaintext is still a substring of the input
     /// for the length of the call; the hook keeps it out of the message.
     pub on_secret_field: Option<&'a SecretHook<'a>>,
+    /// Validates the decoded message after the decode, and for
+    /// [`unmarshal_full`] after its post-decode pass (protowire-go's
+    /// `Validator`). It receives the [`DynamicMessage`] as a `&dyn Any`.
+    /// When it reports violations the decode fails with a [`PxfError`] that
+    /// has no position, whose text is the [`protowire_check::Error`]'s, and
+    /// whose [`PxfError::check_error`] holds the report. An error of the
+    /// validator's own is returned the same way, as the error's source. A
+    /// clean report is [`Presence::report`].
+    ///
+    /// It is unrelated to [`Self::skip_validate`], which skips the
+    /// bind-time checks of the schema; this checks the data against a rule
+    /// set of the validator's (`buf.validate` annotations through a
+    /// protovalidate adapter, say). A `@dataset` row bound with
+    /// [`crate::DatasetReader::scan_one`] or [`crate::bind_row`] is
+    /// validated as it is bound.
+    pub validator: Option<&'a dyn protowire_check::Validator>,
     /// Skip the per-call schema reserved-name check (draft §3.13).
     /// Callers that have already validated their descriptors (typically
     /// via [`crate::validate_descriptor`] in a one-time codegen or
@@ -132,6 +148,7 @@ pub fn unmarshal(
     options: UnmarshalOptions<'_>,
 ) -> Result<DynamicMessage, PxfError> {
     let (msg, _) = unmarshal_inner(data, desc, options, false)?;
+    protowire_check::validate(options.validator, &msg).map_err(PxfError::from_validator)?;
     Ok(msg)
 }
 
@@ -149,7 +166,10 @@ pub fn unmarshal_full(
     options: UnmarshalOptions<'_>,
 ) -> Result<(DynamicMessage, Presence), PxfError> {
     let (msg, presence) = unmarshal_inner(data, desc, options, true)?;
-    let presence = presence.expect("presence requested");
+    let mut presence = presence.expect("presence requested");
+    let report =
+        protowire_check::validate(options.validator, &msg).map_err(PxfError::from_validator)?;
+    presence.set_report(report);
     Ok((msg, presence))
 }
 

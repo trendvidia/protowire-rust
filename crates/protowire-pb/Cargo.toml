@@ -13,5 +13,6 @@ readme.workspace = true
 description = "Schema-free protobuf wire codec — Rust port of github.com/trendvidia/protowire/encoding/pb"
 
 [dependencies]
+protowire-check = { workspace = true }
 bytes = { workspace = true }
 thiserror = { workspace = true }

@@ -8,11 +8,12 @@
 # a final human gate.
 #
 # Crates are published in dependency order:
-#   protowire-pb       (no protowire-* deps)
+#   protowire-check    (no deps at all)
+#   protowire-pb       (depends on protowire-check)
 #   protowire-envelope (depends on protowire-pb)
-#   protowire-pxf      (no protowire-* deps)
-#   protowire-sbe      (no protowire-* deps)
-#   protowire          (umbrella — depends on all four)
+#   protowire-pxf      (depends on protowire-check)
+#   protowire-sbe      (depends on protowire-check)
+#   protowire          (umbrella — depends on all five)
 # A short post-publish settle delay before each downstream crate gives
 # the crates.io index time to converge.
 #
@@ -27,7 +28,7 @@
 # no PyPI-style "pending publisher" pre-registration.
 #
 # Migration path once v0.70.0 is on crates.io:
-#   1. For each of the 5 published crates, visit
+#   1. For each of the 6 published crates, visit
 #      `https://crates.io/crates/<name>/settings/trusted-publishers`
 #      and add a publisher with:
 #        - Repository owner: trendvidia
@@ -67,6 +68,14 @@ jobs:
 
       - name: cargo build (sanity check before publish)
         run: cargo build --workspace --release
+
+      - name: Publish protowire-check
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p protowire-check
+
+      - name: Wait for index
+        run: sleep 30
 
       - name: Publish protowire-pb
         env:

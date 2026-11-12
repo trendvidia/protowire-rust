@@ -13,6 +13,12 @@ format changes.
 
 ### Added
 
+- **A validator hook for pxf, pb and sbe decoding** ([#126](https://github.com/trendvidia/protowire-rust/issues/126), protowire-go's `check` package). A caller plugs a rule engine, such as a protovalidate adapter, into decoding, and a decoded message that breaks its rules is refused.
+  - **The new crate:** `protowire-check` holds the `Validator` trait, `Report`, `Violation`, `Error` and `validate`. It has no dependencies; pb, pxf and sbe depend on it, and `protowire::check` re-exports it. `publish.yml` publishes it first.
+  - **Where it runs:** after a successful decode, and after `unmarshal_full`'s post-decode pass. Options: pxf `UnmarshalOptions::validator`, which also covers `@dataset` rows bound by `scan_one` and `bind_row`. pb: the new `UnmarshalOptions { validator, limits }` and its `unmarshal`. sbe: `Codec::with_validator`, which `View` ignores. The validator receives the decoded value as `&dyn Any`.
+  - **How a refusal surfaces:** with the validator's text, `check: port: port out of range (test.rule)`, and no position. The `check::Error` holding the report, or the validator's own error, is the error's `source()`; `PxfError::check_error` and `SbeError::check_error` downcast it. pb returns `Error::Check` or `Error::Validator`. A clean report is `Presence::report`. Unlike protowire-go, a refused `unmarshal_full` does not also return the message and its presence.
+  - **Tests:** protowire-go's `check_test.go`, the validator tests of `encoding/pxf`, `encoding/pb` and `encoding/sbe`, and all of `dataset_scan_options_test.go`. SBE's stream-decoder case waits for the stream decoder (#128).
+  - **Breaking:** `PxfError` and `SbeError` have a private field, so a struct literal of either no longer compiles (use `new`). Two such errors are equal when their positions and texts are, as before. pb's `Error` has two more variants.
 - **`UnmarshalOptions::on_secret_field`** ([#127](https://github.com/trendvidia/protowire-rust/issues/127), protowire-go's `OnSecretField`). A hook that receives each `pxf.Secret` value with its field's dotted path, so the secret never lands in the decoded message.
   - **Where it fires:** for every form a Secret takes. That covers `pw = "x"`, list elements, map values and the block form `pw { value = "x" hint = "h" }`, wherever the Secret sits, `Any` bodies included.
   - **Paths:** they read as protowire-go's do: `db.password`, `servers[0].password`, `by_host["a"]`, `by_id[7]`.

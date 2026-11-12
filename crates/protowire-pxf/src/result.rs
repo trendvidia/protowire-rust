@@ -39,6 +39,7 @@ pub struct Presence {
     directives: Vec<Directive>,
     datasets: Vec<DatasetDirective>,
     protos: Vec<ProtoDirective>,
+    report: Option<protowire_check::Report>,
 }
 
 impl Presence {
@@ -100,6 +101,18 @@ impl Presence {
 
     pub fn protos(&self) -> &[ProtoDirective] {
         &self.protos
+    }
+
+    /// The report of [`crate::UnmarshalOptions::validator`], or `None` when
+    /// no validator ran. A decode returns presence only when the report is
+    /// clean; the report of one with violations is on the error, as
+    /// [`crate::PxfError::check_error`]. protowire-go's `Result.Report`.
+    pub fn report(&self) -> Option<&protowire_check::Report> {
+        self.report.as_ref()
+    }
+
+    pub(crate) fn set_report(&mut self, report: Option<protowire_check::Report>) {
+        self.report = report;
     }
 
     pub fn add_directive(&mut self, d: Directive) {

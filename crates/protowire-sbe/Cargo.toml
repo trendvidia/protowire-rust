@@ -13,6 +13,7 @@ readme.workspace = true
 description = "FIX SBE binary codec — Rust port of github.com/trendvidia/protowire/encoding/sbe"
 
 [dependencies]
+protowire-check = { workspace = true }
 prost = { workspace = true }
 prost-reflect = { workspace = true }
 prost-types = { workspace = true }

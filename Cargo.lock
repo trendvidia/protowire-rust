@@ -334,11 +334,16 @@ version = "1.2.0"
 dependencies = [
  "prost",
  "prost-reflect",
+ "protowire-check",
  "protowire-envelope",
  "protowire-pb",
  "protowire-pxf",
  "protowire-sbe",
 ]
+
+[[package]]
+name = "protowire-check"
+version = "1.2.0"
 
 [[package]]
 name = "protowire-envelope"
@@ -353,6 +358,7 @@ name = "protowire-pb"
 version = "1.2.0"
 dependencies = [
  "bytes",
+ "protowire-check",
  "thiserror",
 ]
 
@@ -365,6 +371,7 @@ dependencies = [
  "prost",
  "prost-reflect",
  "prost-types",
+ "protowire-check",
  "thiserror",
 ]
 
@@ -375,6 +382,7 @@ dependencies = [
  "prost",
  "prost-reflect",
  "prost-types",
+ "protowire-check",
  "thiserror",
 ]
 

@@ -71,6 +71,10 @@ gates merges.
 
 1. **Workspace**: Cargo workspace, sub-crates `protowire-{pb,pxf,sbe,envelope,cli}`,
    plus umbrella `protowire`, plus `dump-envelope` for cross-port check.
+   `protowire-check` (#126) is protowire-go's `check` package: the
+   `Validator` the pb, pxf and sbe decoders take, with no dependencies, so
+   it is published first. A refused decode keeps the codec's error type;
+   the `check::Error` or the validator's own error is its `source()`.
 2. **Protobuf**: `prost-reflect` for descriptor / `DynamicMessage` (Go
    protoreflect / TS protobuf-es analog). `prost` for codegen of WKT
    types and annotation extension messages. Pure `prost` codegen would

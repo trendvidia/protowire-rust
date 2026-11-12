@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for tests/dataset_scan_options.rs: the row type of
+// protowire-go's encoding/pxf/dataset_scan_options_test.go, which binds a
+// @dataset row under each decode option.
+syntax = "proto3";
+package so.v1;
+
+import "pxf/annotations.proto";
+import "pxf/secret.proto";
+
+message Inner { int32 n = 1; }
+message Row {
+  string id = 1;
+  int32 req = 2 [(pxf.required) = true];
+  string dflt = 3 [(pxf.default) = "z"];
+  Inner inner = 4;
+  pxf.Secret pw = 5;
+}
