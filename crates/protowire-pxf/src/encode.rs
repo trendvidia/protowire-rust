@@ -1199,7 +1199,10 @@ fn format_map_key(k: &MapKey) -> String {
             if is_valid_ident(s) {
                 s.clone()
             } else {
-                write_quoted_string(s)
+                // protowire-go's formatMapKey quotes a key with Go's
+                // strconv.Quote, not the byte-wise writer string values
+                // go through.
+                crate::go_strconv::quote(s)
             }
         }
         MapKey::Bool(b) => if *b { "true" } else { "false" }.to_string(),

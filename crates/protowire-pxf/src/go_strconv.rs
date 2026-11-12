@@ -10,11 +10,34 @@
 //! protowire-cpp (`detail/go_strconv`) and protowire-java
 //! (`Base64Literal`) do.
 
+/// Whether Go's `strconv.IsPrint` calls `c` printable: a letter, mark,
+/// number, punctuation or symbol, or the ASCII space. Rust has no Unicode
+/// category table, so this refuses what it can name: control characters,
+/// every space but U+0020, the format characters (Cf) and private use (Co).
+/// It calls an unassigned code point printable where Go does not.
+fn is_print(c: char) -> bool {
+    let n = c as u32;
+    if c == ' ' {
+        return true;
+    }
+    if c.is_control() || c.is_whitespace() {
+        return false;
+    }
+    let format = matches!(n,
+        0xAD | 0x600..=0x605 | 0x61C | 0x6DD | 0x70F | 0x890..=0x891 | 0x8E2
+        | 0x180E | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064
+        | 0x2066..=0x206F | 0xFEFF | 0xFFF9..=0xFFFB | 0x110BD | 0x110CD
+        | 0x13430..=0x1343F | 0x1BCA0..=0x1BCA3 | 0x1D173..=0x1D17A
+        | 0xE0001 | 0xE0020..=0xE007F);
+    let private = matches!(n, 0xE000..=0xF8FF | 0xF0000..=0xFFFFD | 0x100000..=0x10FFFD);
+    let nonchar = n & 0xFFFE == 0xFFFE || (0xFDD0..=0xFDEF).contains(&n);
+    !(format || private || nonchar)
+}
+
 /// Go's `strconv.Quote`: `s` in double quotes, with `\a \b \f \n \r \t \v`,
-/// `\\` and `\"` escaped, another control character as `\x`, `\u` or `\U`,
-/// and every other character as itself. Go keeps a character Unicode calls
-/// printable; this keeps every non-control character, which agrees on every
-/// literal these errors quote in practice.
+/// `\\` and `\"` escaped, any other character Go does not call printable
+/// as `\x`, `\u` or `\U`, and the rest as themselves. protowire-go's
+/// formatter and marshal write every string literal this way.
 pub(crate) fn quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
@@ -29,17 +52,10 @@ pub(crate) fn quote(s: &str) -> String {
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
             '\x0b' => out.push_str("\\v"),
-            c if (c as u32) < 0x20 || c as u32 == 0x7f => {
-                out.push_str(&format!("\\x{:02x}", c as u32))
-            }
-            c if c.is_control() => {
-                if (c as u32) <= 0xffff {
-                    out.push_str(&format!("\\u{:04x}", c as u32))
-                } else {
-                    out.push_str(&format!("\\U{:08x}", c as u32))
-                }
-            }
-            c => out.push(c),
+            c if is_print(c) => out.push(c),
+            c if (c as u32) < 0x80 => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c if (c as u32) <= 0xFFFF => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push_str(&format!("\\U{:08x}", c as u32)),
         }
     }
     out.push('"');

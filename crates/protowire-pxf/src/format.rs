@@ -355,24 +355,10 @@ impl Formatter<'_> {
     }
 }
 
-/// Re-emit only the escape sequences the lexer recognizes. Non-printable
-/// characters that aren't in the list pass through unchanged — a limitation
-/// users should avoid by using a `bytes` field.
+/// A string as protowire-go's formatter writes every string, key, entry
+/// name and type URL: Go's `%q`. The lexer reads each escape it writes.
 pub(crate) fn quote_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for ch in s.chars() {
-        match ch {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            '\r' => out.push_str("\\r"),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
+    crate::go_strconv::quote(s)
 }
 
 /// A quoted map key keeps its quotes unless it is identifier-safe: it
