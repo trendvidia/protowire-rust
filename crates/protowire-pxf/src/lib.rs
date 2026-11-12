@@ -27,6 +27,7 @@ pub mod result;
 mod rfc3339;
 pub mod schema;
 pub mod token;
+mod wkt;
 
 pub use ast::{
     Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, DatasetDirective, DatasetRow,

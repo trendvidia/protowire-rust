@@ -135,6 +135,13 @@ what the reference did with each document of `presence-cases.tsv`. Add a
 document there and run `scripts/gen-presence-oracle.sh`, which needs the
 sibling `../protowire-go`.
 
+`tests/wkt_shape_oracle.rs` does the same for a message named like a
+well-known type, with the right shape or a wrong one (draft -01
+§wkt-shapes). Each case of `wkt-shape-cases.tsv` is compiled by
+protowire-go's own compiler, and the oracle holds its descriptor set, since
+two redefinitions of one type cannot share a `.binpb`. Regenerate with
+`scripts/gen-wkt-shape-oracle.sh`.
+
 ## TS pitfalls that may transfer
 
 - The shared `test.proto` is intentionally NOT modified for port-specific

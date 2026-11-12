@@ -35,6 +35,11 @@ format changes.
 
 ### Fixed
 
+- **PXF checks a well-known type's shape, not only its name** ([#120](https://github.com/trendvidia/protowire-rust/issues/120), protowire-go#224, draft -01 §wkt-shapes). A schema could declare a message named like a well-known type, say `google.protobuf.Timestamp`, without the fields the codec reads. Decode and marshal read those fields by name anyway. A literal such as `pw = 5` on a `pxf.BigInt` with no `abs` was accepted, and the value dropped. A field of the wrong type, or a missing one on some paths, made Rust panic. On protowire-go's cases, 381 of 642 results differed from Go's, and 42 of those were panics.
+  - **Validation:** such a message is now reported at bind time as `ViolationKind::WellKnownShape`, with protowire-go's text, naming the field that is missing, mistyped or of the wrong cardinality. This covers Timestamp, Duration, Any, FieldMask, the nine wrappers, `pxf.Secret`, `pxf.BigInt`, `pxf.Decimal` and `pxf.BigFloat`.
+  - **Without validation:** with `skip_validate`, and on marshal, the message is an ordinary one. It is read and written as a block, has no literal form, and is not used as a `_null` mask.
+  - **Tests:** `tests/wkt_shape_oracle.rs` holds 45 schemas to what protowire-go does with each, in four decode modes and on marshal (`scripts/gen-wkt-shape-oracle.sh`).
+  - **Breaking:** `ViolationKind` has a new variant, `WellKnownShape`.
 - **The SBE XML converter keeps fixed-length arrays that are not text** ([#104](https://github.com/trendvidia/protowire-rust/issues/104), protowire-go#249, draft -01 § Fixed-Length Arrays). Import read `<type primitiveType="uint8" length="16"/>` as one `uint32`, so the field took 1 byte of its 16 and every later field in the block was misplaced. Export wrote a `bytes` field as a `char` array, which imported back as a `string`.
   - **Import:** a `uint8` or `int8` array of length N > 1 now becomes `bytes` with `(sbe.length) = N`. An array of a wider primitive is refused, naming the message or composite and the field.
   - **Export:** a `bytes` field is now a `uint8` array (`bytesN`). A schema with such arrays survives XML → proto → XML → proto.

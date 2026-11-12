@@ -1,0 +1,45 @@
+secret-other	pxf	Secret	string other = 1;	-	"x"
+secret-int	pxf	Secret	int32 value = 1;	-	"x"
+secret-repeated	pxf	Secret	repeated string value = 1;	-	"x"
+secret-hint-int	pxf	Secret	string value = 1; int32 hint = 2;	-	"x"
+secret-fingerprint-bytes	pxf	Secret	string value = 1; bytes fingerprint = 3;	-	"x"
+bigint-other	pxf	BigInt	string other = 1;	-	5
+bigint-abs-int	pxf	BigInt	int32 abs = 1; bool negative = 2;	-	5
+bigint-no-negative	pxf	BigInt	bytes abs = 1;	-	5
+decimal-other	pxf	Decimal	string other = 1;	-	1.5
+decimal-scale-int64	pxf	Decimal	bytes unscaled = 1; int64 scale = 2; bool negative = 3;	-	1.5
+bigfloat-other	pxf	BigFloat	string other = 1;	-	1.5
+bigfloat-no-prec	pxf	BigFloat	bytes mantissa = 1; int32 exponent = 2; bool negative = 4;	-	1.5
+timestamp-other	google.protobuf	Timestamp	string other = 1;	-	2026-01-01T00:00:00Z
+timestamp-int32-seconds	google.protobuf	Timestamp	int32 seconds = 1; int32 nanos = 2;	-	2026-01-01T00:00:00Z
+timestamp-no-nanos	google.protobuf	Timestamp	int64 seconds = 1;	-	2026-01-01T00:00:00Z
+timestamp-repeated-nanos	google.protobuf	Timestamp	int64 seconds = 1; repeated int32 nanos = 2;	-	2026-01-01T00:00:00Z
+duration-other	google.protobuf	Duration	string other = 1;	-	5s
+duration-sint64	google.protobuf	Duration	sint64 seconds = 1; int32 nanos = 2;	-	5s
+stringvalue-other	google.protobuf	StringValue	string other = 1;	-	"x"
+stringvalue-int	google.protobuf	StringValue	int32 value = 1;	-	"x"
+stringvalue-map	google.protobuf	StringValue	map<string, string> value = 1;	-	"x"
+int32value-string	google.protobuf	Int32Value	string value = 1;	-	5
+boolvalue-other	google.protobuf	BoolValue	string other = 1;	-	true
+bytesvalue-string	google.protobuf	BytesValue	string value = 1;	-	b"aGk="
+doublevalue-float	google.protobuf	DoubleValue	float value = 1;	-	1.5
+any-other	google.protobuf	Any	string other = 1;	-	{ @type = "x" }	{ }
+any-no-value	google.protobuf	Any	string type_url = 1;	-	{ @type = "x" }	{ }
+fieldmask-other	google.protobuf	FieldMask	string other = 1;	-	{ }
+fieldmask-singular	google.protobuf	FieldMask	string paths = 1;	-	{ }
+null-mask-other	google.protobuf	FieldMask	string other = 1;	FieldMask _null = 1; optional string s = 2;
+null-mask-singular	google.protobuf	FieldMask	string paths = 1;	FieldMask _null = 1; optional string s = 2;
+null-mask-ok	google.protobuf	FieldMask	repeated string paths = 1;	FieldMask _null = 1; optional string s = 2;
+ok-secret-value	pxf	Secret	string value = 1;	-	"x"
+ok-secret-full	pxf	Secret	string value = 1; string hint = 2; string fingerprint = 3;	-	"x"
+ok-secret-renumbered	pxf	Secret	string value = 7; string note = 8;	-	"x"
+ok-secret-optional	pxf	Secret	optional string value = 1;	-	"x"
+ok-bigint	pxf	BigInt	bytes abs = 1; bool negative = 2;	-	5
+ok-decimal	pxf	Decimal	bytes unscaled = 1; int32 scale = 2; bool negative = 3;	-	1.5
+ok-bigfloat	pxf	BigFloat	bytes mantissa = 1; int32 exponent = 2; uint32 prec = 3; bool negative = 4;	-	1.5
+ok-timestamp	google.protobuf	Timestamp	int64 seconds = 1; int32 nanos = 2;	-	2026-01-01T00:00:00Z
+ok-timestamp-extra	google.protobuf	Timestamp	int64 seconds = 3; int32 nanos = 4; string zone = 5;	-	2026-01-01T00:00:00Z
+ok-duration	google.protobuf	Duration	int64 seconds = 1; int32 nanos = 2;	-	5s
+ok-int32value	google.protobuf	Int32Value	int32 value = 1;	-	5
+ok-stringvalue-optional	google.protobuf	StringValue	optional string value = 1;	-	"x"
+ok-any	google.protobuf	Any	string type_url = 1; bytes value = 2;	-	{ }

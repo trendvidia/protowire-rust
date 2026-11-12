@@ -673,7 +673,7 @@ impl<'a> Decoder<'a> {
         // one, the block is the Any's own fields, type_url and value.
         if in_block
             && matches!(self.current.kind, TokenKind::AtType)
-            && is_any_full_name(desc.full_name())
+            && is_any_full_name(crate::wkt::dispatch_name(&desc))
         {
             return self.decode_any_body(msg);
         }
@@ -1362,7 +1362,9 @@ impl<'a> Decoder<'a> {
     /// to fall through to a regular `{ ... }` block decode.
     fn try_decode_wkt(&mut self, target: &mut DynamicMessage) -> Result<bool, PxfError> {
         let desc = target.descriptor();
-        let full = desc.full_name().to_string();
+        // A message with a well-known type's name and not its shape has no
+        // literal form (draft -01 §wkt-shapes): its name matches none here.
+        let full = crate::wkt::dispatch_name(&desc).to_string();
 
         if full == "google.protobuf.Timestamp" && matches!(self.current.kind, TokenKind::Timestamp)
         {
@@ -1425,13 +1427,10 @@ impl<'a> Decoder<'a> {
         // A pxf.Secret written as a string literal sets its value alone
         // (draft -01 § pxf.Secret): `pw = "x"`, in a field, a list element
         // or a map value. The block form falls through.
-        if full == "pxf.Secret"
-            && is_secret(&desc)
-            && matches!(self.current.kind, TokenKind::String)
-        {
+        if full == "pxf.Secret" && matches!(self.current.kind, TokenKind::String) {
             let value_fd = desc
                 .get_field_by_name("value")
-                .expect("checked by is_secret");
+                .expect("checked by dispatch_name");
             let v = self.consume_scalar(&value_fd)?;
             target.set_field(&value_fd, v);
             return Ok(true);
@@ -1895,12 +1894,12 @@ fn oneof_already_chosen(fd: &FieldDescriptor, presence: &Presence, path_prefix: 
 /// Every message takes a block; the well-known types that also take a
 /// literal say so.
 fn msg_value_forms(desc: &MessageDescriptor) -> &'static str {
-    match desc.full_name() {
+    match crate::wkt::dispatch_name(desc) {
         "google.protobuf.Timestamp" => "a timestamp literal or '{'",
         "google.protobuf.Duration" => "a duration literal or '{'",
         "pxf.BigInt" => "an integer literal or '{'",
         "pxf.Decimal" | "pxf.BigFloat" => "a numeric literal or '{'",
-        _ if is_secret(desc) => "a string literal or '{'",
+        "pxf.Secret" => "a string literal or '{'",
         _ => "'{'",
     }
 }
@@ -2089,8 +2088,8 @@ fn apply_message_default(
         Kind::Message(m) => m,
         _ => unreachable!("apply_message_default on non-message"),
     };
-    let full = inner_desc.full_name().to_string();
-    let mut sub = DynamicMessage::new(inner_desc);
+    let full = crate::wkt::dispatch_name(&inner_desc).to_string();
+    let mut sub = DynamicMessage::new(inner_desc.clone());
 
     if full == "google.protobuf.Timestamp" {
         let (s, n) = crate::rfc3339::parse(def)
@@ -2177,7 +2176,7 @@ fn apply_message_default(
         pos,
         format!(
             "default values not supported for message type {} (field {:?})",
-            full,
+            inner_desc.full_name(),
             fd.name()
         ),
     ))
@@ -2188,14 +2187,7 @@ fn apply_message_default(
 /// `fingerprint`, each optional, singular strings. Another message of that
 /// name is an ordinary message, with no literal form.
 pub(crate) fn is_secret(desc: &MessageDescriptor) -> bool {
-    let string_field = |name: &str, required: bool| match desc.get_field_by_name(name) {
-        Some(fd) => fd.kind() == Kind::String && !fd.is_list() && !fd.is_map(),
-        None => !required,
-    };
-    desc.full_name() == "pxf.Secret"
-        && string_field("value", true)
-        && string_field("hint", false)
-        && string_field("fingerprint", false)
+    crate::wkt::dispatch_name(desc) == "pxf.Secret"
 }
 
 fn is_wrapper_full_name(full: &str) -> bool {

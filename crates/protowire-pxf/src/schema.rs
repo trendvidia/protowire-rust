@@ -72,6 +72,11 @@ pub enum ViolationKind {
     /// oneof undecodable. Also a true `(pxf.required)` beside
     /// `(pxf.default)` on one field, which "Required and Default" forbids.
     RequiredOption,
+    /// A message that has the full name of a well-known type a codec
+    /// handles by name, without the fields that handling reads (draft -01
+    /// §wkt-shapes). `detail` says which. Where validation does not run,
+    /// the codecs read and write it as an ordinary message.
+    WellKnownShape,
 }
 
 impl ViolationKind {
@@ -83,6 +88,7 @@ impl ViolationKind {
             ViolationKind::KeyOption => "keyed field option",
             ViolationKind::DefaultOption => "default field option",
             ViolationKind::RequiredOption => "required field option",
+            ViolationKind::WellKnownShape => "well-known type shape",
         }
     }
 }
@@ -112,8 +118,8 @@ pub struct Violation {
     /// rendered by `Display`, since `detail` says what is wrong).
     pub name: String,
     pub kind: ViolationKind,
-    /// A human-readable explanation; set for the three annotation kinds,
-    /// empty for the reserved-name kinds.
+    /// A human-readable explanation; set for the three annotation kinds and
+    /// [`ViolationKind::WellKnownShape`], empty for the reserved-name kinds.
     pub detail: String,
     /// Which spelling the offending annotation was written in, so `Display`
     /// quotes the form the author wrote.
@@ -144,6 +150,11 @@ impl fmt::Display for Violation {
                 self.element,
                 self.surface.required_name(),
                 self.detail
+            ),
+            ViolationKind::WellKnownShape => write!(
+                f,
+                "{}: message \"{}\" redefines a well-known type: {} (draft -01 §wkt-shapes)",
+                self.file, self.element, self.detail
             ),
             ViolationKind::Field | ViolationKind::Oneof | ViolationKind::EnumValue => write!(
                 f,
@@ -363,6 +374,16 @@ struct OneofDefault {
 }
 
 fn walk_message(path: &str, md: &MessageDescriptor, out: &mut Vec<Violation>) {
+    if let Some(detail) = crate::wkt::shape_problem(md) {
+        out.push(Violation {
+            file: path.to_string(),
+            element: md.full_name().to_string(),
+            name: String::new(),
+            kind: ViolationKind::WellKnownShape,
+            detail,
+            surface: AnnotationSurface::Option,
+        });
+    }
     let mut oneof_defaults: Vec<OneofDefault> = Vec::new();
     for f in md.fields() {
         if is_reserved(f.name()) {
@@ -602,7 +623,7 @@ fn check_default_option(
         return;
     }
     if let Kind::Message(m) = f.kind() {
-        if !is_defaultable_message(m.full_name()) {
+        if !is_defaultable_message(crate::wkt::dispatch_name(&m)) {
             violation(
                 format!(
                     "{name} is not valid on message type {}: no PXF literal denotes it",

@@ -314,7 +314,7 @@ fn unsigned_target(fd: &FieldDescriptor) -> bool {
     match fd.kind() {
         Kind::Uint32 | Kind::Fixed32 | Kind::Uint64 | Kind::Fixed64 => true,
         Kind::Message(m) => matches!(
-            m.full_name(),
+            crate::wkt::dispatch_name(&m),
             "google.protobuf.UInt32Value" | "google.protobuf.UInt64Value"
         ),
         _ => false,

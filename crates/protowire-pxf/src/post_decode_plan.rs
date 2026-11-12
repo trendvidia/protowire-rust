@@ -84,7 +84,9 @@ fn body_of(fd: &FieldDescriptor) -> Option<MessageDescriptor> {
 /// an `Any`: its body took the pass when it was decoded, under the Any's path,
 /// and here it is only bytes. `seen` guards recursive types.
 fn has_default_or_required(desc: &MessageDescriptor, seen: &mut HashSet<String>) -> bool {
-    if is_wkt_skip_recursion(desc.full_name()) || !seen.insert(desc.full_name().to_string()) {
+    if is_wkt_skip_recursion(crate::wkt::dispatch_name(desc))
+        || !seen.insert(desc.full_name().to_string())
+    {
         return false;
     }
     desc.fields().any(|fd| {
