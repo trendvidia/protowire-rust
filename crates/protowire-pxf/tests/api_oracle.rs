@@ -64,10 +64,10 @@ fn unhex(s: &str) -> Vec<u8> {
 }
 
 /// Whether protowire-go's error ends in a standard-library error it wraps
-/// (`strconv`, `encoding/base64`, `time`). This port does not reproduce those
-/// texts. Whether error parity reaches that far is open with the owner
-/// (#144), so until it is decided these rows are compared up to the field the
-/// error names, and their count is pinned.
+/// (`strconv`, `encoding/base64`, `time`). This port reads a default literal
+/// with its own parsers, so it does not have those texts yet (#167). Until it
+/// does, these rows are compared up to the field the error names, and their
+/// count is pinned: #167 removes this.
 fn go_library_tail(want: &str) -> bool {
     ["strconv.", "illegal base64 data", "parsing time "]
         .iter()
