@@ -9,7 +9,7 @@
 //! Contract:
 //!
 //! ```text
-//! check-decode --format <pxf|pxf-pb|pb|pb-render|sbe|envelope> \
+//! check-decode --format <pxf|pxf-pb|pb|pb-render|pb-text|sbe|envelope> \
 //!              --schema <fully.qualified.MessageType> \
 //!              --proto  <path-to-adversarial.proto> \
 //!              --input  <path> \
@@ -24,6 +24,10 @@
 //! `pxf-pb` also writes the message's PB bytes on stdout, map entries in
 //! key order, for the write gate (`protowire/scripts/cross_write_check.sh`,
 //! protowire#509).
+//!
+//! `pb-text` reads PB bytes with the stock runtime and writes the message's
+//! PXF on stdout, for the text gate (`protowire/scripts/cross_text_check.sh`,
+//! protowire#503). `pb-render` does the same and discards the text.
 //!
 //! `--limit NAME=VALUE`, repeatable, lowers a HARDENING limit for this run
 //! so the corpus can prove a 64 MiB cap with a 2 KiB fixture
@@ -600,7 +604,11 @@ fn run(
         "pb" => pb_decode(input, schema, limits),
         "pb-render" => {
             let proto = proto.ok_or_else(|| "--proto required for format=pb-render".to_string())?;
-            pb_render(input, schema, proto)
+            pb_render(input, schema, proto, false)
+        }
+        "pb-text" => {
+            let proto = proto.ok_or_else(|| "--proto required for format=pb-text".to_string())?;
+            pb_render(input, schema, proto, true)
         }
         "envelope" => Err("envelope decode not yet implemented in this reference".to_string()),
         "sbe" => {
@@ -621,7 +629,7 @@ fn run(
 /// default, rather than prost's fixed 100, so a 101-deep row reaches the
 /// producer, which is what must refuse it (protowire#502). It runs on a
 /// thread with a stack big enough for that depth.
-fn pb_render(input: &Path, schema: &str, proto: &Path) -> Result<(), String> {
+fn pb_render(input: &Path, schema: &str, proto: &Path, print: bool) -> Result<(), String> {
     let bytes = std::fs::read(input).map_err(|e| format!("read input: {e}"))?;
     let desc = load_descriptor(proto, schema)?;
     std::thread::Builder::new()
@@ -630,8 +638,17 @@ fn pb_render(input: &Path, schema: &str, proto: &Path) -> Result<(), String> {
             let mut msg = DynamicMessage::new(desc.clone());
             stock_merge(&mut msg, &bytes, 0).map_err(|e| format!("protobuf runtime: {e}"))?;
             let out = protowire_pxf::marshal(&msg, &desc, protowire_pxf::MarshalOptions::default())
-                .map(|_| ())
-                .map_err(|e| format!("pxf: {e}"));
+                .map_err(|e| format!("pxf: {e}"))
+                .and_then(|text| {
+                    if print {
+                        use std::io::Write as _;
+                        std::io::stdout()
+                            .write_all(text.as_bytes())
+                            .map_err(|e| format!("write stdout: {e}"))
+                    } else {
+                        Ok(())
+                    }
+                });
             // Dropping a deep message recurses once per level; the process
             // is about to exit.
             std::mem::forget(msg);
