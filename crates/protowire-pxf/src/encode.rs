@@ -806,6 +806,12 @@ impl<'a> Encoder<'a> {
 pub(crate) fn encode_canonical(msg: &DynamicMessage, out: &mut Vec<u8>) {
     let desc = msg.descriptor();
     let mut fields: Vec<(FieldDescriptor, &Value)> = msg.fields().collect();
+    // `fields()` leaves out a float or double holding -0.0: prost-reflect
+    // takes it for the proto3 default, comparing by `==`
+    // (andrewhickman/prost-reflect#208). protobuf-go writes it (#98).
+    if let Some(dm) = negative_zero_fields(msg) {
+        fields.extend(dm);
+    }
     fields.sort_by_key(|(fd, _)| fd.number());
     for (fd, value) in fields {
         match (value, fd.kind()) {
@@ -847,6 +853,9 @@ pub(crate) fn encode_canonical(msg: &DynamicMessage, out: &mut Vec<u8>) {
             }
             (Value::Message(sub), _) => write_message_bytes(fd.number(), sub, out),
             _ => {
+                if write_negative_zero(&fd, value, out) {
+                    continue;
+                }
                 let mut one = DynamicMessage::new(desc.clone());
                 one.set_field(&fd, value.clone());
                 one.encode_raw(out);
@@ -855,11 +864,62 @@ pub(crate) fn encode_canonical(msg: &DynamicMessage, out: &mut Vec<u8>) {
     }
 }
 
+/// The singular float and double fields of `msg` that hold -0.0, which
+/// `DynamicMessage::fields` leaves out; `None` when there are none.
+fn negative_zero_fields(msg: &DynamicMessage) -> Option<Vec<(FieldDescriptor, &Value)>> {
+    let mut out = Vec::new();
+    for fd in msg.descriptor().fields() {
+        if fd.is_list() || fd.is_map() || msg.has_field(&fd) {
+            continue;
+        }
+        if !matches!(fd.kind(), Kind::Float | Kind::Double) {
+            continue;
+        }
+        // Stored values come back borrowed; an absent one is the default.
+        if let std::borrow::Cow::Borrowed(v) = msg.get_field(&fd) {
+            if is_negative_zero_value(v) {
+                out.push((fd, v));
+            }
+        }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+fn is_negative_zero_value(v: &Value) -> bool {
+    match v {
+        Value::F64(x) => *x == 0.0 && x.is_sign_negative(),
+        Value::F32(x) => *x == 0.0 && x.is_sign_negative(),
+        _ => false,
+    }
+}
+
+/// Writes `value` as field `fd` if it is a float or double -0.0, which
+/// prost-reflect's encoder drops; returns whether it did.
+fn write_negative_zero(fd: &FieldDescriptor, value: &Value, out: &mut Vec<u8>) -> bool {
+    use prost::encoding::{encode_key, WireType};
+    match value {
+        Value::F64(x) if is_negative_zero_value(value) => {
+            encode_key(fd.number(), WireType::SixtyFourBit, out);
+            out.extend_from_slice(&x.to_bits().to_le_bytes());
+            true
+        }
+        Value::F32(x) if is_negative_zero_value(value) => {
+            encode_key(fd.number(), WireType::ThirtyTwoBit, out);
+            out.extend_from_slice(&x.to_bits().to_le_bytes());
+            true
+        }
+        _ => false,
+    }
+}
+
 /// Write `field` of `msg` whether or not its value is the default: proto3
 /// leaves a zero out of a message, but a map entry carries its key and
 /// value either way, as every protobuf encoder writes it.
 fn write_field_bytes(msg: &DynamicMessage, field: &FieldDescriptor, out: &mut Vec<u8>) {
     use prost::encoding::{encode_key, WireType};
+    if write_negative_zero(field, &msg.get_field(field), out) {
+        return;
+    }
     let before = out.len();
     msg.encode_raw(out);
     if out.len() > before {
