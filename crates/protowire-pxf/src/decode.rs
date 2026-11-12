@@ -514,6 +514,7 @@ impl<'a> Decoder<'a> {
                         rows.push(DatasetRow {
                             pos: row_pos,
                             cells,
+                            leading_comments: Vec::new(),
                         });
                     }
                     if let Some(p) = self.presence.as_mut() {

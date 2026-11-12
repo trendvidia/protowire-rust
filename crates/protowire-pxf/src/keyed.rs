@@ -295,6 +295,7 @@ fn canon_assignment(a: &mut crate::ast::Assignment, fd: &FieldDescriptor) -> Opt
                         name_quoted: false,
                         entries: std::mem::take(&mut bv.entries),
                         leading_comments: std::mem::take(&mut a.leading_comments),
+                        trailing_comments: std::mem::take(&mut bv.trailing_comments),
                     };
                     canon_keyed_entries(&mut blk, fd, key_fd);
                     return Some(Entry::Block(blk));
@@ -330,6 +331,7 @@ fn canon_keyed_entries(b: &mut Block, fd: &FieldDescriptor, key_fd: &FieldDescri
                     name_quoted: a.key_quoted,
                     entries: std::mem::take(&mut bv.entries),
                     leading_comments: std::mem::take(&mut a.leading_comments),
+                    trailing_comments: std::mem::take(&mut bv.trailing_comments),
                 };
                 *entry = Entry::Block(blk);
             }
@@ -340,7 +342,9 @@ fn canon_keyed_entries(b: &mut Block, fd: &FieldDescriptor, key_fd: &FieldDescri
         if eb.name_quoted && ident_safe_entry_name(&eb.name) {
             eb.name_quoted = false;
         }
-        drop_key_assignments(&mut eb.entries, &key_name, &eb.name);
+        let mut left = drop_key_assignments(&mut eb.entries, &key_name, &eb.name);
+        left.append(&mut eb.trailing_comments);
+        eb.trailing_comments = left;
         canon_entries(&mut eb.entries, &elem);
     }
 }
@@ -349,8 +353,13 @@ fn canon_keyed_entries(b: &mut Block, fd: &FieldDescriptor, key_fd: &FieldDescri
 /// spelling of an entry's key. Disagreeing or non-string assignments are
 /// kept (the document is invalid; formatting must not silently change its
 /// meaning). Leading comments of a dropped assignment move to the next
-/// surviving entry.
-fn drop_key_assignments(entries: &mut Vec<Entry>, key_name: &str, entry_name: &str) {
+/// surviving entry; when none follows, they are returned, for the block's
+/// trailing comments.
+fn drop_key_assignments(
+    entries: &mut Vec<Entry>,
+    key_name: &str,
+    entry_name: &str,
+) -> Vec<Comment> {
     let mut pending: Vec<Comment> = Vec::new();
     let mut out: Vec<Entry> = Vec::with_capacity(entries.len());
     for mut e in entries.drain(..) {
@@ -378,6 +387,7 @@ fn drop_key_assignments(entries: &mut Vec<Entry>, key_name: &str, entry_name: &s
         out.push(e);
     }
     *entries = out;
+    pending
 }
 
 /// Convert an eligible anonymous list binding of a keyed repeated field to
@@ -426,12 +436,19 @@ fn canon_anonymous_keyed(
         name_quoted: false,
         entries: Vec::with_capacity(lv.elements.len()),
         leading_comments: std::mem::take(&mut a.leading_comments),
+        trailing_comments: Vec::new(),
     };
     for (v, key) in lv.elements.drain(..).zip(keys) {
-        let Value::Block(BlockVal { pos, mut entries }) = v else {
+        let Value::Block(BlockVal {
+            pos,
+            mut entries,
+            trailing_comments,
+        }) = v
+        else {
             unreachable!("eligibility checked every element is a block")
         };
-        drop_key_assignments(&mut entries, key_name, &key);
+        let mut left = drop_key_assignments(&mut entries, key_name, &key);
+        left.extend(trailing_comments);
         canon_entries(&mut entries, &elem);
         blk.entries.push(Entry::Block(Block {
             pos,
@@ -439,6 +456,7 @@ fn canon_anonymous_keyed(
             name: key,
             entries,
             leading_comments: Vec::new(),
+            trailing_comments: left,
         }));
     }
     Some(Entry::Block(blk))

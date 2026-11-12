@@ -39,6 +39,9 @@ pub struct Document {
     pub entries: Vec<Entry>,
     /// Comments before the first entry (or before `@type`).
     pub leading_comments: Vec<Comment>,
+    /// Comments after the document's last entry, directive or row, which
+    /// precede nothing (protowire-go#279).
+    pub trailing_comments: Vec<Comment>,
 }
 
 /// A top-of-document `@<name> *(<prefix-id>) [{ ... }]` entry. Side-
@@ -168,6 +171,9 @@ pub struct ProtoDirective {
 pub struct DatasetRow {
     pub pos: Position,
     pub cells: Vec<Option<Value>>,
+    /// Comments before this row, and those inside it: a row is written on
+    /// one line, so a comment inside it moves before it (protowire-go#279).
+    pub leading_comments: Vec<Comment>,
 }
 
 // ---------------------------------------------------------------------------
@@ -239,6 +245,9 @@ pub struct Block {
     pub name_quoted: bool,
     pub entries: Vec<Entry>,
     pub leading_comments: Vec<Comment>,
+    /// Comments after the block's last entry, before its `}`
+    /// (protowire-go#279).
+    pub trailing_comments: Vec<Comment>,
 }
 
 // ---------------------------------------------------------------------------
@@ -356,6 +365,9 @@ pub struct ListVal {
 pub struct BlockVal {
     pub pos: Position,
     pub entries: Vec<Entry>,
+    /// Comments after the block's last entry, before its `}`
+    /// (protowire-go#279).
+    pub trailing_comments: Vec<Comment>,
 }
 
 /// The type entry `@type = "<type-url>"` that may open a block bound to
@@ -367,4 +379,6 @@ pub struct TypeEntry {
     pub pos: Position,
     pub url: String,
     pub leading_comments: Vec<Comment>,
+    /// Inline comment after the URL on the same source line, if any.
+    pub trailing_comment: String,
 }

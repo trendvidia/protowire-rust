@@ -33,6 +33,14 @@ format changes.
 
 ### Fixed
 
+- **`parse` keeps every comment, and `format` writes it back where it was** ([#119](https://github.com/trendvidia/protowire-rust/issues/119), protowire-go#279). `format` used to lose 13 of protowire-go's 14 comment test documents. A comment was kept only if an entry followed it, so one at the end of a document or block, or around `@dataset` rows, was dropped or moved onto the next entry. A comment after a value on its line was dropped too. They now land as protowire-go's parser files them:
+  - **Same line:** after a value, in `Assignment`, `MapEntry` and `TypeEntry` `trailing_comment`.
+  - **Before a `}`:** in `Block` and `BlockVal` `trailing_comments`.
+  - **At the end of the document:** in `Document::trailing_comments`.
+  - **Before or inside a dataset row:** in `DatasetRow::leading_comments`.
+  - **`canonicalize_keyed`** keeps a block's closing comments when it rewrites the block, and the comments of a key assignment it drops.
+  - **Breaking:** `Document`, `Block`, `BlockVal`, `DatasetRow` and `TypeEntry` have new public fields, so code that builds them with struct literals must set them.
+  - **Tests:** `tests/format_comments.rs` ports Go's `format_comments_test.go` (all but its `DatasetReader` case, which #117 covers) and holds six more same-line documents to Go's output.
 - **Iterating a `DatasetReader` ends after a row error** ([#132](https://github.com/trendvidia/protowire-rust/issues/132)). The iterator forwarded to `next_row`, which returns a row error again on every call, as protowire-go's `Next` does. So `for row in reader` yielded the same error forever, and a loop that logged it and carried on never ended. The iterator now yields the error once and ends. `next_row` is unchanged, and its doc no longer says it returns `None` after an error.
 - **A timestamp literal is read as protowire-go reads it** ([#118](https://github.com/trendvidia/protowire-rust/issues/118)). It ends at `)`, as protowire-go's lexer ends one, so a timestamp can be the last cell of a `@dataset` row. `(1, 2026-01-01T00:00:00Z)` used to fail with `invalid timestamp: 2026-01-01T00:00:00Z)`. Which literals are valid, and the value each reads as, now follow Go's `time.Parse` for RFC 3339, which protowire-go uses.
   - **Now refused:** lowercase `t` or `z`, and second 60.
