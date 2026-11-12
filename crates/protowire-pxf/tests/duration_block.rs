@@ -120,7 +120,8 @@ fn past_the_limit_in_a_list_and_a_map() {
 }
 
 /// A longer literal is refused, as protowire-go's `time.ParseDuration`
-/// refuses it, and an enormous one does not overflow.
+/// refuses it, and an enormous one does not overflow. Go's lexer refuses
+/// each, so the text is its `invalid duration` (#153).
 #[test]
 fn a_literal_past_the_limit_is_refused() {
     let d = holder();
@@ -144,6 +145,6 @@ fn a_literal_past_the_limit_is_refused() {
         "1h99999999999999999999999999999999999ns",
     ] {
         let e = read(lit).expect_err(lit).to_string();
-        assert!(e.contains("out of range"), "{lit}: {e}");
+        assert_eq!(e, format!("1:13: invalid duration: {lit}"));
     }
 }
