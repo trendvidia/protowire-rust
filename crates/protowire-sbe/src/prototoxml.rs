@@ -10,8 +10,8 @@ use std::fmt::Write as _;
 use prost_reflect::{EnumDescriptor, FieldDescriptor, FileDescriptor, Kind, MessageDescriptor};
 
 use crate::annotations::{
-    field_string, field_uint32, file_uint32, message_uint32, EXT_ENCODING, EXT_LENGTH,
-    EXT_SCHEMA_ID, EXT_TEMPLATE_ID, EXT_VERSION,
+    field_string, field_uint32, file_uint32, message_uint32, stale_file_error, EXT_ENCODING,
+    EXT_LENGTH, EXT_SCHEMA_ID, EXT_TEMPLATE_ID, EXT_VERSION,
 };
 use crate::errors::SbeError;
 use crate::xmlschema::{snake_to_camel, strip_enum_prefix};
@@ -36,7 +36,9 @@ fn bytes_type_name(length: u32) -> String {
 
 pub fn proto_to_xml(file: &FileDescriptor) -> Result<String, SbeError> {
     let schema_id = file_uint32(file, EXT_SCHEMA_ID).ok_or_else(|| {
-        SbeError::new(format!("sbe: file {} missing (sbe.schema_id)", file.name()))
+        stale_file_error(file).unwrap_or_else(|| {
+            SbeError::new(format!("sbe: file {} missing (sbe.schema_id)", file.name()))
+        })
     })?;
     let version = file_uint32(file, EXT_VERSION).unwrap_or(0);
 
