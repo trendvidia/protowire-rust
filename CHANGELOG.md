@@ -13,6 +13,7 @@ format changes.
 
 ### Added
 
+- **`format_value` and `append_value`** ([#127](https://github.com/trendvidia/protowire-rust/issues/127), protowire-go's `FormatValue`, `AppendValue`). They give one value's PXF source text, as `format` writes it inside a document. A tool that splices a rendered value into a buffer no longer has to render it itself. `tests/api_oracle.rs` holds them to protowire-go on 10 documents.
 - **The pxf API for layered configuration** ([#127](https://github.com/trendvidia/protowire-rust/issues/127), protowire-go's `SkipPostDecode`, `ApplyDefault`, `Result.PresentFields`). A layered-config caller merges several documents, and the defaults and required checks belong to the merged result, not to one layer. These pieces let it run them there:
   - `UnmarshalOptions::skip_post_decode` decodes without applying `(pxf.default)` or checking `(pxf.required)`. This holds at the root, in list elements and map values, and in `Any` bodies. Presence and the root's `_null` mask are still recorded.
   - `Presence::present_fields` gives every path the document set, to a value or to `null`.
@@ -41,6 +42,7 @@ format changes.
 
 ### Fixed
 
+- **Strings are quoted as protowire-go quotes them** ([#127](https://github.com/trendvidia/protowire-rust/issues/127)). protowire-go's formatter writes every string, key, entry name and type URL with Go's `%q`, and its marshal quotes a map key that is not an identifier with `strconv.Quote`. This port escaped only `\\`, `"`, `\n`, `\r` and `\t` in the formatter, and used the byte-wise value writer for map keys. So `\a`, `\b`, `\f`, `\v`, DEL, a no-break space or a zero-width space came out differently. Both now follow `strconv.Quote`. Marshal's string values are unchanged; they already match protowire-go's own writer.
 - **A default literal and a bytes literal are read by protowire-go's parsers** ([#167](https://github.com/trendvidia/protowire-rust/issues/167)). protowire-go reads a `(pxf.default)`, and an `apply_default` literal, with Go's `strconv`, `encoding/base64` and `time`, and a document's `b"…"` with the same base64 decoder. Its errors wrap theirs. This port used readers of its own, which accepted different literals, and stopped its errors at the field name. The new `go_strconv` module ports those parsers, following protowire-cpp's `detail/go_strconv` and protowire-java's `Base64Literal`.
   - **Accepted now:**
     - a bytes literal in the URL-safe alphabet (`b"aGk-"`), in a document or a default;

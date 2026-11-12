@@ -132,15 +132,30 @@ fn top_directives(doc: &Document) -> Vec<TopDirective<'_>> {
     all.into_iter().map(|(_, d)| d).collect()
 }
 
-/// One value as PXF text, for a `@dataset` cell bound as the body entry
-/// `c = <value>` would be.
-pub(crate) fn format_value_text(val: &Value) -> String {
+/// `val` as its PXF source literal: the text [`format()`] writes for that
+/// value inside a document. protowire-go's `FormatValue`. A tool that
+/// splices a rendered value into a buffer calls it rather than rendering
+/// string quoting, numbers, base64, enum identifiers, durations and
+/// timestamps itself.
+///
+/// A list or block value spans several lines, indented two spaces, with no
+/// trailing newline. Its first line carries no indent, so a caller splicing
+/// it into an indented context indents the other lines itself.
+pub fn format_value(val: &Value) -> String {
+    let mut out = String::new();
+    append_value(&mut out, val);
+    out
+}
+
+/// Appends [`format_value`]'s text for `val` to `dst`: protowire-go's
+/// `AppendValue`, for a caller building a buffer.
+pub fn append_value(dst: &mut String, val: &Value) {
     let mut f = Formatter {
-        out: String::new(),
+        out: std::mem::take(dst),
         indent: "  ",
     };
     f.format_value(val, 0);
-    f.out
+    *dst = f.out;
 }
 
 struct Formatter<'a> {
@@ -355,24 +370,10 @@ impl Formatter<'_> {
     }
 }
 
-/// Re-emit only the escape sequences the lexer recognizes. Non-printable
-/// characters that aren't in the list pass through unchanged — a limitation
-/// users should avoid by using a `bytes` field.
+/// A string as protowire-go's formatter writes every string, key, entry
+/// name and type URL: Go's `%q`. The lexer reads each escape it writes.
 pub(crate) fn quote_string(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for ch in s.chars() {
-        match ch {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\t' => out.push_str("\\t"),
-            '\r' => out.push_str("\\r"),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
+    crate::go_strconv::quote(s)
 }
 
 /// A quoted map key keeps its quotes unless it is identifier-safe: it
@@ -674,7 +675,7 @@ mod tests {
                     .iter()
                     .map(|c| match c {
                         None => "<absent>".to_string(),
-                        Some(v) => format_value_text(v),
+                        Some(v) => format_value(v),
                     })
                     .collect();
                 out.push(format!("{cells:?}"));
