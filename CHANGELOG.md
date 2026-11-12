@@ -33,6 +33,11 @@ format changes.
 
 ### Fixed
 
+- **A duration literal is read as protowire-go reads it** ([#153](https://github.com/trendvidia/protowire-rust/issues/153)). protowire-go validates and values a duration with Go's `time.ParseDuration`, and `src/go_duration.rs` is now a line-for-line port of it, used by the lexer and the decoder.
+  - **Now accepted:** a segment's fraction with no digit before it (`1h.5m`, `5m.5s`, `2.5h.25m`). It was refused as `invalid duration`.
+  - **Long fractions:** a long fraction of an hour rounds as Go's float64 arithmetic rounds it. `0.333333333333333333333h` is 1200 s, where it was 1199.999999999 s.
+  - **Overflow:** a literal past the signed 64-bit count of nanoseconds is refused by the lexer, as `invalid duration: <literal>`, as Go refuses it. It was the decoder's `out of range` error.
+  - **Tests:** `tests/durations.rs` holds 38 literals to what protowire-go v1.17.0 gave for each, its bytes or its error. The `1h.5m` stream parity case is unpinned.
 - **`DatasetReader` reads as `parse` does, however the input is cut into reads** ([#117](https://github.com/trendvidia/protowire-rust/issues/117)). It found rows with its own byte scanner, so errors were its own: `1:1` or no position for bad rows on lines 2 to 4, and its own wording. One-byte reads refused a `//` comment between rows. A row that never closed took time growing with the square of its size (1.21 s for 4 MiB). It now finds rows with the lexer `parse` uses, resuming where the last read left it, and parses each row with `parse`'s parser at its document position, as protowire-go's reader does.
   - **Every row and error is `parse`'s.** The reader yields exactly `parse`'s rows, with their positions and their comments in `DatasetRow::leading_comments`, or fails with exactly `parse`'s error. That holds for whole reads, one-byte reads, and a read split at every offset.
   - **Linear time.** A header or row costs time linear in its size however many reads it arrives in. A complete row, or an error the bytes read already decide, is returned without waiting for more input.

@@ -16,6 +16,7 @@ pub mod decode;
 pub mod encode;
 pub mod errors;
 pub mod format;
+mod go_duration;
 mod go_print;
 pub mod keyed;
 pub mod lexer;

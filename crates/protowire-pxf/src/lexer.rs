@@ -681,7 +681,7 @@ impl<'a> Lexer<'a> {
     /// (draft §3.3): one of the ASCII unit letters, or the two-byte UTF-8
     /// encoding of "µ" (U+00B5 MICRO SIGN, %xC2.B5) that opens micro-us.
     /// Only the first byte(s) are inspected; `lex_duration` consumes the
-    /// candidate and `is_valid_go_duration` decides whether it was a unit at
+    /// candidate and `go_duration::parse` (Go's `time.ParseDuration`) decides whether it was a unit at
     /// all. Does not advance.
     fn at_duration_unit(&mut self) -> bool {
         if self.pos >= self.input.len() {
@@ -764,7 +764,7 @@ impl<'a> Lexer<'a> {
 
     /// Consumes a duration literal — one or more segments of digits, an
     /// optional "." fraction, and a unit (§3.3) — starting from `start`, and
-    /// validates the whole with `is_valid_go_duration`. The scan is
+    /// validates the whole with `go_duration::parse` (Go's `time.ParseDuration`). The scan is
     /// deliberately loose (any run of digits, unit letters, "." followed by
     /// a digit, and "µ") so that a malformed literal such as "5min" is
     /// reported as one invalid duration rather than tokenised as a duration
@@ -786,7 +786,7 @@ impl<'a> Lexer<'a> {
             }
         }
         let raw = slice_to_string(&self.input[start..self.pos]);
-        if !is_valid_go_duration(&raw) {
+        if crate::go_duration::parse(&raw).is_err() {
             return Token::new(
                 TokenKind::Illegal,
                 format!("invalid duration: {}", raw),
@@ -931,64 +931,6 @@ fn is_valid_base64(s: &str) -> bool {
         return bytes.len() % 4 != 1;
     }
     bytes.len() % 4 == 0
-}
-
-/// Validate a Go-style duration string: optional leading sign, then one or
-/// more `<digits>[.<digits>]<unit>` groups where unit ∈ {ns, us, µs, ms, s,
-/// m, h}. `µs` is U+00B5 MICRO SIGN only (draft §3.3 micro-us = %xC2.B5
-/// %x73); U+03BC GREEK SMALL LETTER MU is not in the grammar even though
-/// Go's `time.ParseDuration` accepts it, and the lexer never lets it in.
-fn is_valid_go_duration(s: &str) -> bool {
-    let bytes = s.as_bytes();
-    if bytes.is_empty() {
-        return false;
-    }
-    let mut i = 0;
-    if bytes[0] == b'-' || bytes[0] == b'+' {
-        i += 1;
-    }
-    if i >= bytes.len() {
-        return false;
-    }
-    let mut groups = 0;
-    while i < bytes.len() {
-        let digit_start = i;
-        while i < bytes.len() && bytes[i].is_ascii_digit() {
-            i += 1;
-        }
-        if i == digit_start {
-            return false;
-        }
-        if i < bytes.len() && bytes[i] == b'.' {
-            i += 1;
-            let frac_start = i;
-            while i < bytes.len() && bytes[i].is_ascii_digit() {
-                i += 1;
-            }
-            if i == frac_start {
-                return false;
-            }
-        }
-        if i >= bytes.len() {
-            return false;
-        }
-        let next = if i + 1 < bytes.len() {
-            Some(bytes[i + 1])
-        } else {
-            None
-        };
-        let unit_len = match (bytes[i], next) {
-            (b'n', Some(b's')) => 2,
-            (b'u', Some(b's')) => 2,
-            (b'm', Some(b's')) => 2,
-            (0xC2, Some(0xB5)) if bytes.get(i + 2) == Some(&b's') => 3,
-            (b's', _) | (b'm', _) | (b'h', _) => 1,
-            _ => return false,
-        };
-        i += unit_len;
-        groups += 1;
-    }
-    groups > 0
 }
 
 /// A character as Go's `%q` (`strconv.QuoteRune`) writes it: in single

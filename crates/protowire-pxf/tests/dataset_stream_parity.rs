@@ -105,9 +105,7 @@ fn agrees_with_parse() {
         ("list cell", h("([1], 2)\n"), false),
         ("block and map cells", "@dataset T (a, b)\n({ name = \"x)\" n = [1, 2] }, { \"k,\": \"v)\" })\n(, [])\n".into(), false),
         ("multi-line block cell", "@dataset T (a, b)\n({\n  name = \"x\"  # c)\n}, 1)\n".into(), false),
-        // protowire-go accepts this; Rust's parse refuses it (#153). The
-        // stream must still agree with parse.
-        ("duration with a fraction after a unit", h("(1h.5m, 1)\n"), true),
+        ("duration with a fraction after a unit", h("(1h.5m, 1)\n"), false),
         ("micro sign duration", h("(1\u{b5}s, 1)\n"), false),
         ("-inf", h("(-inf, 1)\n"), false),
         ("timestamp ended by a comment", h("(2026-10-23T00:00:00Z// c\n, 1)\n"), false),

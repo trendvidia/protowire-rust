@@ -2337,101 +2337,13 @@ fn decode_map_key(
 /// Parse a Go-style duration (`1h30m`, `-2.5s`, `100ms`, …) into proto
 /// Duration `seconds` + `nanos`. Both fields share the overall sign per the
 /// proto Duration invariant. Lexer has pre-validated the syntax.
-/// The largest magnitude a duration literal reaches, 2^63 nanoseconds: the
-/// negative bound. The positive one, 2^63 - 1, is checked once the sign is
-/// known.
-const DURATION_LITERAL_MAX_ABS: i128 = 1 << 63;
-
-const OUT_OF_RANGE: &str =
-    "out of range: a duration literal holds a signed 64-bit count of nanoseconds, about 292 years";
-
+/// A duration literal's seconds and nanoseconds, from Go's
+/// `time.ParseDuration` (`go_duration::parse`), split as protowire-go's
+/// `setDurationFields` splits them: both truncated toward zero, with the
+/// literal's sign.
 fn parse_go_duration(s: &str) -> Result<(i64, i32), String> {
-    if s == "0" {
-        return Ok((0, 0));
-    }
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    let mut neg = false;
-    if !bytes.is_empty() && (bytes[0] == b'-' || bytes[0] == b'+') {
-        neg = bytes[0] == b'-';
-        i = 1;
-    }
-    let mut total_nanos: i128 = 0;
-    while i < bytes.len() {
-        let int_start = i;
-        while i < bytes.len() && bytes[i].is_ascii_digit() {
-            i += 1;
-        }
-        if i == int_start {
-            return Err("missing digits".into());
-        }
-        let int_part: i128 = std::str::from_utf8(&bytes[int_start..i])
-            .map_err(|_| "invalid utf-8")?
-            .parse()
-            .map_err(|_| "int overflow")?;
-        let mut frac_int: i128 = 0;
-        let mut frac_len = 0usize;
-        if i < bytes.len() && bytes[i] == b'.' {
-            i += 1;
-            let frac_start = i;
-            while i < bytes.len() && bytes[i].is_ascii_digit() {
-                i += 1;
-            }
-            if i == frac_start {
-                return Err("missing fractional digits".into());
-            }
-            frac_int = std::str::from_utf8(&bytes[frac_start..i])
-                .map_err(|_| "invalid utf-8")?
-                .parse()
-                .map_err(|_| "frac overflow")?;
-            frac_len = i - frac_start;
-        }
-        if i >= bytes.len() {
-            return Err("missing unit".into());
-        }
-        let next = bytes.get(i + 1).copied();
-        let (unit_nanos, unit_len): (i128, usize) = match (bytes[i], next) {
-            (b'n', Some(b's')) => (1, 2),
-            (b'u', Some(b's')) => (1_000, 2),
-            // "µs": U+00B5 MICRO SIGN (C2 B5) then 's' (draft §3.3 micro-us).
-            (0xC2, Some(0xB5)) if bytes.get(i + 2) == Some(&b's') => (1_000, 3),
-            (b'm', Some(b's')) => (1_000_000, 2),
-            (b's', _) => (1_000_000_000, 1),
-            (b'm', _) => (60_000_000_000, 1),
-            (b'h', _) => (3_600_000_000_000, 1),
-            _ => return Err("unknown unit".into()),
-        };
-        // A literal holds a signed 64-bit count of nanoseconds (draft -01
-        // § Durations), so a total past 2^63 is out of range whatever
-        // follows; checked, since the digits are the document's.
-        total_nanos = int_part
-            .checked_mul(unit_nanos)
-            .and_then(|n| n.checked_add(total_nanos))
-            .filter(|&n| n <= DURATION_LITERAL_MAX_ABS)
-            .ok_or(OUT_OF_RANGE)?;
-        if frac_len > 0 {
-            let frac = 10i128
-                .checked_pow(frac_len as u32)
-                .and_then(|denom| frac_int.checked_mul(unit_nanos).map(|n| n / denom))
-                .ok_or(OUT_OF_RANGE)?;
-            total_nanos = total_nanos
-                .checked_add(frac)
-                .filter(|&n| n <= DURATION_LITERAL_MAX_ABS)
-                .ok_or(OUT_OF_RANGE)?;
-        }
-        i += unit_len;
-    }
-    if neg {
-        total_nanos = -total_nanos;
-    }
-    if total_nanos > i128::from(i64::MAX) {
-        return Err(OUT_OF_RANGE.into());
-    }
-    let sign: i128 = if total_nanos < 0 { -1 } else { 1 };
-    let abs = total_nanos * sign;
-    let seconds = (abs / 1_000_000_000) * sign;
-    let nanos = (abs % 1_000_000_000) * sign;
-    Ok((seconds as i64, nanos as i32))
+    let d = crate::go_duration::parse(s)?;
+    Ok((d / 1_000_000_000, (d % 1_000_000_000) as i32))
 }
 
 /// Decode a base64 string, accepting both standard (padded) and raw (unpadded)
