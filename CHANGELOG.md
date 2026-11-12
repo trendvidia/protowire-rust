@@ -35,6 +35,11 @@ format changes.
 
 ### Fixed
 
+- **The SBE XML converter keeps fixed-length arrays that are not text** ([#104](https://github.com/trendvidia/protowire-rust/issues/104), protowire-go#249, draft -01 § Fixed-Length Arrays). Import read `<type primitiveType="uint8" length="16"/>` as one `uint32`, so the field took 1 byte of its 16 and every later field in the block was misplaced. Export wrote a `bytes` field as a `char` array, which imported back as a `string`.
+  - **Import:** a `uint8` or `int8` array of length N > 1 now becomes `bytes` with `(sbe.length) = N`. An array of a wider primitive is refused, naming the message or composite and the field.
+  - **Export:** a `bytes` field is now a `uint8` array (`bytesN`). A schema with such arrays survives XML → proto → XML → proto.
+  - **Tests:** `tests/convert_as_go.rs` holds the output to protowire-go's converter byte for byte (`scripts/gen-sbe-convert.sh`).
+  - **Breaking:** `xml_to_proto` returns `SbeError`; a parse error keeps the parser's text.
 - **SBE binds a proto3 `optional` field** ([#160](https://github.com/trendvidia/protowire-rust/issues/160)). The codec refused it as a oneof (`sbe: oneof field M.x not supported`), because proto3 puts an `optional` field in a synthetic oneof of its own. protowire-go skips synthetic oneofs, and so does this port now, at the root and in a composite. A real oneof is still refused.
 
 - **SBE refuses a value, size or header field the wire cannot hold** ([#122](https://github.com/trendvidia/protowire-rust/issues/122), protowire-go#250, protowire-go#252). These used to be cut to their low bits with no error.

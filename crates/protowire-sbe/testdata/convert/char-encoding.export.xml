@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sbe:messageSchema xmlns:sbe="http://fixprotocol.io/2016/sbe"
+                   package="enc.v1"
+                   id="2"
+                   version="0"
+                   byteOrder="littleEndian">
+    <types>
+        <composite name="messageHeader">
+            <type name="blockLength" primitiveType="uint16"/>
+            <type name="templateId" primitiveType="uint16"/>
+            <type name="schemaId" primitiveType="uint16"/>
+            <type name="version" primitiveType="uint16"/>
+        </composite>
+        <composite name="groupSizeEncoding">
+            <type name="blockLength" primitiveType="uint16"/>
+            <type name="numInGroup" primitiveType="uint16"/>
+        </composite>
+        <type name="str4" primitiveType="char" length="4"/>
+        <type name="bytes4" primitiveType="uint8" length="4"/>
+        <composite name="Pair">
+            <type name="code" primitiveType="uint8" length="2"/>
+            <type name="tag" primitiveType="char" length="2"/>
+        </composite>
+    </types>
+    <sbe:message name="Text" id="1">
+        <field name="plain" id="1" type="str4"/>
+        <field name="ascii" id="2" type="str4"/>
+        <field name="usAscii" id="3" type="str4"/>
+        <field name="utf8" id="4" type="str4"/>
+        <field name="latin1" id="5" type="bytes4"/>
+        <field name="pair" id="6" type="Pair"/>
+    </sbe:message>
+</sbe:messageSchema>

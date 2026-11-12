@@ -1,0 +1,1 @@
+ERR sbe: message "Record": field "uuid": type "Uuid" is an array of 2 uint64, which no proto field represents

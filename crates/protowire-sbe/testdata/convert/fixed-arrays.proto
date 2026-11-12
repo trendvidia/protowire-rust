@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package arr.v1;
+
+import "sbe/annotations.proto";
+
+option (sbe.schema_id) = 3;
+option (sbe.version) = 0;
+
+message Key {
+  bytes raw = 1 [(sbe.length) = 6];
+  uint32 seq = 2;
+}
+
+message Record {
+  option (sbe.template_id) = 1;
+  // SBE characterEncoding "ISO-8859-1" is not UTF-8 compatible, so this field is bytes.
+  bytes name = 1 [(sbe.length) = 4];
+  bytes uuid = 2 [(sbe.length) = 16];
+  bytes signed = 3 [(sbe.length) = 3];
+  Key key = 4;
+  uint32 tail = 5;
+}
+

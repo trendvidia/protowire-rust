@@ -1,0 +1,1 @@
+ERR sbe: composite "Box": type "sides" is an array of 2 uint16, which no proto field represents
