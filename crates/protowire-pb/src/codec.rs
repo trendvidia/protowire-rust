@@ -44,6 +44,16 @@ pub trait Message: Sized + Default {
         wire_type: WireType,
         r: &mut Reader<'_>,
     ) -> Result<()>;
+
+    /// Called once after the message's last field is merged, with the
+    /// reader's limits, by [`unmarshal_with`] and [`read_message`]. A
+    /// message whose fields constrain one another checks them here, as a
+    /// [`crate::big::BigFloat`] narrows its mantissa to its prec. The
+    /// default does nothing.
+    fn finish(&mut self, limits: &Limits) -> Result<()> {
+        let _ = limits;
+        Ok(())
+    }
 }
 
 /// The options of one encode.
@@ -101,6 +111,7 @@ pub fn unmarshal_with<M: Message>(data: &[u8], limits: Limits) -> Result<M> {
         let (num, wt) = r.tag()?;
         msg.merge_field(num, wt, &mut r)?;
     }
+    msg.finish(&limits)?;
     Ok(msg)
 }
 
@@ -266,6 +277,7 @@ pub fn read_message<M: Message>(r: &mut Reader<'_>) -> Result<M> {
         if r.pos != end {
             return Err(Error::Overrun { pos: r.pos, end });
         }
+        msg.finish(&r.limits)?;
         Ok(msg)
     })();
     r.depth -= 1;

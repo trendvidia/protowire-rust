@@ -11,37 +11,22 @@
 //! `testdata/values.tsv` is a byte copy of the spec repo's
 //! `testdata/values/values.tsv` (at aee541c); CI compares the two.
 //!
-//! The rows for `*big.Int`, `*big.Rat` and `*big.Float` fields have no twin:
-//! `protowire-pb` has no binding for a big number, only the PXF crate's
-//! text forms. They are listed in [`NO_STRUCT_BINDING`], and a row that is
-//! in neither list fails, so a new row is not skipped silently.
+//! A `*big.Int`, `*big.Rat` or `*big.Float` field's twin holds a
+//! [`BigInt`], [`Decimal`] or [`BigFloat`] (#142): a pointer field is an
+//! `Option`, written with `write_big_int` and its kin; a list element or a
+//! map value is written with `write_message` / `write_map_entry`, a null
+//! one as the type's default, which is the empty message Go writes. Every
+//! row has a twin, and a row without one fails.
 
 use std::collections::BTreeMap;
 
 use protowire_pb::wire::{Reader, Result, WireType, Writer};
-use protowire_pb::{marshal, write_map_entry, write_message, Message};
+use protowire_pb::{
+    marshal, write_big_float, write_big_int, write_decimal, write_map_entry, write_message,
+    BigFloat, BigInt, Decimal, Message,
+};
 
 const TABLE: &str = include_str!("../testdata/values.tsv");
-
-/// Rows whose struct holds a big number, which this port's struct API
-/// cannot hold.
-const NO_STRUCT_BINDING: [&str; 15] = [
-    "Decimal",
-    "DecimalOne",
-    "DecimalFiveE2",
-    "DecimalFifteen",
-    "DecimalZero",
-    "DecimalNegative",
-    "Decimals",
-    "BigNumsNull",
-    "BigNumsZero",
-    "BigNumsNegative",
-    "BigIntsZeroElement",
-    "BigIntsNullElement",
-    "DecimalsNullElement",
-    "BigFloatMapNullValue",
-    "BigFloatPrec64",
-];
 
 /// A `Message` that is only ever written here.
 macro_rules! write_only {
@@ -243,6 +228,109 @@ write_only!(Zeros, |s, w| {
     }
 });
 
+// ---- big numbers (#142) ----
+
+/// The big-endian magnitude of `v`, with no leading zero byte.
+fn be(v: u64) -> Vec<u8> {
+    let b = v.to_be_bytes();
+    let first = b.iter().position(|x| *x != 0).unwrap_or(b.len());
+    b[first..].to_vec()
+}
+
+fn dec(unscaled: u64, scale: i32, negative: bool) -> Decimal {
+    Decimal {
+        unscaled: be(unscaled),
+        scale,
+        negative,
+    }
+}
+
+fn int(abs: u64, negative: bool) -> BigInt {
+    BigInt {
+        abs: be(abs),
+        negative,
+    }
+}
+
+/// `v` as a BigFloat at `prec` bits: mantissa × 2^exponent, not yet
+/// normalised, so the writer's rounding and widening are what is tested.
+fn float(mantissa: u64, exponent: i32, prec: u32, negative: bool) -> BigFloat {
+    BigFloat {
+        mantissa: be(mantissa),
+        exponent,
+        prec,
+        negative,
+    }
+}
+
+#[derive(Default)]
+struct VDecimal {
+    d: Option<Decimal>,
+}
+write_only!(VDecimal, |s, w| {
+    if let Some(d) = &s.d {
+        write_decimal(w, 1, d);
+    }
+});
+
+#[derive(Default)]
+struct VDecimals {
+    ds: Vec<Option<Decimal>>,
+}
+write_only!(VDecimals, |s, w| {
+    for d in &s.ds {
+        write_message(w, 1, &d.clone().unwrap_or_default());
+    }
+});
+
+#[derive(Default)]
+struct VBigNums {
+    i: Option<BigInt>,
+    d: Option<Decimal>,
+    f: Option<BigFloat>,
+}
+write_only!(VBigNums, |s, w| {
+    if let Some(i) = &s.i {
+        write_big_int(w, 1, i);
+    }
+    if let Some(d) = &s.d {
+        write_decimal(w, 2, d);
+    }
+    if let Some(f) = &s.f {
+        write_big_float(w, 3, f);
+    }
+});
+
+#[derive(Default)]
+struct VBigInts {
+    is: Vec<Option<BigInt>>,
+}
+write_only!(VBigInts, |s, w| {
+    for i in &s.is {
+        write_message(w, 1, &i.clone().unwrap_or_default());
+    }
+});
+
+#[derive(Default)]
+struct VBigFloatMap {
+    m: BTreeMap<String, Option<BigFloat>>,
+}
+write_only!(VBigFloatMap, |s, w| {
+    for (k, v) in &s.m {
+        write_map_entry(w, 1, k.as_str(), &v.clone().unwrap_or_default());
+    }
+});
+
+#[derive(Default)]
+struct VBigFloat {
+    f: Option<BigFloat>,
+}
+write_only!(VBigFloat, |s, w| {
+    if let Some(f) = &s.f {
+        write_big_float(w, 1, f);
+    }
+});
+
 fn map<K: Ord, V>(entries: impl IntoIterator<Item = (K, V)>) -> BTreeMap<K, V> {
     entries.into_iter().collect()
 }
@@ -284,6 +372,59 @@ fn twin(case: &str) -> Option<Vec<u8>> {
             ss: vec![String::new(), "s".into()],
         }),
         "Zeros" => marshal(&Zeros::default()),
+        // Each Decimal is given at the scale its value column spells, so the
+        // writer's reduction to the smallest scale is what is tested.
+        "Decimal" => marshal(&VDecimal {
+            d: Some(dec(31415, 4, false)),
+        }),
+        "DecimalOne" => marshal(&VDecimal {
+            d: Some(dec(100, 2, false)),
+        }),
+        "DecimalFiveE2" => marshal(&VDecimal {
+            d: Some(dec(5, -2, false)),
+        }),
+        "DecimalFifteen" => marshal(&VDecimal {
+            d: Some(dec(1500, 2, false)),
+        }),
+        "DecimalZero" => marshal(&VDecimal {
+            d: Some(dec(0, 2, false)),
+        }),
+        "DecimalNegative" => marshal(&VDecimal {
+            d: Some(dec(150, 2, true)),
+        }),
+        "Decimals" => marshal(&VDecimals {
+            ds: vec![
+                Some(dec(0, 2, false)),
+                Some(dec(100, 2, false)),
+                Some(dec(5, -2, false)),
+            ],
+        }),
+        "BigNumsNull" => marshal(&VBigNums::default()),
+        "BigNumsZero" => marshal(&VBigNums {
+            i: Some(BigInt::default()),
+            d: Some(Decimal::default()),
+            f: Some(BigFloat::default()),
+        }),
+        "BigNumsNegative" => marshal(&VBigNums {
+            i: Some(int(12345678901234567890, true)),
+            d: Some(dec(5, 1, true)),
+            f: Some(float(3, -1, 53, true)),
+        }),
+        "BigIntsZeroElement" => marshal(&VBigInts {
+            is: vec![Some(BigInt::default()), Some(int(1, false))],
+        }),
+        "BigIntsNullElement" => marshal(&VBigInts {
+            is: vec![Some(int(1, false)), None],
+        }),
+        "DecimalsNullElement" => marshal(&VDecimals {
+            ds: vec![Some(dec(1, 0, false)), None],
+        }),
+        "BigFloatMapNullValue" => marshal(&VBigFloatMap {
+            m: map([("k".to_string(), None)]),
+        }),
+        "BigFloatPrec64" => marshal(&VBigFloat {
+            f: Some(float(3, -1, 64, false)),
+        }),
         _ => return None,
     };
     Some(bytes.expect("marshal"))
@@ -315,12 +456,9 @@ fn every_row_is_written_as_protowire_go_writes_it() {
                     ));
                 }
             }
-            None if NO_STRUCT_BINDING.contains(&case) => {}
-            None => problems.push(format!(
-                "{case}: a row with no twin and not listed in NO_STRUCT_BINDING"
-            )),
+            None => problems.push(format!("{case}: a row with no twin")),
         }
     }
     assert!(problems.is_empty(), "{}", problems.join("\n"));
-    assert_eq!(covered, 8, "rows with a twin");
+    assert_eq!(covered, 23, "rows with a twin");
 }
