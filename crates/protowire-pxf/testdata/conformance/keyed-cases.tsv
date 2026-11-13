@@ -1,0 +1,102 @@
+# Cases for scripts/gen-keyed-oracle.sh (#130): documents whose keyed repeated
+# fields protowire-go checks, through Unmarshal, UnmarshalFull, a @dataset scan
+# and KeyedDiagnostics. Columns: descriptor set (under testdata/), message, op
+# (doc or scan), document, with tabs, newlines and backslashes escaped.
+# The fixtures of testdata/keyed/ (keyed_test.go).
+keyed/keyed.binpb	keyed.v1.Node	doc	@type keyed.v1.Node\n\n# Duplicate keys are representable only in the anonymous form. Where the\n# schema layer tolerates them (plain decode — no uniqueness constraint\n# beyond the keyed block itself), decode accepts, and encode/fmt MUST\n# keep the anonymous form: the keyed form requires all keys distinct.\n\nid = "root"\nchildren = [\n  {\n    id = "dup"\n    type = "Label"\n  }\n  {\n    id = "dup"\n    type = "HBox"\n  }\n]\n
+keyed/keyed.binpb	keyed.v1.Node	doc	@type keyed.v1.Node\n\n# Anonymous-form equivalence: decodes to exactly the same message as\n# roundtrip-keyed.pxf (key fields written explicitly, same order).\n# fmt canonicalizes this document to the keyed form.\n\nid = "root"\ntype = "VBox"\nchildren = [\n  {\n    id = "greeting"\n    type = "Label"\n    weight = 1\n  }\n  {\n    id = "counter_row"\n    type = "HBox"\n    weight = 2\n  }\n]\n
+keyed/keyed.binpb	keyed.v1.Node	doc	@type keyed.v1.Node\n\n# Spelling-equivalence duplicate: duplicate detection compares UNQUOTED\n# values, so "greeting" (quoted) and greeting (bare) are the same key.\n# MUST be rejected exactly like err-duplicate-key.pxf.\n\nid = "root"\nchildren {\n  greeting {\n    type = "Label"\n  }\n  "greeting" {\n    type = "HBox"\n  }\n}\n
+keyed/keyed.binpb	keyed.v1.Node	doc	@type keyed.v1.Node\n\n# Duplicate entry names in one keyed block MUST be rejected (decode\n# error; diagnostic in tolerant mode).\n\nid = "root"\nchildren {\n  greeting {\n    type = "Label"\n  }\n  greeting {\n    type = "HBox"\n  }\n}\n
+keyed/keyed.binpb	keyed.v1.Node	doc	@type keyed.v1.Node\n\n# The empty-key rule applies in the anonymous form too: an explicit\n# empty-string assignment to the key field of an element of a keyed\n# repeated field MUST be rejected.\n\nid = "root"\nchildren = [\n  {\n    id = ""\n    type = "Label"\n  }\n]\n
+keyed/keyed.binpb	keyed.v1.Node	doc	@type keyed.v1.Node\n\n# The empty string is not a valid key. A quoted entry name "" MUST be\n# rejected.\n\nid = "root"\nchildren {\n  "" {\n    type = "Label"\n  }\n}\n
+keyed/keyed.binpb	keyed.v1.Node	doc	@type keyed.v1.Node\n\n# Key conflict: an explicit key-field assignment inside a named entry\n# that DISAGREES with the entry name MUST be rejected.\n\nid = "root"\nchildren {\n  greeting {\n    id = "farewell"\n    type = "Label"\n  }\n}\n
+keyed/keyed.binpb	keyed.v1.Catalog	doc	@type keyed.v1.Catalog\n\n# Key conflict: an entry name binds the key field, so binding that field\n# to null inside the entry's block disagrees with it and MUST be rejected.\n\ntags {\n  alpha {\n    name = null\n  }\n}\n
+keyed/keyed.binpb	keyed.v1.Catalog	doc	@type keyed.v1.Catalog\n\n# Key conflict: null on another member of the key field's oneof chooses\n# that member, so it writes two members and MUST be rejected.\n\nchoices {\n  alpha {\n    other = null\n  }\n}\n
+keyed/keyed.binpb	keyed.v1.Catalog	doc	@type keyed.v1.Catalog\n\n# Key conflict: an entry name binds the key field, so binding another\n# member of the key field's oneof writes two members and MUST be rejected.\n\nchoices {\n  alpha {\n    other = "x"\n  }\n}\n
+keyed/keyed.binpb	keyed.v1.Doc	doc	@type keyed.v1.Doc\n\n# 'items' carries no (pxf.key): a quoted entry name is only meaningful\n# as a key, so the schema layer MUST reject this document. The parse\n# itself succeeds — the grammar accepts quoted entry names everywhere;\n# the restriction is schema-layer.\n\nitems {\n  "a" {\n    label = "first"\n  }\n}\n
+keyed/keyed.binpb	keyed.v1.Deployment	doc	@type keyed.v1.Deployment\n\nservice = "edge"\nregions = [\n  {\n    name = "us-east-1"\n    replicas = 3\n  }\n  {\n    name = "primary"\n    replicas = 2\n  }\n]\n
+keyed/keyed.binpb	keyed.v1.Node	doc	@type keyed.v1.Node\n\nid = "root"\ntype = "VBox"\nchildren {\n  "greeting" {\n    id = "greeting"\n    type = "Label"\n  }\n  counter_row {\n    type = "HBox"\n  }\n}\n
+keyed/keyed.binpb	keyed.v1.Catalog	doc	@type keyed.v1.Catalog\n\n# Legal: the anonymous form has no entry name to disagree with, so an\n# optional key field may be null. The element's key is absent.\n\ntags = [\n  {\n    name = null\n  }\n]\n
+keyed/keyed.binpb	keyed.v1.Catalog	doc	@type keyed.v1.Catalog\n\n# Legal: a key in a oneof takes the entry name, an agreeing assignment\n# stays redundant, and the anonymous form may choose another member.\n\nchoices {\n  alpha {}\n  beta {\n    name = "beta"\n  }\n}\nchoices = [\n  {\n    other = "x"\n  }\n]\n
+keyed/keyed.binpb	keyed.v1.Node	doc	@type keyed.v1.Node\n\n# An explicit key-field assignment inside a named entry that AGREES with\n# the entry name is redundant but legal. Decode accepts; fmt drops the\n# redundant assignment when canonicalizing.\n\nid = "root"\nchildren {\n  greeting {\n    id = "greeting"\n    type = "Label"\n  }\n}\n
+keyed/keyed.binpb	keyed.v1.Node	doc	@type keyed.v1.Node\n\n# Keyed round-trip: canonical keyed-block form. Entry name = key-field\n# value, entry order = list order; the key field is not repeated inside\n# the entry blocks. decode → encode reproduces this body.\n\nid = "root"\ntype = "VBox"\nchildren {\n  greeting {\n    type = "Label"\n    weight = 1\n  }\n  counter_row {\n    type = "HBox"\n    weight = 2\n  }\n}\n
+keyed/keyed.binpb	keyed.v1.Deployment	doc	@type keyed.v1.Deployment\n\n# Quoted-name round-trip: keys that are not identifier-safe are written\n# as string-literal entry names and stay quoted in canonical form.\n\nservice = "edge"\nregions {\n  "us-east-1" {\n    replicas = 3\n  }\n  "eu-west-2" {\n    replicas = 1\n  }\n}\n
+# TestKeyedErrorIsTyped, TestKeyedAssignmentSpelling, TestKeyedConcatenationAcrossBlocks, TestKeyedNestedBlocks.
+keyed/keyed.binpb	keyed.v1.Node	doc	children {\n  a { }\n  a { }\n}\n
+keyed/keyed.binpb	keyed.v1.Node	doc	\nid = "root"\nchildren = {\n  greeting = { type = "Label" }\n  counter_row { type = "HBox" }\n}\n
+keyed/keyed.binpb	keyed.v1.Node	doc	children { greeting = 42 }
+keyed/keyed.binpb	keyed.v1.Node	doc	\nid = "root"\nchildren {\n  greeting { type = "Label" }\n}\nchildren {\n  greeting { type = "HBox" }\n}\n
+keyed/keyed.binpb	keyed.v1.Node	doc	\nid = "root"\nchildren {\n  outer {\n    type = "VBox"\n    children {\n      inner { type = "Label" }\n    }\n  }\n}\n
+# More shapes for the diagnostics walker: several errors in one document, in source order,
+# each spelling of the keyed block, nesting, and entries the schema does not resolve.
+keyed/keyed.binpb	keyed.v1.Node	doc	children {\n  a {}\n  a {}\n  "" {}\n  b { id = "c" }\n  d { id = "" }\n  e { id = null }\n}\n
+keyed/keyed.binpb	keyed.v1.Node	doc	children { "" {} }
+keyed/keyed.binpb	keyed.v1.Node	doc	children = { a {} a {} }
+keyed/keyed.binpb	keyed.v1.Node	doc	children = { a = {} a = {} }
+keyed/keyed.binpb	keyed.v1.Node	doc	children { a = { id = "b" } }
+keyed/keyed.binpb	keyed.v1.Node	doc	children = [ { id = "" } { id = "x" } { id = "x" } ]
+keyed/keyed.binpb	keyed.v1.Node	doc	children = [ { id = "a" children { b {} b {} } } ]
+keyed/keyed.binpb	keyed.v1.Node	doc	children { a { children { b { id = "c" } } } }
+keyed/keyed.binpb	keyed.v1.Node	doc	children { a { bogus = 1 } }
+keyed/keyed.binpb	keyed.v1.Node	doc	children { a { id = 5 } }
+keyed/keyed.binpb	keyed.v1.Node	doc	bogus { a {} a {} }
+keyed/keyed.binpb	keyed.v1.Node	doc	"id" = "x"
+keyed/keyed.binpb	keyed.v1.Node	doc	"x" { }
+keyed/keyed.binpb	keyed.v1.Node	doc	children { a { "q" = 1 } }
+keyed/keyed.binpb	keyed.v1.Node	doc	children { "us-east-1" {} "us-east-1" {} }
+keyed/keyed.binpb	keyed.v1.Node	doc	children { a {} } children { a {} }
+keyed/keyed.binpb	keyed.v1.Doc	doc	items { "a" {} b {} "c" = {} }
+keyed/keyed.binpb	keyed.v1.Doc	doc	items = [ { "id" = "x" } ]
+keyed/keyed.binpb	keyed.v1.Doc	doc	items { a { "id" = "x" } }
+keyed/keyed.binpb	keyed.v1.Deployment	doc	regions { "us-east-1" { replicas = 3 } "us-east-1" { replicas = 4 } }
+keyed/keyed.binpb	keyed.v1.Catalog	doc	choices { a { other = "x" } }
+keyed/keyed.binpb	keyed.v1.Catalog	doc	tags { a { name = null } }
+keyed/keyed.binpb	keyed.v1.Catalog	doc	tags = [ { name = null } ]
+# TestKeyedEntryName_BodyCannotUndoIt, verbatim.
+keyed-undo-test.binpb	undo.v1.P	doc	ko { alpha { other = "x" } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko { alpha { other = null } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko { alpha = { other = "x" } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko = { alpha { other = "x" } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko { "not ident" { other = "x" } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko { alpha { sub { name = "x" } } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko { alpha { sub = { name = "x" } } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko { alpha { free = "x" other = "y" } }
+keyed-undo-test.binpb	undo.v1.P	doc	kn { alpha { name = null } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko { alpha { name = "alpha" } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko { alpha { free = "x" } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko { alpha { nested { other = "x" } } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko { alpha { nested { name = null } } }
+keyed-undo-test.binpb	undo.v1.P	doc	ko = [ { other = "x" } ]
+keyed-undo-test.binpb	undo.v1.P	doc	ko = [ { other = null } ]
+keyed-undo-test.binpb	undo.v1.P	doc	kn { alpha { name = "alpha" } }
+keyed-undo-test.binpb	undo.v1.P	doc	kn = [ { name = null } ]
+# keyed_entry_name_presence_test.go, and errors in an Any body, a map value and a nested keyed field.
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	kd { alpha {} }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	kd { "not ident" {} }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	kd { alpha = {} }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	kd = { alpha {} }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	kd { a {} alpha {} }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	kd { alpha { name = "alpha" } }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	kr { alpha {} }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	ko { alpha {} }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	kn { a { inner { alpha {} } } }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	kd = [{}]
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	kr = [{}]
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	payload { @type = "keyedname.v1.Nests" inner { alpha {} } }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	payload { @type = "keyedname.v1.Nests" inner { a {} a {} } }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	payload { @type = "keyedname.v1.Nests" inner { "" {} } }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	kn { a { inner { x {} x {} } } }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	km { alpha { detail { name = "x" } } }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	km { alpha { detail = {} } }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	km { alpha { detail = null } }
+keyed-entry-name-test.binpb	keyedname.v1.P	doc	ko { alpha { other = "x" } }
+keyed-entry-name-test.binpb	keyedname.v1.Shadow	doc	by_id = { "k": { "q" = 1 } }
+keyed-entry-name-test.binpb	keyedname.v1.Shadow	doc	by_id = { "k": { name = "n" } }\nkeyed { a {} a {} }
+keyed-entry-name-test.binpb	keyedname.v1.Shadow	doc	by_num = { 1: { name = "n" } }\nitems = [ { name = "" } ]\nkeyed = [ { name = "" } ]
+# A keyed error in a @dataset cell (TestKeyedEntryName_InDatasetCell), and on a later row.
+keyed-entry-name-test.binpb	keyedname.v1.P	scan	@dataset keyedname.v1.P (kd)\n({ alpha {} })\n
+keyed-entry-name-test.binpb	keyedname.v1.P	scan	@dataset keyedname.v1.P (kd)\n({ a {} a {} })\n
+keyed-entry-name-test.binpb	keyedname.v1.P	scan	@dataset keyedname.v1.P (kd)\n({ x {} })\n({ "" {} })\n
+keyed-entry-name-test.binpb	keyedname.v1.P	scan	@dataset keyedname.v1.P (kd, ko)\n({ x {} }, { y { other = "z" } })\n
+keyed-entry-name-test.binpb	keyedname.v1.P	scan	@dataset keyedname.v1.P (kd)\n(\n  {\n    a {}\n    a {}\n  }\n)\n
+keyed/keyed.binpb	keyed.v1.Doc	scan	@dataset keyed.v1.Doc (items)\n([ { "id" = "x" } ])\n

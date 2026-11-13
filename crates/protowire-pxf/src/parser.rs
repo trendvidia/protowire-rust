@@ -10,7 +10,7 @@
 //! `trailing_comments` of its block or document (protowire-go#279).
 
 use crate::ast::{
-    Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, DatasetDirective, DatasetRow,
+    Assignment, BadVal, Block, BlockVal, BoolVal, BytesVal, Comment, DatasetDirective, DatasetRow,
     Directive, Document, DurationVal, Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry,
     NullVal, ProtoDirective, ProtoShape, StringVal, TimestampVal, TypeEntry, Value,
 };
@@ -46,6 +46,61 @@ pub fn parse_with_limits(input: &str, limits: Limits) -> Result<Document, PxfErr
     Parser::new(input, limits).parse_document()
 }
 
+/// Parse a PXF document in error-tolerant mode, for editor tooling: the
+/// tree of what could be read, with every syntax error, in source order. A
+/// port of protowire-go's `ParseTolerant`, whose recoveries it follows:
+///
+/// - A missing or malformed value (`key =` at the end of a line, `key`
+///   alone) is a [`Value::Bad`] placeholder, so the entry, with its key and
+///   position, is still in the tree.
+/// - An unclosed block or list is closed at the end of input with what it
+///   holds; one in a `@dataset` cell is closed at the row's `)`, so the rows
+///   after it still parse.
+/// - An unterminated string ends at its newline or at the end of input: a
+///   newline in a simple string is taken as a literal being typed, and the
+///   next line parses on.
+/// - An unterminated triple-quoted string, block comment or bytes literal
+///   ends at the end of input (a bytes literal at its newline).
+/// - A malformed directive is skipped to the next directive or entry.
+///
+/// A document [`parse`] reads gives the same tree and no error. The tree
+/// may hold placeholders and is meant for tooling (completion, hover,
+/// diagnostics), not for decoding: use
+/// [`parse`] or [`crate::unmarshal`] once the document is valid.
+pub fn parse_tolerant(input: &str) -> (Document, Vec<PxfError>) {
+    parse_tolerant_with_limits(input, Limits::default())
+}
+
+/// [`parse_tolerant`] under per-call [`Limits`], as [`parse_with_limits`]
+/// applies them. An input past `max_message_size` gives an empty document
+/// and that one error.
+pub fn parse_tolerant_with_limits(input: &str, limits: Limits) -> (Document, Vec<PxfError>) {
+    if let Err(m) = limits.check_message_size(input.len()) {
+        return (
+            Document::default(),
+            vec![PxfError::new(Position::new(1, 1), m)],
+        );
+    }
+    let mut p = Parser::unprimed(input.as_bytes(), limits, Position::with_offset(1, 1, 0));
+    p.tolerant = true;
+    p.lex.set_tolerant();
+    p.advance();
+    let doc = match p.parse_document() {
+        Ok(doc) => doc,
+        // Tolerant mode records every error it meets; kept should one
+        // ever be returned.
+        Err(e) => {
+            p.errs.push(e);
+            Document::default()
+        }
+    };
+    let mut errs = p.errs;
+    // Recorded in parse order, which is source order but for a lexer
+    // error met during a lookahead; sorted so callers can rely on it.
+    errs.sort_by_key(|e| e.pos.offset);
+    (doc, errs)
+}
+
 /// Read one value with this parser from where a decoder stands: `current`
 /// is the value's first token, and on return `lex` and `current` stand past
 /// the value. The decoder reads what it does not bind this way (a field
@@ -64,6 +119,9 @@ pub(crate) fn read_value(
         prev_end: Position::new(1, 1),
         depth,
         limits,
+        tolerant: false,
+        errs: Vec::new(),
+        value_end: None,
     };
     let value = p.parse_value()?;
     lex.restore(p.lex.snapshot());
@@ -86,6 +144,16 @@ pub(crate) struct Parser<'a> {
     /// decremented at the matching close. Exceeds → reject before recursing.
     depth: usize,
     limits: Limits,
+    /// protowire-go's tolerant mode, behind [`parse_tolerant`]: an error is
+    /// recorded in `errs`, and the parser goes on from the nearest entry or
+    /// block boundary. Off, every path is the strict parser's.
+    tolerant: bool,
+    errs: Vec<PxfError>,
+    /// Where the value just read ends, when that is not `prev_end`: a
+    /// placeholder ends where it stands, and a list or block that tolerant
+    /// mode closes early ends at the token it stopped at. protowire-go reads
+    /// a value's end to tell a trailing comment from the next entry's.
+    value_end: Option<Position>,
 }
 
 impl<'a> Parser<'a> {
@@ -98,16 +166,118 @@ impl<'a> Parser<'a> {
     /// (protowire-go's `newParserAt`). `input` is valid UTF-8; the
     /// streaming dataset reader parses a header or a row at a time.
     pub(crate) fn at(input: &'a [u8], limits: Limits, start: Position) -> Self {
-        let mut p = Self {
+        let mut p = Self::unprimed(input, limits, start);
+        p.advance();
+        p
+    }
+
+    /// [`Parser::at`] before its first token is read.
+    fn unprimed(input: &'a [u8], limits: Limits, start: Position) -> Self {
+        Self {
             lex: Lexer::at(input, limits.max_bytes_literal_length, start),
             current: Token::new(TokenKind::Eof, "", Position::new(1, 1)),
             pending: Vec::new(),
             prev_end: Position::new(1, 1),
             depth: 0,
             limits,
-        };
-        p.advance();
-        p
+            tolerant: false,
+            errs: Vec::new(),
+            value_end: None,
+        }
+    }
+
+    /// A recoverable error: strict mode returns it, which ends the parse;
+    /// tolerant mode records it, so the caller can recover (protowire-go's
+    /// `soft`).
+    fn soft(&mut self, e: PxfError) -> Result<(), PxfError> {
+        if !self.tolerant {
+            return Err(e);
+        }
+        self.errs.push(e);
+        Ok(())
+    }
+
+    /// Whether a `{` or `[` at `pos` would nest past the limit. Strict mode
+    /// refuses it; tolerant mode records the error and answers true, and the
+    /// caller skips the whole construct.
+    fn too_deep(&mut self, pos: Position) -> Result<bool, PxfError> {
+        if self.depth < self.limits.max_nesting_depth {
+            return Ok(false);
+        }
+        let e = PxfError::new(
+            pos,
+            format!(
+                "nesting depth exceeds MaxNestingDepth={}",
+                self.limits.max_nesting_depth
+            ),
+        );
+        self.soft(e)?;
+        Ok(true)
+    }
+
+    /// Consume the open token the parser stands on, and everything through
+    /// its matching close (or to the end of input): tolerant recovery for a
+    /// block or list too deep to descend into.
+    fn skip_balanced(&mut self, open: TokenKind, close: TokenKind) {
+        let mut depth = 0usize;
+        loop {
+            let k = self.current.kind;
+            if k == open {
+                depth += 1;
+            } else if k == close {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    self.advance();
+                    self.value_end = None;
+                    return;
+                }
+            } else if k == TokenKind::Eof {
+                self.value_end = Some(self.current.pos);
+                return;
+            }
+            self.advance();
+        }
+    }
+
+    /// Whether the current token looks like the key of a new entry: a
+    /// key-shaped token followed by `=`, `:` or `{`. Tolerant recovery reads
+    /// it as the start of the next entry, not part of the construct being
+    /// parsed.
+    fn current_starts_entry(&mut self) -> bool {
+        matches!(
+            self.current.kind,
+            TokenKind::Ident | TokenKind::String | TokenKind::Int | TokenKind::Bool
+        ) && matches!(
+            self.peek_kind(),
+            TokenKind::Equals | TokenKind::Colon | TokenKind::LBrace
+        )
+    }
+
+    /// Advance to the next construct that can start a document's part: a
+    /// directive, a token that can start an entry, or the end. Tolerant
+    /// recovery after a malformed directive.
+    fn sync_top_level(&mut self) {
+        while !matches!(
+            self.current.kind,
+            TokenKind::Eof
+                | TokenKind::AtType
+                | TokenKind::AtDirective
+                | TokenKind::AtDataset
+                | TokenKind::AtProto
+                | TokenKind::Ident
+                | TokenKind::String
+                | TokenKind::Int
+        ) {
+            self.advance();
+        }
+    }
+
+    /// Whether tolerant recovery closes the list or block being read at the
+    /// current token: a `)` is in no value, so inside one it ends the
+    /// `@dataset` row the value is a cell of. Strict mode never stops there;
+    /// the `)` is its error.
+    fn tolerant_row_close(&self) -> bool {
+        self.tolerant && self.current.kind == TokenKind::RParen
     }
 
     fn enter(&mut self, pos: Position) -> Result<(), PxfError> {
@@ -134,6 +304,10 @@ impl<'a> Parser<'a> {
         self.prev_end = self.lex.current_pos();
         loop {
             self.current = self.lex.next_token();
+            if self.tolerant {
+                let errs = self.lex.take_errs();
+                self.errs.extend(errs);
+            }
             match self.current.kind {
                 TokenKind::Newline => continue,
                 TokenKind::Comment => {
@@ -199,37 +373,64 @@ impl<'a> Parser<'a> {
             match self.current.kind {
                 TokenKind::AtType => {
                     self.advance(); // consume @type
-                    if !matches!(self.current.kind, TokenKind::Ident) {
-                        return Err(PxfError::new(
+                    let mut missing = !matches!(self.current.kind, TokenKind::Ident);
+                    if !missing && self.tolerant && self.current_starts_entry() {
+                        // A dangling `@type` before the body: an identifier
+                        // followed by `=`, `:` or `{` is the first entry's
+                        // key, not the type name.
+                        missing = true;
+                    }
+                    if missing {
+                        let e = PxfError::new(
                             self.current.pos,
                             format!(
                                 "expected type name after @type, got {}",
                                 self.current.kind.name()
                             ),
-                        ));
+                        );
+                        self.soft(e)?;
+                        self.sync_top_level();
+                        continue;
                     }
                     body_offset = self.current.pos.offset + self.current.value.len();
                     type_url = std::mem::take(&mut self.current.value);
                     self.advance();
                 }
-                TokenKind::AtDirective => {
-                    let (d, end) = self.parse_directive()?;
-                    directives.push(d);
-                    body_offset = end;
-                }
-                TokenKind::AtDataset => {
-                    let (t, end) = self.parse_dataset_directive()?;
-                    if first_dataset_pos.is_none() {
-                        first_dataset_pos = Some(t.pos);
+                // A malformed directive is skipped in tolerant mode, to the
+                // next directive or entry.
+                TokenKind::AtDirective => match self.parse_directive() {
+                    Ok((d, end)) => {
+                        directives.push(d);
+                        body_offset = end;
                     }
-                    datasets.push(t);
-                    body_offset = end;
-                }
-                TokenKind::AtProto => {
-                    let (p, end) = self.parse_proto_directive()?;
-                    protos.push(p);
-                    body_offset = end;
-                }
+                    Err(e) => {
+                        self.soft(e)?;
+                        self.sync_top_level();
+                    }
+                },
+                TokenKind::AtDataset => match self.parse_dataset_directive() {
+                    Ok((t, end)) => {
+                        if first_dataset_pos.is_none() {
+                            first_dataset_pos = Some(t.pos);
+                        }
+                        datasets.push(t);
+                        body_offset = end;
+                    }
+                    Err(e) => {
+                        self.soft(e)?;
+                        self.sync_top_level();
+                    }
+                },
+                TokenKind::AtProto => match self.parse_proto_directive() {
+                    Ok((p, end)) => {
+                        protos.push(p);
+                        body_offset = end;
+                    }
+                    Err(e) => {
+                        self.soft(e)?;
+                        self.sync_top_level();
+                    }
+                },
                 _ => break,
             }
         }
@@ -241,15 +442,15 @@ impl<'a> Parser<'a> {
         // beside one at the entry.
         if let Some(first) = first_dataset_pos {
             if !type_url.is_empty() {
-                return Err(PxfError::new(
+                self.soft(PxfError::new(
                     first,
                     "@dataset directive cannot coexist with @type; the @dataset header declares the document's type (draft §3.4.4)",
-                ));
+                ))?;
             }
             if !matches!(self.current.kind, TokenKind::Eof) {
                 // At the entry, as protowire-go reports it, and as the
                 // streaming reader finds it.
-                return Err(PxfError::new(self.current.pos, ERR_DATASET_BESIDE_ENTRIES));
+                self.soft(PxfError::new(self.current.pos, ERR_DATASET_BESIDE_ENTRIES))?;
             }
         }
 
@@ -259,7 +460,10 @@ impl<'a> Parser<'a> {
             // a proto message, never a map<K,V>; map_entry (`:` form) is
             // reserved for the inside of a '{ ... }' block. See
             // docs/grammar.ebnf -> document.
-            entries.push(self.parse_entry(false)?);
+            // Tolerant mode gives no entry for a token it skipped.
+            if let Some(entry) = self.parse_entry(false)? {
+                entries.push(entry);
+            }
         }
         // Comments after the last entry, directive or row.
         let trailing_comments = self.flush_comments();
@@ -282,12 +486,18 @@ impl<'a> Parser<'a> {
     fn peek_kind(&mut self) -> TokenKind {
         let snap = self.lex.snapshot();
         let saved = self.current.clone();
+        let saved_prev_end = self.prev_end;
         let n_comments = self.pending.len();
+        // Tolerant lexing may record an error during the lookahead; it is
+        // met again when the token is read.
+        let n_errs = self.errs.len();
         self.advance();
         let k = self.current.kind;
         self.lex.restore(snap);
         self.current = saved;
+        self.prev_end = saved_prev_end;
         self.pending.truncate(n_comments);
+        self.errs.truncate(n_errs);
         k
     }
 
@@ -299,13 +509,15 @@ impl<'a> Parser<'a> {
         let at_pos = self.current.pos;
         let name = std::mem::take(&mut self.current.value);
         if crate::schema::is_future_reserved_directive(&name) {
-            return Err(PxfError::new(
+            // Tolerant mode records it and reads the directive by the open
+            // grammar, so the rest of the document still has a tree.
+            self.soft(PxfError::new(
                 at_pos,
                 format!(
                     "@{} is a spec-reserved directive name with no v1 semantics (draft §3.4.6)",
                     name
                 ),
-            ));
+            ))?;
         }
         let mut end_offset = at_pos.offset + 1 + name.len(); // `@` + name
         self.advance();
@@ -664,7 +876,10 @@ impl<'a> Parser<'a> {
 
     /// `allow_map_entry` gates the `:` (map-entry) form: false at document
     /// top level, true inside any '{ ... }' block.
-    fn parse_entry(&mut self, allow_map_entry: bool) -> Result<Entry, PxfError> {
+    ///
+    /// Tolerant mode gives `None` for a token that cannot start an entry,
+    /// which it skips.
+    fn parse_entry(&mut self, allow_map_entry: bool) -> Result<Option<Entry>, PxfError> {
         let leading_comments = self.flush_comments();
         let pos = self.current.pos;
         let k = self.current.kind;
@@ -676,13 +891,24 @@ impl<'a> Parser<'a> {
             k,
             TokenKind::Ident | TokenKind::String | TokenKind::Int | TokenKind::Bool
         ) {
-            return Err(PxfError::new(
+            let e = PxfError::new(
                 pos,
                 format!(
                     "expected identifier, string, integer, or bool, got {}",
                     self.token_err_msg()
                 ),
-            ));
+            );
+            if !self.tolerant {
+                return Err(e);
+            }
+            // Skip the token; the caller's loop tries the next one. The
+            // leading comments go back, to attach to the next entry.
+            self.errs.push(e);
+            let mut pending = leading_comments;
+            pending.append(&mut self.pending);
+            self.pending = pending;
+            self.advance();
+            return Ok(None);
         }
         let key_kind = k;
         let key = std::mem::take(&mut self.current.value);
@@ -699,82 +925,134 @@ impl<'a> Parser<'a> {
                 // layer checks (draft -01 §3.13). Integer and bool keys are
                 // only valid with `:`.
                 if !matches!(key_kind, TokenKind::Ident | TokenKind::String) {
-                    return Err(non_name_assign_error(pos, key_kind, &key, &key_prec));
+                    // Tolerant mode keeps it as an assignment.
+                    self.soft(non_name_assign_error(pos, key_kind, &key, &key_prec))?;
                 }
                 self.advance();
                 let value = self.parse_value()?;
-                let trailing_comment = self.take_trailing_comment(self.prev_end);
-                Ok(Entry::Assignment(Assignment {
+                let end = self.value_end.take().unwrap_or(self.prev_end);
+                let trailing_comment = self.take_trailing_comment(end);
+                Ok(Some(Entry::Assignment(Assignment {
                     pos,
                     key,
                     key_quoted: matches!(key_kind, TokenKind::String),
                     value,
                     leading_comments,
                     trailing_comment,
-                }))
+                })))
             }
             TokenKind::Colon => {
                 // Map entry. Only allowed inside a '{ ... }' block, never at
                 // document top level.
                 if !allow_map_entry {
-                    return Err(top_level_map_entry_error(pos));
+                    // Tolerant mode keeps it as a map entry.
+                    self.soft(top_level_map_entry_error(pos))?;
                 }
                 // map-key = identifier / string / integer / bool: an integer
                 // key takes no precision suffix (draft -01 ABNF,
                 // protowire#406). MapEntry.key has nowhere to keep one.
                 if !key_prec.is_empty() {
-                    return Err(PxfError::new(
+                    self.soft(PxfError::new(
                         pos,
                         format!(
                             "map key {}: a key cannot carry a precision suffix (p{})",
                             key,
                             clip_literal(&key_prec)
                         ),
-                    ));
+                    ))?;
                 }
                 self.advance();
                 let value = self.parse_value()?;
-                let trailing_comment = self.take_trailing_comment(self.prev_end);
-                Ok(Entry::MapEntry(MapEntry {
+                let end = self.value_end.take().unwrap_or(self.prev_end);
+                let trailing_comment = self.take_trailing_comment(end);
+                Ok(Some(Entry::MapEntry(MapEntry {
                     pos,
                     key,
                     quoted: matches!(key_kind, TokenKind::String),
                     value,
                     leading_comments,
                     trailing_comment,
-                }))
+                })))
             }
             TokenKind::LBrace => {
                 // `{ ... }` denotes a submessage field, or a named entry of a
                 // keyed repeated field; same identifier-or-string rule as `=`.
                 if !matches!(key_kind, TokenKind::Ident | TokenKind::String) {
-                    return Err(non_name_block_error(pos, key_kind, &key, &key_prec));
+                    self.soft(non_name_block_error(pos, key_kind, &key, &key_prec))?;
                 }
                 let open_pos = self.current.pos;
+                let name_quoted = matches!(key_kind, TokenKind::String);
+                if self.too_deep(open_pos)? {
+                    // Too deep to descend: skip the whole block, keep the
+                    // entry.
+                    self.skip_balanced(TokenKind::LBrace, TokenKind::RBrace);
+                    return Ok(Some(Entry::Block(Block {
+                        pos,
+                        name: key,
+                        name_quoted,
+                        entries: Vec::new(),
+                        leading_comments,
+                        trailing_comments: Vec::new(),
+                    })));
+                }
                 self.advance();
                 let (entries, trailing_comments) = self.parse_body(open_pos)?;
-                Ok(Entry::Block(Block {
+                Ok(Some(Entry::Block(Block {
                     pos,
                     name: key,
-                    name_quoted: matches!(key_kind, TokenKind::String),
+                    name_quoted,
                     entries,
                     leading_comments,
                     trailing_comments,
-                }))
+                })))
             }
-            other => Err(PxfError::new(
-                self.current.pos,
-                format!(
-                    "expected '=', ':', or '{{' after {:?}, got {}",
+            other => {
+                self.soft(PxfError::new(
+                    self.current.pos,
+                    format!(
+                        "expected '=', ':', or '{{' after {:?}, got {}",
+                        key,
+                        other.name()
+                    ),
+                ))?;
+                // A dangling key, the shape completion fires on: kept as an
+                // assignment with a placeholder just past the key, where the
+                // value belongs. The current token, most likely the next
+                // entry's key, is left.
+                Ok(Some(Entry::Assignment(Assignment {
+                    pos,
                     key,
-                    other.name()
-                ),
-            )),
+                    key_quoted: false,
+                    value: Value::Bad(BadVal { pos: self.prev_end }),
+                    leading_comments,
+                    trailing_comment: String::new(),
+                })))
+            }
         }
     }
 
     fn parse_value(&mut self) -> Result<Value, PxfError> {
+        self.value_end = None;
+        let value = self.parse_value_at()?;
+        if let Value::Bad(b) = &value {
+            // A placeholder spans nothing.
+            self.value_end = Some(b.pos);
+        }
+        Ok(value)
+    }
+
+    fn parse_value_at(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
+
+        if self.tolerant && self.current_starts_entry() {
+            // The current token is the next entry's key, and this value is
+            // missing (a dangling `key =`). It is left, and the placeholder
+            // and the error go just past the separator, where the value
+            // belongs.
+            let at = self.prev_end;
+            self.errs.push(PxfError::new(at, "missing value"));
+            return Ok(Value::Bad(BadVal { pos: at }));
+        }
 
         match self.current.kind {
             TokenKind::String => {
@@ -800,9 +1078,18 @@ impl<'a> Parser<'a> {
                 Ok(Value::Bool(BoolVal { pos, value }))
             }
             TokenKind::Bytes => {
-                // The lexer took it, so one of the four encodings decodes it.
-                let decoded = crate::go_strconv::decode_base64_lenient(&self.current.value)
-                    .unwrap_or_default();
+                // The strict lexer took it, so one of the four encodings
+                // decodes it; the tolerant lexer leaves the check here.
+                let decoded = match crate::go_strconv::decode_base64_lenient(&self.current.value) {
+                    Ok(decoded) => decoded,
+                    Err(e) if self.tolerant => {
+                        self.errs
+                            .push(PxfError::new(pos, format!("invalid base64: {e}")));
+                        self.advance();
+                        return Ok(Value::Bad(BadVal { pos }));
+                    }
+                    Err(_) => Vec::new(),
+                };
                 self.advance();
                 Ok(Value::Bytes(BytesVal {
                     pos,
@@ -834,39 +1121,85 @@ impl<'a> Parser<'a> {
             // the decoder reports it at every value position and as
             // protowire-go's parseValue does: "expected value" adds nothing
             // to "invalid duration: 5seconds".
-            TokenKind::Illegal => Err(PxfError::new(pos, self.current.value.clone())),
-            _ => Err(PxfError::new(
-                pos,
-                format!("expected value, got {}", self.token_err_msg()),
-            )),
+            kind => {
+                let e = if kind == TokenKind::Illegal {
+                    PxfError::new(pos, self.current.value.clone())
+                } else {
+                    PxfError::new(pos, format!("expected value, got {}", self.token_err_msg()))
+                };
+                if !self.tolerant {
+                    return Err(e);
+                }
+                self.errs.push(e);
+                // A closer is left for the construct it closes; a `)` closes
+                // the `@dataset` row around an unclosed cell.
+                if !matches!(
+                    kind,
+                    TokenKind::Eof | TokenKind::RBrace | TokenKind::RBracket | TokenKind::RParen
+                ) {
+                    self.advance();
+                }
+                Ok(Value::Bad(BadVal { pos }))
+            }
         }
     }
 
     fn parse_list(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
+        if self.too_deep(pos)? {
+            self.skip_balanced(TokenKind::LBracket, TokenKind::RBracket);
+            return Ok(Value::List(ListVal {
+                pos,
+                elements: Vec::new(),
+            }));
+        }
         self.enter(pos)?;
         self.advance(); // consume [
 
         let mut elements = Vec::new();
-        while !matches!(self.current.kind, TokenKind::RBracket | TokenKind::Eof) {
-            elements.push(self.parse_value()?);
+        while !matches!(self.current.kind, TokenKind::RBracket | TokenKind::Eof)
+            && !self.tolerant_row_close()
+        {
+            let before = self.current.pos.offset;
+            let elem = self.parse_value()?;
+            if self.tolerant && self.current.pos.offset == before && matches!(elem, Value::Bad(_)) {
+                // The value recovered without consuming anything (a `}`
+                // that closes an enclosing block, a token that starts the
+                // next entry): leave the list, so the construct around it
+                // can recover.
+                break;
+            }
+            elements.push(elem);
             if matches!(self.current.kind, TokenKind::Comma) {
                 self.advance();
             }
         }
         if !matches!(self.current.kind, TokenKind::RBracket) {
-            return Err(PxfError::new(
+            // Tolerant mode closes the list here, with what it holds.
+            self.soft(PxfError::new(
                 self.current.pos,
                 format!("expected ']', got {}", self.current.kind.name()),
-            ));
+            ))?;
+            self.leave();
+            self.value_end = Some(self.current.pos);
+            return Ok(Value::List(ListVal { pos, elements }));
         }
         self.advance();
         self.leave();
+        self.value_end = None;
         Ok(Value::List(ListVal { pos, elements }))
     }
 
     fn parse_block_val(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
+        if self.too_deep(pos)? {
+            self.skip_balanced(TokenKind::LBrace, TokenKind::RBrace);
+            return Ok(Value::Block(BlockVal {
+                pos,
+                entries: Vec::new(),
+                trailing_comments: Vec::new(),
+            }));
+        }
         self.advance(); // consume {
         let (entries, trailing_comments) = self.parse_body(pos)?;
         Ok(Value::Block(BlockVal {
@@ -881,26 +1214,47 @@ impl<'a> Parser<'a> {
     fn parse_body(&mut self, open_pos: Position) -> Result<(Vec<Entry>, Vec<Comment>), PxfError> {
         self.enter(open_pos)?;
         let mut entries = Vec::new();
-        while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof) {
+        while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof)
+            && !self.tolerant_row_close()
+        {
+            // Tolerant mode gives no entry for what it skipped.
             if matches!(self.current.kind, TokenKind::AtType) {
-                entries.push(self.parse_type_entry(entries.is_empty())?);
+                if let Some(entry) = self.parse_type_entry(entries.is_empty())? {
+                    entries.push(entry);
+                }
                 continue;
             }
             // Inside a '{ ... }' block both forms are accepted; the schema
             // layer disambiguates submessage vs map<K,V>.
-            entries.push(self.parse_entry(true)?);
-        }
-        if !matches!(self.current.kind, TokenKind::RBrace) {
-            return Err(PxfError::new(
-                self.current.pos,
-                format!("expected '}}', got {}", self.current.kind.name()),
-            ));
+            if let Some(entry) = self.parse_entry(true)? {
+                entries.push(entry);
+            }
         }
         // Taken before the '}' is consumed: advance would add the comments
         // after it, which belong to what follows the block.
         let trailing = self.flush_comments();
+        if !matches!(self.current.kind, TokenKind::RBrace) {
+            if !self.tolerant {
+                return Err(PxfError::new(
+                    self.current.pos,
+                    format!("expected '}}', got {}", self.current.kind.name()),
+                ));
+            }
+            // An unclosed block is closed at the end of input, or at the
+            // `)` of the `@dataset` row it is a cell of, with what it holds.
+            let msg = if self.current.kind == TokenKind::RParen {
+                "unclosed block: expected '}' before ')'"
+            } else {
+                "unclosed block: expected '}' before end of input"
+            };
+            self.errs.push(PxfError::new(self.current.pos, msg));
+            self.leave();
+            self.value_end = Some(self.current.pos);
+            return Ok((entries, trailing));
+        }
         self.advance();
         self.leave();
+        self.value_end = None;
         Ok((entries, trailing))
     }
 
@@ -909,38 +1263,68 @@ impl<'a> Parser<'a> {
     /// whether it opens its block, the only place it may stand. A parser
     /// can't tell which blocks are Any, so it admits one in any block and
     /// the schema layer refuses the rest.
-    fn parse_type_entry(&mut self, first: bool) -> Result<Entry, PxfError> {
+    ///
+    /// Tolerant mode records a misplaced or malformed type entry, skips what
+    /// is there of it, and gives `None`.
+    fn parse_type_entry(&mut self, first: bool) -> Result<Option<Entry>, PxfError> {
         let leading_comments = self.flush_comments();
         let pos = self.current.pos;
         if !first {
-            return Err(PxfError::new(pos, TYPE_ENTRY_MISPLACED));
+            let e = PxfError::new(pos, TYPE_ENTRY_MISPLACED);
+            return self.type_entry_failed(e, leading_comments);
         }
         self.advance(); // consume @type
         if !matches!(self.current.kind, TokenKind::Equals) {
-            return Err(PxfError::new(
+            let e = PxfError::new(
                 self.current.pos,
                 format!("expected '=' after @type, got {}", self.token_err_msg()),
-            ));
+            );
+            return self.type_entry_failed(e, leading_comments);
         }
         self.advance();
         if !matches!(self.current.kind, TokenKind::String) {
-            return Err(PxfError::new(
+            let e = PxfError::new(
                 self.current.pos,
                 format!(
                     "expected a string type URL after @type =, got {}",
                     self.token_err_msg()
                 ),
-            ));
+            );
+            return self.type_entry_failed(e, leading_comments);
         }
         let url = std::mem::take(&mut self.current.value);
         self.advance();
         let trailing_comment = self.take_trailing_comment(self.prev_end);
-        Ok(Entry::TypeEntry(TypeEntry {
+        Ok(Some(Entry::TypeEntry(TypeEntry {
             pos,
             url,
             leading_comments,
             trailing_comment,
-        }))
+        })))
+    }
+
+    /// A type entry's error: strict mode returns it. Tolerant mode records
+    /// it, gives the leading comments back to the next entry, and skips what
+    /// is left of the entry, `@type`, `=` and the string, as far as each is
+    /// there.
+    fn type_entry_failed(
+        &mut self,
+        e: PxfError,
+        leading_comments: Vec<Comment>,
+    ) -> Result<Option<Entry>, PxfError> {
+        if !self.tolerant {
+            return Err(e);
+        }
+        self.errs.push(e);
+        let mut pending = leading_comments;
+        pending.append(&mut self.pending);
+        self.pending = pending;
+        for k in [TokenKind::AtType, TokenKind::Equals, TokenKind::String] {
+            if self.current.kind == k {
+                self.advance();
+            }
+        }
+        Ok(None)
     }
 }
 

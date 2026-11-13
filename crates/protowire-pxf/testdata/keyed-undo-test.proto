@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for the keyed oracle (#130): a named entry's body cannot undo
+// its entry name. The schema of protowire-go's
+// TestKeyedEntryName_BodyCannotUndoIt, verbatim.
+syntax = "proto3";
+package undo.v1;
+import "pxf/annotations.proto";
+message P {
+  repeated O ko = 1 [(pxf.key) = "name"];
+  repeated N kn = 2 [(pxf.key) = "name"];
+}
+message O {
+  oneof pick { string name = 1; string other = 2; Sub sub = 3; }
+  string free = 4;
+  Sub nested = 5;
+}
+message Sub { oneof pick { string name = 1; string other = 2; } }
+message N { optional string name = 1; }

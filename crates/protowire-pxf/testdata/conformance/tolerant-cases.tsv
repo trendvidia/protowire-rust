@@ -1,0 +1,326 @@
+# Cases for scripts/gen-tolerant-oracle.sh (#130): documents protowire-go's
+# Parse and ParseTolerant read. A line is a document, with tabs, newlines and
+# backslashes escaped; `file <path>` is a file under testdata/; `prefixes
+# <path>` is every prefix of one, a case each.
+# tolerant_test.go, verbatim.
+@type demo.v1.Config\n# leading comment\nname = "value"  # trailing\ncount = 42\nweight = 3.14\nwhen = 2024-01-15T10:30:00Z\nwait = 1h30m\ndata = b"aGk="\ntags = ["a", "b", "c"]\nlabels {\n  "x": 1\n  "y": 2\n}\nserver {\n  host = "h"\n  tls {\n    enabled = true\n  }\n}\n
+port =\nhost = "h"\n
+port =
+flush\nb = 2\n
+type = "
+name = "ab\nport = 1\n
+server {\n  port = 8080\n
+a {\n b {\n  c = 1\n
+a = 1\n}\nb = 2\n
+xs = [1, 2
+m {\n  "a":\n  "b": 2\n}\n
+a: 1\n
+a = $\nb = 2\n
+k = b"!!"
+k = b"aGk=\nb = 2\n
+a = 1\n/* dangling
+s = """\nhello\n
+s = "a\\qb"\nt = 2
+@dataset (\n@type demo.v1.Config\nx = 1\n
+@type\nx = 1\n
+a =\nb = $\nc {\n
+xs = [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1 ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ] ]\nnext = 1\n
+# More recovery shapes: each error path of the parser and lexer.
+   \n
+# only a comment\n
+= 1\nb = 2\n
+} a = 1
+] a = 1
+, a = 1
+a = 1 = 2\n
+1 = 2\n
+true { x = 1 }\n
+1p5: 2\n
+a { 1p5: 2 }\n
+"q" = 1\n
+"q"\n
+a\n
+a b = 1\n
+a = \nb\n
+a = {\n
+a = [\n
+a = [1, }\n
+a { b = [1 }\n
+a = [ { b = 1 ]\n
+a = [ { b = ]\n
+a = [ b = 1 ]\n
+a = [1,, 2]\n
+a = [ ) ]\n
+a { ) }\n
+a { b }\n
+a { b = }\n
+a { : 1 }\n
+a { "k": }\n
+a { "k": \n"j": 2 }\n
+a { @type = "x" @type = "y" }\n
+a { b = 1 @type = "x" }\n
+a { @type "x" }\n
+a { @type = 5 }\n
+a { @type }\n
+a { @type = }\n
+@type a.b\n@type c.d\nx = 1\n
+@type x = 1\n
+@type 5\nx = 1\n
+@type @header H\nx = 1\n
+@header H {\nx = 1\n
+@header H { x = }\ny = 1\n
+@header H { x = 1 } z = 1\n
+@header\n
+@ x = 1\n
+@extends a.B\nx = 1\n
+@proto {\nx = 1\n
+@proto 5\nx = 1\n
+@proto a.B\nx = 1\n
+@proto b"!!"\nx = 1\n
+@dataset T (a, b)\n(1, 2)\n(3)\n
+@dataset T (a)\n({ x = 1 )\n(2)\n
+@dataset T (a)\n([1, 2 )\n(3)\n
+@dataset T (a)\n(1\n(2)\n
+@dataset T (a)\n(1)\nx = 1\n
+@type T\n@dataset T (a)\n(1)\n
+@dataset T ()\n
+@dataset T (a.)\n(1)\n
+@dataset T (a b)\n
+@dataset T (a)\n("open\n)\n(2)\n
+@dataset T (a)\n({ b { c = 1 )\n
+t = 2024-13-45T00:00:00Z\nn = 1\n
+t = 2024-01-15T25:00:00Z\n
+d = 99999999999h\nn = 1\n
+d = 5x\n
+d = 1.5s\n
+s = "\\x4"\nn = 1\n
+s = "\\1"\n
+s = "\\18"\n
+s = "\\u12"\n
+s = "\\uD800"\n
+s = "\\U0011FFFF"\n
+s = "\\z\\y"\n
+s = "a\\
+s = "a
+b = b"aGk\nn = 1\n
+b = b"aGk
+b = b"a"\n
+b = b'x'\n
+c = /* x */ 1\n/* a\n
+c = 1 // x\n# y\n
+s = """\n  a\n  ""
+s = """a
+x = 1\n"""\n
+x = +5\n
+x = -\n
+x = 1e\n
+x = 0x\n
+x = 1.5p\n
+x = 1p999999\n
+a { b { c { d = \n
+a { b = [ { c = [ 1, \n
+outer { inner = [ { x = 1 }, { y = "s\n } ] }\nz = 1\n
+s = "\\xff"\nn = 1\n
+s = "a\\xff\nn = 1\n
+a { b = # c\n}\n
+a { b = $ # c\n}\n
+a = { b = 1 # c\n
+a = [ [1 # c\n
+a = [ { b = 1 ] # c\n
+m { "k": # c\n}\n
+a = [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[ # c\n
+a = [[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[1]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]] # c\nb = 1 # d\n
+a = b"!!" # c\n
+a = 1p # c\n
+a = [1, } # c\nb = 2\n
+a = 1 # c\n}\n# d\n
+# a\n] # b\nx = 1\n
+a {\n  # inside\n
+a = [\n  # inside\n
+a = [ 1 # c\n
+a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { a { x = 1 } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }\nn = 1\n
+a = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = { b = 1 } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } } }\nn = 1\n
+# Every prefix of three documents.
+prefixes tolerant/truncation.pxf
+prefixes tolerant/truncation-dataset.pxf
+prefixes tolerant/truncation-any.pxf
+# Every vendored .pxf fixture, valid or not.
+file any/assignment.pxf
+file any/block.pxf
+file any/err-not-any.pxf
+file any/err-not-first.pxf
+file any/err-twice.pxf
+file any/err-unquoted-url.pxf
+file any/err-unresolved.pxf
+file any/list-element.pxf
+file any/map-value.pxf
+file any/plain-fields.pxf
+file any/url-verbatim.pxf
+file bigfloat/dec-1e4932.pxf
+file bigfloat/dec-2pow1024-p64.pxf
+file bigfloat/dec-exponent-bound-prec256.pxf
+file bigfloat/dec-exponent-only-p24.pxf
+file bigfloat/dec-hundred-digits-p333.pxf
+file bigfloat/dec-hundred-digits-unsuffixed.pxf
+file bigfloat/dec-integer-p64.pxf
+file bigfloat/dec-max-precision-with-exponent.pxf
+file bigfloat/dec-minus-two-and-a-half.pxf
+file bigfloat/dec-negative-zero-p64.pxf
+file bigfloat/dec-negative-zero.pxf
+file bigfloat/dec-one-at-max-precision.pxf
+file bigfloat/dec-rounds-up-to-power-p8.pxf
+file bigfloat/dec-small-positional.pxf
+file bigfloat/dec-tenth-p53.pxf
+file bigfloat/dec-tenth-unsuffixed.pxf
+file bigfloat/dec-zero-p64.pxf
+file bigfloat/dec-zero.pxf
+file bigfloat/enc-2pow1024-prec64.pxf
+file bigfloat/enc-exponent-bound-prec256.pxf
+file bigfloat/enc-integer.pxf
+file bigfloat/enc-long-mantissa.pxf
+file bigfloat/enc-max-precision-with-exponent.pxf
+file bigfloat/enc-one-and-a-half.pxf
+file bigfloat/enc-prec-zero.pxf
+file bigfloat/enc-tenth-as-double.pxf
+file bigfloat/enc-three-quarters-negative.pxf
+file bigfloat/enc-tiny-negative-exponent.pxf
+file bigfloat/enc-wide-mantissa-prec53.pxf
+file bigfloat/enc-zero-prec64-negative.pxf
+file bigfloat/enc-zero-prec64.pxf
+file bigfloat/err-precision-overflow.pxf
+file bigfloat/err-precision-past-limit.pxf
+file bigfloat/err-precision-zero.pxf
+file bigfloat/err-suffix-on-int32.pxf
+file blocks/comma-between-elements.pxf
+file blocks/err-comma-in-block.pxf
+file blocks/err-comma-in-list-element.pxf
+file blocks/err-comma-in-map.pxf
+file blocks/err-semicolon-in-block.pxf
+file blocks/newline-in-block.pxf
+file blocks/space-in-block.pxf
+file dataset/arity-long.pxf
+file dataset/arity-short.pxf
+file dataset/block-cell.pxf
+file dataset/block-on-scalar.pxf
+file dataset/cell-framing.pxf
+file dataset/dotted-bad-header-empty-row.pxf
+file dataset/dotted-bad-header-no-rows.pxf
+file dataset/dotted-column.pxf
+file dataset/dotted-empty-segment.pxf
+file dataset/dotted-grouping.pxf
+file dataset/dotted-into-any.pxf
+file dataset/dotted-into-bignum.pxf
+file dataset/dotted-into-duration.pxf
+file dataset/dotted-into-secret.pxf
+file dataset/dotted-into-timestamp.pxf
+file dataset/dotted-into-wrapper.pxf
+file dataset/dotted-null-leaf.pxf
+file dataset/dotted-oneof-two-members.pxf
+file dataset/dotted-oneof.pxf
+file dataset/dotted-overlap-deep.pxf
+file dataset/dotted-overlap.pxf
+file dataset/dotted-required-missing.pxf
+file dataset/dotted-required.pxf
+file dataset/dotted-through-map.pxf
+file dataset/dotted-through-repeated.pxf
+file dataset/dotted-through-scalar.pxf
+file dataset/dotted-trailing-dot.pxf
+file dataset/dotted-unknown-segment.pxf
+file dataset/dotted-with-value-cells.pxf
+file dataset/duplicate-column.pxf
+file dataset/empty-rows.pxf
+file dataset/junk-between-rows.pxf
+file dataset/list-cell.pxf
+file dataset/nested-cells.pxf
+file dataset/null-on-optional-cell.pxf
+file dataset/null-on-scalar-cell.pxf
+file dataset/rows-end-at-directive.pxf
+file dataset/string-newline-in-cell.pxf
+file dataset/truncated-row-eof.pxf
+file dataset/truncated-row-then-rows.pxf
+file dataset/with-body.pxf
+file dataset/with-type.pxf
+file duplicates/err-map-key-twice-across-bindings.pxf
+file duplicates/err-map-key-twice-in-literal.pxf
+file duplicates/err-map-key-twice-int-spellings.pxf
+file duplicates/err-map-key-twice-message-values.pxf
+file duplicates/err-map-key-twice-same-value.pxf
+file duplicates/err-message-assign-then-block.pxf
+file duplicates/err-message-twice.pxf
+file duplicates/err-nested-scalar-twice.pxf
+file duplicates/err-null-then-value.pxf
+file duplicates/err-oneof-member-twice.pxf
+file duplicates/err-oneof-scalar-twice.pxf
+file duplicates/err-optional-twice.pxf
+file duplicates/err-scalar-same-value.pxf
+file duplicates/err-scalar-twice.pxf
+file duplicates/err-wrapper-twice.pxf
+file duplicates/map-key-once-per-body.pxf
+file duplicates/map-twice-distinct-keys.pxf
+file duplicates/once-per-body.pxf
+file duplicates/repeated-twice.pxf
+file keyed/anonymous-duplicate-ok.pxf
+file keyed/anonymous-equivalence.pxf
+file keyed/err-duplicate-key-spelling.pxf
+file keyed/err-duplicate-key.pxf
+file keyed/err-empty-key-anonymous.pxf
+file keyed/err-empty-key.pxf
+file keyed/err-key-conflict.pxf
+file keyed/err-key-null.pxf
+file keyed/err-key-oneof-sibling-null.pxf
+file keyed/err-key-oneof-sibling.pxf
+file keyed/err-quoted-name-unkeyed.pxf
+file keyed/fmt-anonymous-to-keyed.expected.pxf
+file keyed/fmt-anonymous-to-keyed.pxf
+file keyed/fmt-unquote.expected.pxf
+file keyed/fmt-unquote.pxf
+file keyed/key-null-anonymous-ok.pxf
+file keyed/key-oneof-ok.pxf
+file keyed/redundant-key-ok.pxf
+file keyed/roundtrip-keyed.pxf
+file keyed/roundtrip-quoted.pxf
+file map-keys/bool-keys-integer.pxf
+file map-keys/bool-keys-keyword.pxf
+file map-keys/bool-keys.pxf
+file map-keys/fmt-bare-keys.expected.pxf
+file map-keys/fmt-bare-keys.pxf
+file map-keys/fmt-dotted-keys.expected.pxf
+file map-keys/fmt-dotted-keys.pxf
+file map-keys/fmt-keyword-keys.expected.pxf
+file map-keys/fmt-keyword-keys.pxf
+file map-keys/invalid/identifier-lower-f.pxf
+file map-keys/invalid/identifier-lower-t.pxf
+file map-keys/invalid/identifier-title-False.pxf
+file map-keys/invalid/identifier-title-True.pxf
+file map-keys/invalid/identifier-upper-F.pxf
+file map-keys/invalid/identifier-upper-FALSE.pxf
+file map-keys/invalid/identifier-upper-T.pxf
+file map-keys/invalid/identifier-upper-TRUE.pxf
+file map-keys/invalid/identifier-word-yes.pxf
+file map-keys/invalid/string-lower-t.pxf
+file map-keys/invalid/string-one-1.pxf
+file map-keys/invalid/string-upper-TRUE.pxf
+file map-keys/invalid/string-zero-0.pxf
+file nulls/default-optional.pxf
+file nulls/editions-explicit.pxf
+file nulls/err-editions-implicit.pxf
+file nulls/err-list-element.pxf
+file nulls/err-map-message-value.pxf
+file nulls/err-map-value.pxf
+file nulls/err-map.pxf
+file nulls/err-nested-scalar.pxf
+file nulls/err-oneof-sibling.pxf
+file nulls/err-proto2-required.pxf
+file nulls/err-repeated.pxf
+file nulls/err-scalar.pxf
+file nulls/message.pxf
+file nulls/oneof-message.pxf
+file nulls/oneof-scalar.pxf
+file nulls/optional-scalar.pxf
+file nulls/proto2-scalar.pxf
+file nulls/required-optional.pxf
+file nulls/wrapper.pxf
+file strings/err-raw-newline.pxf
+file strings/escaped-newline.pxf
+file strings/newline-after-string.pxf
+file strings/triple-quoted.pxf

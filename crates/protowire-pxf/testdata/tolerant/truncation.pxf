@@ -1,0 +1,12 @@
+@type demo.v1.Config
+@header chameleon.v1.LayerHeader { id = "x" }
+# comment
+name = "value"
+data = b"aGk="
+tags = ["a", "b"]
+labels { "x": 1 }
+server {
+  host = "h"
+  tls { enabled = true }
+  timeout = 30s
+}
