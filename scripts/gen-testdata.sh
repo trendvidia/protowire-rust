@@ -138,6 +138,10 @@ buf build --as-file-descriptor-set --exclude-source-info \
   -o crates/protowire-pxf/testdata/keyed-entry-name-test.binpb
 
 echo "wrote crates/protowire-pxf/testdata/keyed-entry-name-test.binpb (buf)"
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/keyed-undo-test.proto \
+  -o crates/protowire-pxf/testdata/keyed-undo-test.binpb
+echo "wrote crates/protowire-pxf/testdata/keyed-undo-test.binpb (buf)"
 
 buf build --as-file-descriptor-set --exclude-source-info \
   --path crates/protowire-pxf/testdata/marshal-depth-test.proto \

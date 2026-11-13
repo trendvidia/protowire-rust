@@ -44,7 +44,10 @@ pub use decode::{
 pub use encode::{append_dataset_header, append_dataset_row, marshal, MarshalOptions};
 pub use errors::{NoDataset, PxfError};
 pub use format::{append_value, format, format_value, format_with_options, FormatOptions};
-pub use keyed::{canonicalize_keyed, ident_safe_entry_name, key_field};
+pub use keyed::{
+    canonicalize_keyed, ident_safe_entry_name, key_field, keyed_diagnostics, KeyedError,
+    KeyedErrorKind,
+};
 pub use lexer::Lexer;
 pub use limits::{
     Limits, MAX_BIG_FLOAT_EXPONENT, MAX_BYTES_LITERAL_LENGTH, MAX_MESSAGE_SIZE, MAX_NESTING_DEPTH,
