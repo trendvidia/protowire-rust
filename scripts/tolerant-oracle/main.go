@@ -12,7 +12,8 @@
 // each. Each row is the case, then: Parse's verdict (OK, or ERR and the
 // error); ParseTolerant's errors, each line:col:offset|msg, joined by " ; "
 // (NONE for none); and the tree ParseTolerant returned, in the dump format
-// below, which tests/tolerant_oracle.rs writes the same way.
+// below, which tests/tolerant_oracle.rs writes the same way. An entry or a
+// value is dumped with its span, start-end (#131).
 package main
 
 import (
@@ -60,6 +61,9 @@ func q(s string) string {
 
 func pos(p pxf.Position) string { return fmt.Sprintf("%d:%d:%d", p.Line, p.Column, p.Offset) }
 
+// sp writes an entry's or a value's span, its start and its end.
+func sp(start, end pxf.Position) string { return pos(start) + "-" + pos(end) }
+
 func bit(b bool) string {
 	if b {
 		return "1"
@@ -80,33 +84,33 @@ func value(v pxf.Value) string {
 	case nil:
 		return "_"
 	case *pxf.StringVal:
-		return "s(" + pos(v.Pos) + "," + q(v.Value) + ")"
+		return "s(" + sp(v.Pos, v.End) + "," + q(v.Value) + ")"
 	case *pxf.IntVal:
-		return "i(" + pos(v.Pos) + "," + q(v.Raw) + "," + q(v.Prec) + ")"
+		return "i(" + sp(v.Pos, v.End) + "," + q(v.Raw) + "," + q(v.Prec) + ")"
 	case *pxf.FloatVal:
-		return "f(" + pos(v.Pos) + "," + q(v.Raw) + "," + q(v.Prec) + ")"
+		return "f(" + sp(v.Pos, v.End) + "," + q(v.Raw) + "," + q(v.Prec) + ")"
 	case *pxf.BoolVal:
-		return "bo(" + pos(v.Pos) + "," + bit(v.Value) + ")"
+		return "bo(" + sp(v.Pos, v.End) + "," + bit(v.Value) + ")"
 	case *pxf.BytesVal:
-		return "by(" + pos(v.Pos) + "," + q(string(v.Value)) + ")"
+		return "by(" + sp(v.Pos, v.End) + "," + q(string(v.Value)) + ")"
 	case *pxf.NullVal:
-		return "n(" + pos(v.Pos) + ")"
+		return "n(" + sp(v.Pos, v.End) + ")"
 	case *pxf.IdentVal:
-		return "id(" + pos(v.Pos) + "," + q(v.Name) + ")"
+		return "id(" + sp(v.Pos, v.End) + "," + q(v.Name) + ")"
 	case *pxf.TimestampVal:
-		return "ts(" + pos(v.Pos) + "," + q(v.Raw) + ")"
+		return "ts(" + sp(v.Pos, v.End) + "," + q(v.Raw) + ")"
 	case *pxf.DurationVal:
-		return "du(" + pos(v.Pos) + "," + q(v.Raw) + ")"
+		return "du(" + sp(v.Pos, v.End) + "," + q(v.Raw) + ")"
 	case *pxf.ListVal:
 		var out []string
 		for _, e := range v.Elements {
 			out = append(out, value(e))
 		}
-		return "l(" + pos(v.Pos) + ",[" + strings.Join(out, ",") + "])"
+		return "l(" + sp(v.Pos, v.End) + ",[" + strings.Join(out, ",") + "])"
 	case *pxf.BlockVal:
-		return "bl(" + pos(v.Pos) + "," + entries(v.Entries) + "," + comments(v.TrailingComments) + ")"
+		return "bl(" + sp(v.Pos, v.End) + "," + entries(v.Entries) + "," + comments(v.TrailingComments) + ")"
 	case *pxf.BadVal:
-		return "bad(" + pos(v.Pos) + ")"
+		return "bad(" + sp(v.Pos, v.End) + ")"
 	default:
 		check(fmt.Errorf("unknown value %T", v))
 		return ""
@@ -118,13 +122,13 @@ func entries(es []pxf.Entry) string {
 	for _, e := range es {
 		switch e := e.(type) {
 		case *pxf.Assignment:
-			out = append(out, "a("+pos(e.Pos)+","+q(e.Key)+","+bit(e.KeyQuoted)+","+value(e.Value)+","+comments(e.LeadingComments)+","+q(e.TrailingComment)+")")
+			out = append(out, "a("+sp(e.Pos, e.End)+","+q(e.Key)+","+bit(e.KeyQuoted)+","+value(e.Value)+","+comments(e.LeadingComments)+","+q(e.TrailingComment)+")")
 		case *pxf.MapEntry:
-			out = append(out, "m("+pos(e.Pos)+","+q(e.Key)+","+bit(e.KeyQuoted)+","+value(e.Value)+","+comments(e.LeadingComments)+","+q(e.TrailingComment)+")")
+			out = append(out, "m("+sp(e.Pos, e.End)+","+q(e.Key)+","+bit(e.KeyQuoted)+","+value(e.Value)+","+comments(e.LeadingComments)+","+q(e.TrailingComment)+")")
 		case *pxf.Block:
-			out = append(out, "b("+pos(e.Pos)+","+q(e.Name)+","+bit(e.NameQuoted)+","+entries(e.Entries)+","+comments(e.LeadingComments)+","+comments(e.TrailingComments)+")")
+			out = append(out, "b("+sp(e.Pos, e.End)+","+q(e.Name)+","+bit(e.NameQuoted)+","+entries(e.Entries)+","+comments(e.LeadingComments)+","+comments(e.TrailingComments)+")")
 		case *pxf.TypeEntry:
-			out = append(out, "ty("+pos(e.Pos)+","+q(e.URL)+","+comments(e.LeadingComments)+","+q(e.TrailingComment)+")")
+			out = append(out, "ty("+sp(e.Pos, e.End)+","+q(e.URL)+","+comments(e.LeadingComments)+","+q(e.TrailingComment)+")")
 		default:
 			check(fmt.Errorf("unknown entry %T", e))
 		}

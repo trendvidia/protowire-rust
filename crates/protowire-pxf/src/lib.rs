@@ -32,9 +32,9 @@ pub mod token;
 mod wkt;
 
 pub use ast::{
-    Assignment, BadVal, Block, BlockVal, BoolVal, BytesVal, Comment, DatasetDirective, DatasetRow,
-    Directive, Document, DurationVal, Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry,
-    NullVal, StringVal, TimestampVal, TypeEntry, Value,
+    entry_span, value_span, Assignment, BadVal, Block, BlockVal, BoolVal, BytesVal, Comment,
+    DatasetDirective, DatasetRow, Directive, Document, DurationVal, Entry, FloatVal, IdentVal,
+    IntVal, ListVal, MapEntry, NullVal, StringVal, TimestampVal, TypeEntry, Value,
 };
 pub use dataset_reader::{bind_row, DatasetReader, DatasetTail, DEFAULT_HEADER_MAX_BYTES};
 pub use decode::{
