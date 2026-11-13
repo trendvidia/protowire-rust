@@ -20,6 +20,9 @@
 //! `(pxf.key)` placement check in `schema.rs`. Mirrors the reference's
 //! `encoding/pxf/keyed.go`.
 
+use std::fmt;
+use std::sync::Arc;
+
 use prost_reflect::{FieldDescriptor, Kind, MessageDescriptor, OneofDescriptor};
 
 use crate::annotations::get_key;
@@ -71,37 +74,136 @@ pub fn ident_safe_entry_name(s: &str) -> bool {
         .all(|&c| c.is_ascii_alphanumeric() || c == b'_' || c == b'.')
 }
 
-pub(crate) fn empty_name_error(pos: Position, field: &str) -> PxfError {
-    PxfError::new(
+/// What a keyed repeated field error is (draft -01 §3.13), as protowire-go's
+/// `KeyedErrorKind`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum KeyedErrorKind {
+    /// Two entries in one keyed block whose names are equal once unquoted.
+    DuplicateKey = 1,
+    /// A binding in a named entry that disagrees with its name: an explicit
+    /// key-field assignment of another value, `null` on the key field, or
+    /// another member of the key field's oneof.
+    KeyConflict,
+    /// The empty string as a key: a quoted entry name `""`, or an explicit
+    /// empty-string assignment to the key field of an element, in either
+    /// surface form.
+    EmptyKey,
+    /// A quoted entry name anywhere but in a keyed repeated field's block,
+    /// where a string never names a field.
+    QuotedNameUnkeyed,
+}
+
+/// The kind's name, as protowire-go's `KeyedErrorKind.String` gives it.
+impl fmt::Display for KeyedErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            KeyedErrorKind::DuplicateKey => "duplicate key",
+            KeyedErrorKind::KeyConflict => "key conflict",
+            KeyedErrorKind::EmptyKey => "empty key",
+            KeyedErrorKind::QuotedNameUnkeyed => "quoted entry name outside keyed field",
+        })
+    }
+}
+
+/// A keyed repeated field error (draft -01 §3.13), as protowire-go's
+/// `KeyedError`.
+///
+/// A decode that refuses a document for one fails with a [`PxfError`] of
+/// the same position and text, whose [`PxfError::keyed_error`] is this.
+/// [`keyed_diagnostics`] gives every one in a parsed document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct KeyedError {
+    pub pos: Position,
+    pub kind: KeyedErrorKind,
+    /// The keyed repeated field's name. Empty for
+    /// [`KeyedErrorKind::QuotedNameUnkeyed`], where there is no keyed field.
+    pub field: String,
+    /// The offending key or entry name, when there is one.
+    pub key: String,
+    pub msg: String,
+}
+
+/// `line:col: msg`, as protowire-go's `KeyedError.Error` prints.
+impl fmt::Display for KeyedError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: {}", self.pos, self.msg)
+    }
+}
+
+impl std::error::Error for KeyedError {}
+
+/// The decode error for a keyed error: its position and text, with the
+/// keyed error as the source.
+impl From<KeyedError> for PxfError {
+    fn from(e: KeyedError) -> Self {
+        let (pos, msg) = (e.pos, e.msg.clone());
+        PxfError::with_source(pos, msg, Arc::new(e))
+    }
+}
+
+fn keyed_empty_name(pos: Position, field: &str) -> KeyedError {
+    KeyedError {
         pos,
-        format!(
+        kind: KeyedErrorKind::EmptyKey,
+        field: field.to_string(),
+        key: String::new(),
+        msg: format!(
             "empty entry name in keyed field {:?}: the empty string is not a valid key",
             field
         ),
-    )
+    }
 }
 
-pub(crate) fn duplicate_key_error(pos: Position, field: &str, key: &str) -> PxfError {
-    PxfError::new(
+fn keyed_duplicate_key(pos: Position, field: &str, key: &str) -> KeyedError {
+    KeyedError {
         pos,
-        format!("duplicate key {:?} in keyed field {:?}", key, field),
-    )
+        kind: KeyedErrorKind::DuplicateKey,
+        field: field.to_string(),
+        key: key.to_string(),
+        msg: format!("duplicate key {:?} in keyed field {:?}", key, field),
+    }
 }
 
-pub(crate) fn quoted_name_unkeyed_error(pos: Position, name: &str) -> PxfError {
-    PxfError::new(
+fn keyed_quoted_name_unkeyed(pos: Position, name: &str) -> KeyedError {
+    KeyedError {
         pos,
-        format!(
+        kind: KeyedErrorKind::QuotedNameUnkeyed,
+        field: String::new(),
+        key: name.to_string(),
+        msg: format!(
             "quoted entry name {:?} is only valid inside a keyed repeated field's block (draft -01 §3.13)",
             name
         ),
-    )
+    }
+}
+
+// The decoder's errors are built out of line and returned as a `PxfError`,
+// the size of the decoder's other errors: a `KeyedError` in the decoder's
+// recursive frames grows them past what a deep document's stack allows.
+
+#[cold]
+#[inline(never)]
+pub(crate) fn empty_name_error(pos: Position, field: &str) -> PxfError {
+    keyed_empty_name(pos, field).into()
+}
+
+#[cold]
+#[inline(never)]
+pub(crate) fn duplicate_key_error(pos: Position, field: &str, key: &str) -> PxfError {
+    keyed_duplicate_key(pos, field, key).into()
+}
+
+#[cold]
+#[inline(never)]
+pub(crate) fn quoted_name_unkeyed_error(pos: Position, name: &str) -> PxfError {
+    keyed_quoted_name_unkeyed(pos, name).into()
 }
 
 /// The key-field checks for the immediate body of one element of a keyed
 /// repeated field: an explicit assignment to the key field must not be
 /// empty, and in the named (keyed-block) form must agree with the entry
-/// name (draft -01 §3.13). Set on the decoder for exactly the next body.
+/// name (draft -01 §3.13). Set on the decoder for exactly the next body,
+/// and used the same way by [`keyed_diagnostics`].
 #[derive(Debug, Clone)]
 pub(crate) struct KeyedElemState {
     /// The keyed repeated field's PXF name.
@@ -115,74 +217,289 @@ pub(crate) struct KeyedElemState {
 }
 
 impl KeyedElemState {
+    /// [`Self::explicit_key_conflict`], as the decoder's error.
     pub(crate) fn check_explicit_key(&self, value: &str, pos: Position) -> Result<(), PxfError> {
-        if value.is_empty() {
-            return Err(PxfError::new(
-                pos,
-                format!(
-                    "explicit empty-string assignment to key field {:?} of keyed field {:?}: the empty string is not a valid key",
-                    self.key_fd.name(),
-                    self.field
-                ),
-            ));
+        match self.explicit_key_conflict(value, pos) {
+            None => Ok(()),
+            Some(e) => Err(e.into()),
         }
-        if self.named && value != self.entry_name {
-            return Err(PxfError::new(
-                pos,
-                format!(
-                    "key field {:?} = {:?} conflicts with entry name {:?} in keyed field {:?}",
-                    self.key_fd.name(),
-                    value,
-                    self.entry_name,
-                    self.field
-                ),
-            ));
-        }
-        Ok(())
     }
 
-    /// Refuse a binding in a named entry's body that would undo the entry
-    /// name, which binds the key field (draft -01 §3.13): `null` on the key
-    /// field, or another member of the key field's oneof, by value or `null`.
+    /// [`Self::binding_conflict`], as the decoder's error.
     pub(crate) fn check_binding(
         &self,
         fd: &FieldDescriptor,
         is_null: bool,
         pos: Position,
     ) -> Result<(), PxfError> {
-        if !self.named {
-            return Ok(());
+        match self.binding_conflict(fd, is_null, pos) {
+            None => Ok(()),
+            Some(e) => Err(e.into()),
         }
-        if fd.name() == self.key_fd.name() {
-            if !is_null {
-                return Ok(());
-            }
-            return Err(PxfError::new(
+    }
+
+    /// An explicit assignment of `value` to the key field: the empty string
+    /// is never a key, and in a named entry it must be the entry name.
+    #[inline(never)]
+    fn explicit_key_conflict(&self, value: &str, pos: Position) -> Option<KeyedError> {
+        if value.is_empty() {
+            return Some(KeyedError {
                 pos,
-                format!(
-                    "null on key field {:?} conflicts with entry name {:?} in keyed field {:?}",
+                kind: KeyedErrorKind::EmptyKey,
+                field: self.field.clone(),
+                key: String::new(),
+                msg: format!(
+                    "explicit empty-string assignment to key field {:?} of keyed field {:?}: the empty string is not a valid key",
+                    self.key_fd.name(),
+                    self.field
+                ),
+            });
+        }
+        if self.named && value != self.entry_name {
+            return Some(KeyedError {
+                pos,
+                kind: KeyedErrorKind::KeyConflict,
+                field: self.field.clone(),
+                key: self.entry_name.clone(),
+                msg: format!(
+                    "key field {:?} = {:?} conflicts with entry name {:?} in keyed field {:?}",
+                    self.key_fd.name(),
+                    value,
+                    self.entry_name,
+                    self.field
+                ),
+            });
+        }
+        None
+    }
+
+    /// A binding in a named entry's body that would undo the entry name,
+    /// which binds the key field (draft -01 §3.13): `null` on the key
+    /// field, or another member of the key field's oneof, by value or `null`.
+    #[inline(never)]
+    fn binding_conflict(
+        &self,
+        fd: &FieldDescriptor,
+        is_null: bool,
+        pos: Position,
+    ) -> Option<KeyedError> {
+        if !self.named {
+            return None;
+        }
+        let msg = if fd.name() == self.key_fd.name() {
+            if !is_null {
+                return None;
+            }
+            format!(
+                "null on key field {:?} conflicts with entry name {:?} in keyed field {:?}",
+                self.key_fd.name(),
+                self.entry_name,
+                self.field
+            )
+        } else {
+            match (real_oneof(fd), real_oneof(&self.key_fd)) {
+                (Some(oo), Some(key_oo)) if oo == key_oo => format!(
+                    "field {:?} shares oneof {:?} with key field {:?}, which entry name {:?} already set in keyed field {:?}",
+                    fd.name(),
+                    oo.name(),
                     self.key_fd.name(),
                     self.entry_name,
                     self.field
                 ),
-            ));
+                _ => return None,
+            }
+        };
+        Some(KeyedError {
+            pos,
+            kind: KeyedErrorKind::KeyConflict,
+            field: self.field.clone(),
+            key: self.entry_name.clone(),
+            msg,
+        })
+    }
+}
+
+/// Every keyed repeated field error in `doc` against `desc` (draft -01
+/// §3.13), in source order: duplicate entry names in a keyed block, empty
+/// keys, bindings in a named entry that disagree with its name, and quoted
+/// entry names outside a keyed field's block. A port of protowire-go's
+/// `KeyedDiagnostics`.
+///
+/// It is the tolerant counterpart of the errors a decode refuses with:
+/// editor tooling parses a document, binds a schema later, and shows these
+/// as diagnostics instead of failing. Entries the schema does not resolve
+/// (unknown fields, a value of the wrong shape) are skipped, since those
+/// are ordinary schema errors. So is the body of an `Any`, which needs a
+/// type resolver, and so are `@dataset` rows.
+pub fn keyed_diagnostics(doc: &Document, desc: &MessageDescriptor) -> Vec<KeyedError> {
+    let mut out = Vec::new();
+    diag_entries(&doc.entries, desc, None, &mut out);
+    out.sort_by_key(|e| e.pos.offset);
+    out
+}
+
+fn diag_entries(
+    entries: &[Entry],
+    desc: &MessageDescriptor,
+    ke: Option<&KeyedElemState>,
+    out: &mut Vec<KeyedError>,
+) {
+    for entry in entries {
+        match entry {
+            Entry::Assignment(a) => {
+                if a.key_quoted {
+                    out.push(keyed_quoted_name_unkeyed(a.pos, &a.key));
+                    continue;
+                }
+                let Some(fd) = desc.get_field_by_name(&a.key) else {
+                    continue;
+                };
+                if let Some(ke) = ke {
+                    let is_null = matches!(a.value, Value::Null(_));
+                    out.extend(ke.binding_conflict(&fd, is_null, a.pos));
+                    if fd.name() == ke.key_fd.name() {
+                        if let Value::String(sv) = &a.value {
+                            out.extend(ke.explicit_key_conflict(&sv.value, sv.pos));
+                        }
+                    }
+                }
+                diag_value(&a.value, &fd, out);
+            }
+            Entry::Block(b) => {
+                if b.name_quoted {
+                    out.push(keyed_quoted_name_unkeyed(b.pos, &b.name));
+                    continue;
+                }
+                let Some(fd) = desc.get_field_by_name(&b.name) else {
+                    continue;
+                };
+                if let Some(ke) = ke {
+                    out.extend(ke.binding_conflict(&fd, false, b.pos));
+                }
+                if let Some(key_fd) = key_field(&fd) {
+                    diag_keyed_block(&b.entries, &fd, &key_fd, out);
+                    continue;
+                }
+                let Kind::Message(inner) = fd.kind() else {
+                    continue;
+                };
+                if fd.is_list() {
+                    // The block form on a repeated field with no
+                    // (pxf.key) is an ordinary schema error, but a quoted
+                    // entry name inside it is this diagnostic.
+                    for be in &b.entries {
+                        match be {
+                            Entry::Assignment(ba) if ba.key_quoted => {
+                                out.push(keyed_quoted_name_unkeyed(ba.pos, &ba.key));
+                            }
+                            Entry::Block(bb) if bb.name_quoted => {
+                                out.push(keyed_quoted_name_unkeyed(bb.pos, &bb.name));
+                            }
+                            _ => {}
+                        }
+                    }
+                    continue;
+                }
+                if !fd.is_map() {
+                    diag_entries(&b.entries, &inner, None, out);
+                }
+            }
+            Entry::MapEntry(_) | Entry::TypeEntry(_) => {}
         }
-        if let (Some(oo), Some(key_oo)) = (real_oneof(fd), real_oneof(&self.key_fd)) {
-            if oo == key_oo {
-                return Err(PxfError::new(
-                    pos,
-                    format!(
-                        "field {:?} shares oneof {:?} with key field {:?}, which entry name {:?} already set in keyed field {:?}",
-                        fd.name(),
-                        oo.name(),
-                        self.key_fd.name(),
-                        self.entry_name,
-                        self.field
-                    ),
-                ));
+    }
+}
+
+/// Descends into an assignment's value by `fd`'s shape: a keyed block,
+/// anonymous list elements, a singular message, and message map values.
+fn diag_value(v: &Value, fd: &FieldDescriptor, out: &mut Vec<KeyedError>) {
+    if fd.is_map() {
+        let Value::Block(bv) = v else {
+            return;
+        };
+        let Kind::Message(entry) = fd.kind() else {
+            return;
+        };
+        let Kind::Message(value_desc) = entry.map_entry_value_field().kind() else {
+            return;
+        };
+        for e in &bv.entries {
+            if let Entry::MapEntry(me) = e {
+                if let Value::Block(inner) = &me.value {
+                    diag_entries(&inner.entries, &value_desc, None, out);
+                }
             }
         }
-        Ok(())
+        return;
+    }
+    let Kind::Message(elem) = fd.kind() else {
+        return;
+    };
+    if fd.is_list() {
+        let key_fd = key_field(fd);
+        match v {
+            Value::List(lv) => {
+                let state = key_fd.map(|key_fd| KeyedElemState {
+                    field: fd.name().to_string(),
+                    key_fd,
+                    entry_name: String::new(),
+                    named: false,
+                });
+                for el in &lv.elements {
+                    if let Value::Block(bv) = el {
+                        diag_entries(&bv.entries, &elem, state.as_ref(), out);
+                    }
+                }
+            }
+            // The `name = { ... }` spelling of the keyed block form.
+            Value::Block(bv) => {
+                if let Some(key_fd) = key_fd {
+                    diag_keyed_block(&bv.entries, fd, &key_fd, out);
+                }
+            }
+            _ => {}
+        }
+        return;
+    }
+    if let Value::Block(bv) = v {
+        diag_entries(&bv.entries, &elem, None, out);
+    }
+}
+
+/// Checks the entries of one keyed block: empty and duplicate names,
+/// compared unquoted, then each entry's body with the key-field context.
+fn diag_keyed_block(
+    entries: &[Entry],
+    fd: &FieldDescriptor,
+    key_fd: &FieldDescriptor,
+    out: &mut Vec<KeyedError>,
+) {
+    let Kind::Message(elem) = fd.kind() else {
+        return;
+    };
+    let mut seen = std::collections::HashSet::new();
+    for entry in entries {
+        let (name, pos, body) = match entry {
+            Entry::Block(b) => (&b.name, b.pos, &b.entries),
+            Entry::Assignment(a) => match &a.value {
+                Value::Block(bv) => (&a.key, a.pos, &bv.entries),
+                // A non-block value on a named entry is an ordinary decode
+                // error (the element type is a message).
+                _ => continue,
+            },
+            _ => continue,
+        };
+        if name.is_empty() {
+            out.push(keyed_empty_name(pos, fd.name()));
+        } else if !seen.insert(name.as_str()) {
+            out.push(keyed_duplicate_key(pos, fd.name(), name));
+        }
+        let state = KeyedElemState {
+            field: fd.name().to_string(),
+            key_fd: key_fd.clone(),
+            entry_name: name.clone(),
+            named: true,
+        };
+        diag_entries(body, &elem, Some(&state), out);
     }
 }
 

@@ -983,9 +983,14 @@ fn at_row(e: PxfError, pos: Position, columns: &[String], spans: &[CellSpan]) ->
         .find(|s| s.first <= e.pos.line && e.pos.line <= s.last)
     {
         Some(s) => format!("column {}: {}", columns[s.col], e.msg),
-        None => e.msg,
+        None => e.msg.clone(),
     };
-    PxfError::new(if pos.line == 0 { e.pos } else { pos }, msg)
+    // The source is kept, so a keyed error stays one. protowire-go returns a
+    // keyed error unmoved, at its place in the synthetic body; this port,
+    // like protowire-cpp and protowire-java, moves its text to the row
+    // (#178).
+    let at = if pos.line == 0 { e.pos } else { pos };
+    e.relocated(at, msg)
 }
 
 /// The lines of a row's body that a column's entry takes.
