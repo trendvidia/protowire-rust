@@ -32,7 +32,7 @@ pub mod token;
 mod wkt;
 
 pub use ast::{
-    Assignment, Block, BlockVal, BoolVal, BytesVal, Comment, DatasetDirective, DatasetRow,
+    Assignment, BadVal, Block, BlockVal, BoolVal, BytesVal, Comment, DatasetDirective, DatasetRow,
     Directive, Document, DurationVal, Entry, FloatVal, IdentVal, IntVal, ListVal, MapEntry,
     NullVal, StringVal, TimestampVal, TypeEntry, Value,
 };
@@ -50,7 +50,7 @@ pub use limits::{
     Limits, MAX_BIG_FLOAT_EXPONENT, MAX_BYTES_LITERAL_LENGTH, MAX_MESSAGE_SIZE, MAX_NESTING_DEPTH,
     MAX_NUMERIC_LITERAL_DIGITS, MAX_REPEATED_COUNT,
 };
-pub use parser::{parse, parse_with_limits};
+pub use parser::{parse, parse_tolerant, parse_tolerant_with_limits, parse_with_limits};
 pub use result::Presence;
 pub use schema::{
     is_defaultable_message, validate_descriptor, validate_file, Violation, ViolationKind,

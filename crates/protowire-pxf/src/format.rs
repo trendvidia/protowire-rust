@@ -345,6 +345,9 @@ impl Formatter<'_> {
             Value::Ident(i) => self.out.push_str(&i.name),
             Value::Timestamp(t) => self.out.push_str(&t.raw),
             Value::Duration(d) => self.out.push_str(&d.raw),
+            // A placeholder spans no source, so it writes nothing, as
+            // protowire-go's formatter does.
+            Value::Bad(_) => {}
             Value::List(l) => {
                 self.out.push_str("[\n");
                 let last = l.elements.len().saturating_sub(1);

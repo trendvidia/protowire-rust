@@ -1,0 +1,5 @@
+@proto pkg.Row { string a = 1; }
+# rows
+@dataset pkg.Row (a, b.c)
+("x", { d = [1, 2] })
+(, null) # end

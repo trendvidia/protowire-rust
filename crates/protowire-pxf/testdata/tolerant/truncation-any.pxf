@@ -1,0 +1,8 @@
+/* lead */ any {
+  @type = "type.googleapis.com/x.Y" # t
+  "k": 1p5
+  when = 2024-01-15T10:30:00Z
+  s = """
+    a
+    """
+}

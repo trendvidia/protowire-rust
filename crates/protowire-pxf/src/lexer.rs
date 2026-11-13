@@ -47,6 +47,16 @@ pub struct Lexer<'a> {
     /// tell a token a read cut short from a finished one, with a lexer per
     /// token; the parser never reads it.
     saw_end: bool,
+    /// protowire-go's `tolerant` mode, behind [`crate::parse_tolerant`]: an
+    /// unterminated string ends at its newline or at the end of input, an
+    /// unterminated triple-quoted string, block comment or bytes literal at
+    /// the end of input (a bytes literal at its newline), an invalid escape
+    /// is kept as written, and a bytes literal's base64 is left for the
+    /// parser to check. Each recovery is recorded in `errs`.
+    tolerant: bool,
+    /// The errors tolerant mode recovered from, in the order met; the
+    /// parser takes them after each token.
+    errs: Vec<crate::errors::PxfError>,
 }
 
 /// Snapshot of [`Lexer`] state. Used to roll back the lexer for
@@ -88,7 +98,24 @@ impl<'a> Lexer<'a> {
             line0: start.line,
             col0: start.column,
             saw_end: false,
+            tolerant: false,
+            errs: Vec::new(),
         }
+    }
+
+    /// Recover from what a well-formed document cannot hold, as
+    /// protowire-go's tolerant lexer does, recording each error.
+    pub(crate) fn set_tolerant(&mut self) {
+        self.tolerant = true;
+    }
+
+    /// The errors recovered from since the last call.
+    pub(crate) fn take_errs(&mut self) -> Vec<crate::errors::PxfError> {
+        std::mem::take(&mut self.errs)
+    }
+
+    fn report(&mut self, pos: Position, msg: &str) {
+        self.errs.push(crate::errors::PxfError::new(pos, msg));
     }
 
     /// Whether the last token could still change with more input.
@@ -351,13 +378,32 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
         self.saw_end = true;
+        if self.tolerant {
+            while self.pos < self.input.len() {
+                self.advance();
+            }
+            self.report(pos, "unterminated block comment");
+            return Token::new(
+                TokenKind::Comment,
+                slice_to_string(&self.input[start..self.pos]),
+                pos,
+            );
+        }
         Token::new(TokenKind::Illegal, "unterminated block comment", pos)
     }
 
     fn lex_string(&mut self, pos: Position) -> Token {
         self.advance(); // opening "
         let mut buf: Vec<u8> = Vec::new();
+        let tolerant = self.tolerant;
         while self.pos < self.input.len() {
+            if tolerant && self.input[self.pos] == b'\n' {
+                // A simple string spans one line. Tolerant mode takes the
+                // newline as a literal being typed: the string ends there,
+                // and the newline is left for the next token.
+                self.report(pos, "unterminated string: ended at newline");
+                return string_token(buf, pos);
+            }
             let ch = self.advance();
             if ch == b'"' {
                 // Token values are stored as Rust `String`. Reject input that
@@ -365,10 +411,7 @@ impl<'a> Lexer<'a> {
                 // require validity, and proto3 strings are spec'd as UTF-8
                 // anyway. Note this is stricter than the Go reference, which
                 // permissively stores arbitrary bytes.
-                return match String::from_utf8(buf) {
-                    Ok(s) => Token::new(TokenKind::String, s, pos),
-                    Err(_) => Token::new(TokenKind::Illegal, "string contains invalid UTF-8", pos),
-                };
+                return string_token(buf, pos);
             }
             if ch == b'\n' {
                 // Draft -01 § String Literals (protowire#350): a simple
@@ -386,8 +429,14 @@ impl<'a> Lexer<'a> {
             }
             if self.pos >= self.input.len() {
                 self.saw_end = true;
+                if tolerant {
+                    self.report(pos, "unterminated escape sequence");
+                    return string_token(buf, pos);
+                }
                 return Token::new(TokenKind::Illegal, "unterminated escape sequence", pos);
             }
+            // Where tolerant mode reports a bad escape: at its letter.
+            let esc_pos = self.current_pos();
             let esc = self.advance();
             match esc {
                 b'"' | b'\\' | b'\'' | b'?' => buf.push(esc),
@@ -400,6 +449,10 @@ impl<'a> Lexer<'a> {
                 b'v' => buf.push(0x0B),
                 b'x' => match self.read_hex_byte() {
                     Some(b) => buf.push(b),
+                    None if tolerant => {
+                        self.report(esc_pos, "invalid \\x escape: expected 2 hex digits");
+                        buf.extend_from_slice(b"\\x");
+                    }
                     None => {
                         return Token::new(
                             TokenKind::Illegal,
@@ -410,6 +463,10 @@ impl<'a> Lexer<'a> {
                 },
                 b'0' | b'1' | b'2' | b'3' => match self.read_oct_rest(esc) {
                     Some(b) => buf.push(b),
+                    None if tolerant => {
+                        self.report(esc_pos, "invalid octal escape: expected 3 octal digits");
+                        buf.extend_from_slice(&[b'\\', esc]);
+                    }
                     None => {
                         return Token::new(
                             TokenKind::Illegal,
@@ -420,6 +477,13 @@ impl<'a> Lexer<'a> {
                 },
                 b'u' => match self.read_hex_rune(4).and_then(valid_rune) {
                     Some(r) => encode_rune(r, &mut buf),
+                    None if tolerant => {
+                        self.report(
+                            esc_pos,
+                            "invalid \\u escape: expected 4 hex digits forming a valid codepoint",
+                        );
+                        buf.extend_from_slice(b"\\u");
+                    }
                     None => {
                         return Token::new(
                             TokenKind::Illegal,
@@ -430,6 +494,13 @@ impl<'a> Lexer<'a> {
                 },
                 b'U' => match self.read_hex_rune(8).and_then(valid_rune) {
                     Some(r) => encode_rune(r, &mut buf),
+                    None if tolerant => {
+                        self.report(
+                            esc_pos,
+                            "invalid \\U escape: expected 8 hex digits forming a valid codepoint",
+                        );
+                        buf.extend_from_slice(b"\\U");
+                    }
                     None => {
                         return Token::new(
                             TokenKind::Illegal,
@@ -438,6 +509,13 @@ impl<'a> Lexer<'a> {
                         );
                     }
                 },
+                other if tolerant => {
+                    self.report(
+                        esc_pos,
+                        &format!("unknown escape sequence \\{}", other as char),
+                    );
+                    buf.extend_from_slice(&[b'\\', other]);
+                }
                 other => {
                     return Token::new(
                         TokenKind::Illegal,
@@ -448,6 +526,10 @@ impl<'a> Lexer<'a> {
             }
         }
         self.saw_end = true;
+        if tolerant {
+            self.report(pos, "unterminated string");
+            return string_token(buf, pos);
+        }
         Token::new(TokenKind::Illegal, "unterminated string", pos)
     }
 
@@ -512,6 +594,14 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
         self.saw_end = true;
+        if self.tolerant {
+            while self.pos < self.input.len() {
+                self.advance();
+            }
+            self.report(pos, "unterminated triple-quoted string");
+            let raw = slice_to_string(&self.input[start..self.pos]);
+            return Token::new(TokenKind::String, dedent(&raw), pos);
+        }
         Token::new(TokenKind::Illegal, "unterminated triple-quoted string", pos)
     }
 
@@ -540,17 +630,30 @@ impl<'a> Lexer<'a> {
             if ch == b'"' {
                 let raw = slice_to_string(&self.input[start..self.pos]);
                 self.advance(); // closing "
-                if crate::go_strconv::decode_base64_lenient(&raw).is_err() {
+                                // Tolerant mode leaves the check to the parser, which turns
+                                // a failure into a positioned error and a placeholder.
+                if !self.tolerant && crate::go_strconv::decode_base64_lenient(&raw).is_err() {
                     return Token::new(TokenKind::Illegal, "invalid base64 in bytes literal", pos);
                 }
                 return Token::new(TokenKind::Bytes, raw, pos);
             }
             if ch == b'\n' {
+                if self.tolerant {
+                    // The newline is left for the next token.
+                    self.report(pos, "unterminated bytes literal: ended at newline");
+                    let raw = slice_to_string(&self.input[start..self.pos]);
+                    return Token::new(TokenKind::Bytes, raw, pos);
+                }
                 return Token::new(TokenKind::Illegal, "unterminated bytes literal", pos);
             }
             self.advance();
         }
         self.saw_end = true;
+        if self.tolerant {
+            self.report(pos, "unterminated bytes literal");
+            let raw = slice_to_string(&self.input[start..self.pos]);
+            return Token::new(TokenKind::Bytes, raw, pos);
+        }
         Token::new(TokenKind::Illegal, "unterminated bytes literal", pos)
     }
 
@@ -808,6 +911,15 @@ impl<'a> Lexer<'a> {
             "null" => Token::new(TokenKind::Null, val, pos),
             _ => Token::new(TokenKind::Ident, val, pos),
         }
+    }
+}
+
+/// A string token for the bytes a string literal holds. They must be UTF-8
+/// here, where protowire-go keeps any bytes (#170).
+fn string_token(buf: Vec<u8>, pos: Position) -> Token {
+    match String::from_utf8(buf) {
+        Ok(s) => Token::new(TokenKind::String, s, pos),
+        Err(_) => Token::new(TokenKind::Illegal, "string contains invalid UTF-8", pos),
     }
 }
 
