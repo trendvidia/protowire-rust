@@ -96,11 +96,17 @@ fn required_passes_when_field_is_set() {
 }
 
 #[test]
-fn required_treats_null_as_present() {
+fn required_rejects_null() {
+    // A required field holds a value: null is refused as absence is
+    // (#106), protowire-go's TestRequiredFieldNull.
     let with_required = d4_msg("d4_test.v1.WithRequired");
-    let (_, p) = full("name = null", &with_required);
-    assert!(p.is_null("name"));
-    assert!(!p.is_absent("name"));
+    let e = unmarshal_full("name = null", &with_required, UnmarshalOptions::default())
+        .map(|_| ())
+        .unwrap_err();
+    assert_eq!(
+        e.to_string(),
+        "1:8: null is not allowed on required field \"name\": a required field holds a value"
+    );
 }
 
 // ---------------- pxf.default ----------------

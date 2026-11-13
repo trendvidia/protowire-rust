@@ -1918,11 +1918,23 @@ fn parse_f32_literal(s: &str) -> Option<f32> {
     })
 }
 
-fn nullable(fd: &FieldDescriptor) -> bool {
+/// Whether a field can hold `null`, protowire-go's `nullable`: a field
+/// with presence that is neither repeated nor a map (a message field,
+/// wrappers included, a proto3 `optional` scalar, a oneof member, a proto2
+/// `optional` field). A proto2 `required` field is not nullable: unset, it
+/// would make the message invalid in binary (protowire#379). Nor is a field
+/// with `(pxf.required)` or `@required`, whatever its presence: a required
+/// field holds a value, so `null` is rejected as absence is (#106,
+/// protowire-go#268). The decoder and the writers both ask this, so a body,
+/// a nested body, a `@dataset` cell and the `_null` mask follow one rule.
+///
+/// `is_required` reads the field's options, so it is asked last.
+pub(crate) fn nullable(fd: &FieldDescriptor) -> bool {
     fd.supports_presence()
         && !fd.is_list()
         && !fd.is_map()
         && fd.cardinality() != Cardinality::Required
+        && !crate::annotations::is_required(fd)
 }
 
 /// The error for a `null` that [`nullable`] refuses, saying how the schema
@@ -1941,6 +1953,8 @@ fn null_not_allowed(pos: Position, fd: &FieldDescriptor) -> PxfError {
                 "null is not allowed on scalar field {name:?}: the field is required, so it must be set"
             )
         }
+    } else if crate::annotations::is_required(fd) {
+        format!("null is not allowed on required field {name:?}: a required field holds a value")
     } else {
         format!(
             "null is not allowed on scalar field {name:?}: declare it optional, or as a wrapper type (google.protobuf.{}Value or similar), to make it nullable",

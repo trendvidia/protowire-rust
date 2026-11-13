@@ -30,9 +30,14 @@ message Holder {
   map<string, Inner> mm = 9;
 }
 
-// A null optional scalar counts as present for (pxf.required).
+// A required field holds a value: null on it is rejected, even where
+// the field's presence would let it hold null.
 message Required {
   optional int32 r = 1 [(pxf.required) = true];
+}
+
+message RequiredWrapper {
+  google.protobuf.Int32Value w = 1 [(pxf.required) = true];
 }
 
 // A null optional scalar is not given its (pxf.default).

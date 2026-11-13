@@ -1,0 +1,7 @@
+@type nulls.v1.Required
+
+# Reject: null on an optional scalar marked (pxf.required). A required
+# field holds a value: neither absent nor null satisfies it, whatever the
+# field's presence.
+
+r = null

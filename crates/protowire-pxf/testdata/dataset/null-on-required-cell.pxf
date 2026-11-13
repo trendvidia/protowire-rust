@@ -1,0 +1,9 @@
+# §3.4.4 + § Booleans, Null, and Identifier Values. Row type
+# dataset.v1.RowReq in paths.proto. MUST be rejected: o is an optional
+# scalar with (pxf.required), and a null cell, like an empty one, does
+# not satisfy a required field.
+
+@dataset dataset.v1.RowReq (id, o)
+
+("a", 1)
+("b", null)

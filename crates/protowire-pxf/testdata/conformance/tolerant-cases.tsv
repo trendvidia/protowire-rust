@@ -233,6 +233,7 @@ file dataset/junk-between-rows.pxf
 file dataset/list-cell.pxf
 file dataset/nested-cells.pxf
 file dataset/null-on-optional-cell.pxf
+file dataset/null-on-required-cell.pxf
 file dataset/null-on-scalar-cell.pxf
 file dataset/rows-end-at-directive.pxf
 file dataset/string-newline-in-cell.pxf
@@ -312,13 +313,14 @@ file nulls/err-nested-scalar.pxf
 file nulls/err-oneof-sibling.pxf
 file nulls/err-proto2-required.pxf
 file nulls/err-repeated.pxf
+file nulls/err-required-optional.pxf
+file nulls/err-required-wrapper.pxf
 file nulls/err-scalar.pxf
 file nulls/message.pxf
 file nulls/oneof-message.pxf
 file nulls/oneof-scalar.pxf
 file nulls/optional-scalar.pxf
 file nulls/proto2-scalar.pxf
-file nulls/required-optional.pxf
 file nulls/wrapper.pxf
 file strings/err-raw-newline.pxf
 file strings/escaped-newline.pxf

@@ -16,9 +16,7 @@ use prost_reflect::{
     DynamicMessage, FieldDescriptor, Kind, MessageDescriptor, ReflectMessage, Value,
 };
 
-use super::{
-    declaration_order, holds_null, is_negative_zero, read_null_mask, Encoder, MarshalOptions,
-};
+use super::{declaration_order, is_negative_zero, read_null_mask, Encoder, MarshalOptions};
 use crate::annotations::find_null_mask_field;
 use crate::dataset_paths::check_column_paths;
 use crate::errors::PxfError;
@@ -379,7 +377,7 @@ impl Encoder<'_> {
         o: CellOptions,
     ) -> Result<(), String> {
         let is_msg = matches!(fd.kind(), Kind::Message(_));
-        if self.null_set.as_ref().is_some_and(|s| s.contains(path)) && holds_null(fd) {
+        if self.null_set.as_ref().is_some_and(|s| s.contains(path)) && crate::decode::nullable(fd) {
             self.buf.push_str("null");
             return Ok(());
         }

@@ -259,7 +259,9 @@ impl<'a> Encoder<'a> {
             // A field in the null set that cannot hold `null` is written as
             // if the set did not name it: `null` on it is a decode error
             // (protowire-go#151).
-            if self.null_set.as_ref().is_some_and(|s| s.contains(&path)) && holds_null(&fd) {
+            if self.null_set.as_ref().is_some_and(|s| s.contains(&path))
+                && crate::decode::nullable(&fd)
+            {
                 self.write_field_prefix(level, fd.name());
                 self.buf.push_str("null\n");
                 continue;
@@ -1134,18 +1136,6 @@ fn read_null_mask(root: &DynamicMessage, fd: &FieldDescriptor) -> Option<HashSet
             })
             .collect(),
     )
-}
-
-/// Whether `fd` can be written `null`: protowire-go's `nullable`. A field
-/// with presence that is neither repeated nor a map, a proto2 `required`
-/// field, nor `(pxf.required)` or `@required` (protowire-go#268). The
-/// decoder's own check lacks the last case, which #106 tracks.
-fn holds_null(fd: &FieldDescriptor) -> bool {
-    fd.supports_presence()
-        && !fd.is_list()
-        && !fd.is_map()
-        && fd.cardinality() != prost_reflect::Cardinality::Required
-        && !crate::annotations::is_required(fd)
 }
 
 /// `desc`'s fields in the order the schema declares them, as protowire-go

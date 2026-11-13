@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// protowire-go's TestRequiredRejectsNull schema (#106, protowire-go#268):
+// a required field in each spelling and shape, which null must not satisfy.
+// Parses only with the reference compiler: see README.md.
+syntax = "proto3";
+package requirednull.v1;
+
+import "protowire/schema/v1/annotations.proto";
+import "protowire/schema/v1/descriptor.proto";
+import "pxf/annotations.proto";
+import "google/protobuf/wrappers.proto";
+
+message Sub { int32 x = 1; }
+message Req {
+  optional int32 r = 1 [(pxf.required) = true];
+  optional int32 a = 2 @required;
+  google.protobuf.Int32Value w = 3 [(pxf.required) = true];
+  Sub s = 4 @required;
+  int32 plain = 5 [(pxf.required) = true];
+}
+message Outer { Req in = 1; }

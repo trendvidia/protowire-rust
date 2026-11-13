@@ -137,7 +137,7 @@ fn check(
 #[test]
 fn every_document_meets_the_reference() {
     // A positive marker: the rows ran, and both verdicts are among them.
-    assert_eq!(run(ORACLE), (63, 21));
+    assert_eq!(run(ORACLE), (63, 22));
 }
 
 /// A token that opens no value of a message field: the error names the

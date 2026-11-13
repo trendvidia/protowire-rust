@@ -6,9 +6,11 @@ draft `-01` § Booleans, Null, and Identifier Values). A `null`:
 
 - on a singular field with explicit presence (a message field, wrappers
   included, a proto3 `optional` scalar, a oneof member, a proto2
-  `optional` scalar) MUST leave it unset, and it is present-but-null. It
-  counts as present for `(pxf.required)`, and `(pxf.default)` is not
-  applied;
+  `optional` scalar) MUST leave it unset, and it is present-but-null, so
+  `(pxf.default)` is not applied;
+- on a field with `(pxf.required)` or `@required` MUST be rejected,
+  whatever its presence: a required field holds a value, so neither
+  absent nor null satisfies it;
 - on a proto3 scalar declared without `optional` MUST be rejected: the
   field has no unset state, so `null` would read back as its zero value;
 - on a proto2 `required` field MUST be rejected: leaving it unset makes
@@ -19,7 +21,9 @@ draft `-01` § Booleans, Null, and Identifier Values). A `null`:
   also writes a sibling MUST be rejected.
 
 The owner settled this on #339 (2026-10-27, option 3), and the proto2
-`required` and map-value cases on #379 and #380 (2026-10-28).
+`required` and map-value cases on #379 and #380 (2026-10-28). On
+2026-11-04 the owner reversed #339's rule that `null` satisfies
+`(pxf.required)`: it is now rejected there.
 
 Every fixture binds against [`nulls.proto`](nulls.proto) (package
 `nulls.v1`, message `Holder` unless the table names another), or
@@ -50,7 +54,8 @@ and
 | `oneof-scalar.pxf` | accept | `ks = null` on a `string` oneof member leaves the oneof `k` unset. |
 | `oneof-message.pxf` | accept | `km = null` leaves the oneof `k` unset. |
 | `proto2-scalar.pxf` | accept | `p = null` on a proto2 `optional int32` (`Legacy`) leaves `p` unset. |
-| `required-optional.pxf` | accept | `r = null` on an `optional int32` with `(pxf.required)` (`Required`): present, and unset. |
+| `err-required-optional.pxf` | reject | `r = null` on an `optional int32` with `(pxf.required)` (`Required`): a required field holds a value. |
+| `err-required-wrapper.pxf` | reject | `w = null` on an `Int32Value` with `(pxf.required)` (`RequiredWrapper`). |
 | `default-optional.pxf` | accept | `d = null` on an `optional int32` with `(pxf.default) = "5"` (`Defaulted`): unset, not 5. |
 | `editions-explicit.pxf` | accept | In an editions file, `null` on a scalar with EXPLICIT presence, the 2023 default (`nulls.ed.v1.Ed`), leaves it unset ([#380](https://github.com/trendvidia/protowire/issues/380)). |
 | `err-editions-implicit.pxf` | reject | `null` on an editions scalar with `features.field_presence = IMPLICIT`. |
