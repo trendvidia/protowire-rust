@@ -115,6 +115,37 @@ pub fn unmarshal_with<M: Message>(data: &[u8], limits: Limits) -> Result<M> {
     Ok(msg)
 }
 
+/// Options for decoding with [`UnmarshalOptions::unmarshal`]: the limits,
+/// and a validator (protowire-go's `pb.UnmarshalOptions`). The default is
+/// [`unmarshal`]'s: the default [`Limits`] and no validator.
+#[derive(Clone, Copy, Default)]
+pub struct UnmarshalOptions<'a> {
+    /// Validates the decoded message after a successful decode. It receives
+    /// the caller's `M` as a `&dyn Any`, so an engine that knows only
+    /// descriptor-backed messages needs an adapter that knows `M`. When it
+    /// reports violations the decode fails with [`Error::Check`], holding
+    /// the report; when it fails, with [`Error::Validator`], holding its
+    /// error.
+    pub validator: Option<&'a dyn protowire_check::Validator>,
+    /// The per-call limits, as [`unmarshal_with`] takes them.
+    pub limits: Limits,
+}
+
+impl UnmarshalOptions<'_> {
+    /// Decode a message under the options' limits, then run their
+    /// validator over it.
+    pub fn unmarshal<M: Message + 'static>(&self, data: &[u8]) -> Result<M> {
+        let msg: M = unmarshal_with(data, self.limits)?;
+        match protowire_check::validate(self.validator, &msg) {
+            Ok(_) => Ok(msg),
+            Err(e) => Err(match e.downcast::<protowire_check::Error>() {
+                Ok(check) => Error::Check(*check),
+                Err(engine) => Error::Validator(engine),
+            }),
+        }
+    }
+}
+
 /// Write a nested message at `field_number` as a length-delimited blob. It
 /// is one descent: past the writer's limit nothing is written and the
 /// writer records the refusal (see [`Writer::finish_checked`]).

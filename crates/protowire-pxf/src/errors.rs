@@ -5,14 +5,25 @@
 //!
 //! Mirrors `protowire/encoding/pxf/errors.go` and the TS port's `pxf/errors.ts`.
 
+use std::error::Error as StdError;
 use std::fmt;
+use std::sync::Arc;
 
 use crate::token::Position;
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// A PXF error: a position, when it has one, and protowire-go's text.
+///
+/// A decode that its [`crate::UnmarshalOptions::validator`] refused has no
+/// position, and its text is the validator's. Its
+/// [`source`](std::error::Error::source) is a [`protowire_check::Error`]
+/// holding the whole report when the validator reported violations, or
+/// the validator's own error when it could not run.
+/// [`PxfError::check_error`] is the first of those.
+#[derive(Debug, Clone)]
 pub struct PxfError {
     pub pos: Position,
     pub msg: String,
+    source: Option<Arc<dyn StdError + Send + Sync>>,
 }
 
 impl PxfError {
@@ -20,7 +31,43 @@ impl PxfError {
         Self {
             pos,
             msg: msg.into(),
+            source: None,
         }
+    }
+
+    /// The error of a validator that refused a decode: its text, no
+    /// position, and the validator's error as the source.
+    pub(crate) fn from_validator(e: protowire_check::BoxError) -> Self {
+        let source: Arc<dyn StdError + Send + Sync> = Arc::from(e);
+        Self {
+            pos: Position::default(),
+            msg: source.to_string(),
+            source: Some(source),
+        }
+    }
+
+    /// The violations, when a validator refused the decode for them; `None`
+    /// for any other error, a validator's own failure included.
+    pub fn check_error(&self) -> Option<&protowire_check::Error> {
+        self.source.as_deref()?.downcast_ref()
+    }
+}
+
+/// Errors are equal when their positions and texts are; the source is not
+/// compared.
+impl PartialEq for PxfError {
+    fn eq(&self, other: &Self) -> bool {
+        self.pos == other.pos && self.msg == other.msg
+    }
+}
+
+impl Eq for PxfError {}
+
+impl StdError for PxfError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        self.source
+            .as_deref()
+            .map(|e| e as &(dyn StdError + 'static))
     }
 }
 

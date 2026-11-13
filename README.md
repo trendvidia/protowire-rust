@@ -22,11 +22,12 @@ This is a Cargo workspace. The crates published to crates.io are:
 
 | Crate | Purpose |
 |---|---|
-| [`protowire`](https://crates.io/crates/protowire) | Umbrella — re-exports the four sub-crates. |
+| [`protowire`](https://crates.io/crates/protowire) | Umbrella — re-exports the five sub-crates. |
 | [`protowire-pb`](https://crates.io/crates/protowire-pb) | Schema-free protobuf wire codec. |
 | [`protowire-envelope`](https://crates.io/crates/protowire-envelope) | API response envelope (status, data, error). |
 | [`protowire-pxf`](https://crates.io/crates/protowire-pxf) | PXF (Proto eXpressive Format) text codec. |
 | [`protowire-sbe`](https://crates.io/crates/protowire-sbe) | FIX SBE binary codec + XML schema conversion. |
+| [`protowire-check`](https://crates.io/crates/protowire-check) | The validator hook the pb, pxf and sbe decoders share. |
 
 The `bench-pxf`, `bench-sbe`, `dump-envelope`, and `check-decode`
 workspace members are internal cross-port harnesses and stay

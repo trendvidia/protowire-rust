@@ -12,6 +12,7 @@
 /crates/protowire-pxf/          @trendvidia/maintainers
 /crates/protowire-sbe/          @trendvidia/maintainers
 /crates/protowire-envelope/     @trendvidia/maintainers
+/crates/protowire-check/        @trendvidia/maintainers
 
 # --- Vendored proto annotations (part of the upstream wire contract) -----
 /proto/                         @trendvidia/maintainers

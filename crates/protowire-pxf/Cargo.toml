@@ -13,6 +13,7 @@ readme.workspace = true
 description = "PXF (Proto eXpressive Format) text codec — Rust port of github.com/trendvidia/protowire/encoding/pxf"
 
 [dependencies]
+protowire-check = { workspace = true }
 prost = { workspace = true }
 prost-reflect = { workspace = true }
 prost-types = { workspace = true }

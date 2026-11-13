@@ -975,7 +975,14 @@ fn bind(
 /// Move a decode error to the row it came from and name the column it fell
 /// in: the decoder read a synthetic body, so its position is a line of that
 /// body. A row built by hand has no position, and keeps the body's.
+///
+/// An error with no position is not a decode error: a schema violation, or
+/// a validator's refusal, which also carries its report. It is returned
+/// as it is, as protowire-go's `atRow` returns any error but its `*Error`.
 fn at_row(e: PxfError, pos: Position, columns: &[String], spans: &[CellSpan]) -> PxfError {
+    if !e.has_position() {
+        return e;
+    }
     let msg = match spans
         .iter()
         .find(|s| s.first <= e.pos.line && e.pos.line <= s.last)

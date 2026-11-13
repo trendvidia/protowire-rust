@@ -10,9 +10,10 @@ homepage.workspace = true
 keywords.workspace = true
 categories.workspace = true
 readme.workspace = true
-description = "Protowire umbrella crate — re-exports envelope, pb, pxf, sbe."
+description = "Protowire umbrella crate — re-exports check, envelope, pb, pxf, sbe."
 
 [dependencies]
+protowire-check = { workspace = true }
 protowire-pb = { workspace = true }
 protowire-envelope = { workspace = true }
 protowire-pxf = { workspace = true }

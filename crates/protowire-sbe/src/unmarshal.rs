@@ -23,11 +23,14 @@ use crate::template::{
 /// version is not checked), a wire block shorter
 /// than the template's is rejected (HARDENING.md § SBE step 2), and each
 /// group's header is validated before any entry is allocated (steps 3 and
-/// 4, and `MaxRepeatedCount`).
+/// 4, and `MaxRepeatedCount`). A codec with a validator
+/// ([`Codec::with_validator`]) then validates the decoded message.
 pub fn unmarshal(codec: &Codec, msg: &mut DynamicMessage, data: &[u8]) -> Result<(), SbeError> {
     codec.check_message_size(data.len())?;
     let tmpl = codec.template(msg.descriptor().full_name())?;
-    unmarshal_message(msg, tmpl, data, codec.limits().max_repeated_count)
+    unmarshal_message(msg, tmpl, data, codec.limits().max_repeated_count)?;
+    protowire_check::validate(codec.validator(), &*msg).map_err(SbeError::from_validator)?;
+    Ok(())
 }
 
 fn unmarshal_message(

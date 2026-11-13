@@ -23,7 +23,7 @@ pub mod wire;
 pub use big::{write_big_float, write_big_int, write_decimal, BigFloat, BigInt, Decimal};
 pub use codec::{
     marshal, marshal_with, read_message, unmarshal, unmarshal_with, write_map_entry, write_message,
-    MapEntryField, MarshalOptions, Message,
+    MapEntryField, MarshalOptions, Message, UnmarshalOptions,
 };
 pub use wire::{
     Error, Limits, Reader, Result, WireType, Writer, MAX_BIG_FLOAT_EXPONENT, MAX_MESSAGE_SIZE,

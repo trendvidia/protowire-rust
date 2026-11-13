@@ -291,3 +291,11 @@ buf build --as-file-descriptor-set --exclude-source-info \
   -o crates/protowire-pxf/testdata/bigfloat/bigfloat.fds
 
 echo "wrote crates/protowire-pxf/testdata/bigfloat/bigfloat.fds (buf)"
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/scan-options-test.proto \
+  -o crates/protowire-pxf/testdata/scan-options-test.binpb
+echo "wrote crates/protowire-pxf/testdata/scan-options-test.binpb (buf)"
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/scan-options-bad-test.proto \
+  -o crates/protowire-pxf/testdata/scan-options-bad-test.binpb
+echo "wrote crates/protowire-pxf/testdata/scan-options-bad-test.binpb (buf)"

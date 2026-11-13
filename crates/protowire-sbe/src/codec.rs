@@ -7,8 +7,11 @@
 //! sections 2.1 (message header) and 2.4 (group header).
 
 use std::collections::HashMap;
+use std::fmt;
+use std::sync::Arc;
 
 use prost_reflect::{FileDescriptor, MessageDescriptor};
+use protowire_check::Validator;
 
 use crate::annotations::{
     file_uint32, has_template_id, stale_file_error, stale_message_error, EXT_SCHEMA_ID, EXT_VERSION,
@@ -60,6 +63,18 @@ pub struct Codec {
     /// codec may each use it, and a header's schema id tells them apart.
     by_id: HashMap<(u32, u32), MessageTemplate>,
     limits: Limits,
+    validator: ValidatorSlot,
+}
+
+/// The codec's validator, if it has one. A wrapper, so that the codec can
+/// still derive `Debug`.
+#[derive(Clone, Default)]
+struct ValidatorSlot(Option<Arc<dyn Validator + Send + Sync>>);
+
+impl fmt::Debug for ValidatorSlot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(if self.0.is_some() { "Some(..)" } else { "None" })
+    }
 }
 
 impl Codec {
@@ -68,6 +83,27 @@ impl Codec {
     /// `(sbe.version)` defaults to 0 when absent.
     pub fn from_files(files: &[FileDescriptor]) -> Result<Self, SbeError> {
         Self::from_files_with_limits(files, Limits::default())
+    }
+
+    /// The codec, validating every message [`crate::unmarshal()`] decodes
+    /// with `v` (protowire-go's `CodecOptions.Validator`). The validator
+    /// receives the [`prost_reflect::DynamicMessage`] as a `&dyn Any`, after
+    /// the decode. When it reports violations the decode fails with an
+    /// [`SbeError`] whose text is the [`protowire_check::Error`]'s and whose
+    /// [`SbeError::check_error`] holds the report; an error of the
+    /// validator's own is returned the same way, as the error's source.
+    ///
+    /// It does not apply to [`crate::View`], which reads the wire buffer
+    /// without building a message. Like the limits, it is fixed before the
+    /// codec is shared, so the codec stays safe for concurrent use.
+    pub fn with_validator(mut self, v: Arc<dyn Validator + Send + Sync>) -> Self {
+        self.validator = ValidatorSlot(Some(v));
+        self
+    }
+
+    /// The validator [`Codec::with_validator`] gave the codec.
+    pub(crate) fn validator(&self) -> Option<&dyn Validator> {
+        self.validator.0.as_deref().map(|v| v as &dyn Validator)
     }
 
     /// [`Codec::from_files`] under the given [`Limits`].

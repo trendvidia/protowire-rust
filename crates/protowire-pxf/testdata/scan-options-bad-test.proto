@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for tests/dataset_scan_options.rs: a field named null
+// breaks a bind-time schema rule (draft §3.13). It is in a file of its own,
+// because the schema check reads the whole file, as in protowire-go's
+// encoding/pxf/dataset_scan_options_test.go.
+syntax = "proto3";
+package sobad.v1;
+
+message Bad {
+  string id = 1;
+  string null = 2;
+}
