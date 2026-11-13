@@ -121,7 +121,6 @@ pub(crate) fn read_value(
         limits,
         tolerant: false,
         errs: Vec::new(),
-        value_end: None,
     };
     let value = p.parse_value()?;
     lex.restore(p.lex.snapshot());
@@ -149,11 +148,6 @@ pub(crate) struct Parser<'a> {
     /// block boundary. Off, every path is the strict parser's.
     tolerant: bool,
     errs: Vec<PxfError>,
-    /// Where the value just read ends, when that is not `prev_end`: a
-    /// placeholder ends where it stands, and a list or block that tolerant
-    /// mode closes early ends at the token it stopped at. protowire-go reads
-    /// a value's end to tell a trailing comment from the next entry's.
-    value_end: Option<Position>,
 }
 
 impl<'a> Parser<'a> {
@@ -182,7 +176,6 @@ impl<'a> Parser<'a> {
             limits,
             tolerant: false,
             errs: Vec::new(),
-            value_end: None,
         }
     }
 
@@ -217,8 +210,9 @@ impl<'a> Parser<'a> {
 
     /// Consume the open token the parser stands on, and everything through
     /// its matching close (or to the end of input): tolerant recovery for a
-    /// block or list too deep to descend into.
-    fn skip_balanced(&mut self, open: TokenKind, close: TokenKind) {
+    /// block or list too deep to descend into. Returns where the skipped
+    /// construct ends: past its close, or at the end of input.
+    fn skip_balanced(&mut self, open: TokenKind, close: TokenKind) -> Position {
         let mut depth = 0usize;
         loop {
             let k = self.current.kind;
@@ -228,12 +222,10 @@ impl<'a> Parser<'a> {
                 depth = depth.saturating_sub(1);
                 if depth == 0 {
                     self.advance();
-                    self.value_end = None;
-                    return;
+                    return self.prev_end;
                 }
             } else if k == TokenKind::Eof {
-                self.value_end = Some(self.current.pos);
-                return;
+                return self.current.pos;
             }
             self.advance();
         }
@@ -930,10 +922,11 @@ impl<'a> Parser<'a> {
                 }
                 self.advance();
                 let value = self.parse_value()?;
-                let end = self.value_end.take().unwrap_or(self.prev_end);
+                let end = value.end();
                 let trailing_comment = self.take_trailing_comment(end);
                 Ok(Some(Entry::Assignment(Assignment {
                     pos,
+                    end,
                     key,
                     key_quoted: matches!(key_kind, TokenKind::String),
                     value,
@@ -963,10 +956,11 @@ impl<'a> Parser<'a> {
                 }
                 self.advance();
                 let value = self.parse_value()?;
-                let end = self.value_end.take().unwrap_or(self.prev_end);
+                let end = value.end();
                 let trailing_comment = self.take_trailing_comment(end);
                 Ok(Some(Entry::MapEntry(MapEntry {
                     pos,
+                    end,
                     key,
                     quoted: matches!(key_kind, TokenKind::String),
                     value,
@@ -985,9 +979,10 @@ impl<'a> Parser<'a> {
                 if self.too_deep(open_pos)? {
                     // Too deep to descend: skip the whole block, keep the
                     // entry.
-                    self.skip_balanced(TokenKind::LBrace, TokenKind::RBrace);
+                    let end = self.skip_balanced(TokenKind::LBrace, TokenKind::RBrace);
                     return Ok(Some(Entry::Block(Block {
                         pos,
+                        end,
                         name: key,
                         name_quoted,
                         entries: Vec::new(),
@@ -996,9 +991,10 @@ impl<'a> Parser<'a> {
                     })));
                 }
                 self.advance();
-                let (entries, trailing_comments) = self.parse_body(open_pos)?;
+                let (entries, trailing_comments, end) = self.parse_body(open_pos)?;
                 Ok(Some(Entry::Block(Block {
                     pos,
+                    end,
                     name: key,
                     name_quoted,
                     entries,
@@ -1019,11 +1015,13 @@ impl<'a> Parser<'a> {
                 // assignment with a placeholder just past the key, where the
                 // value belongs. The current token, most likely the next
                 // entry's key, is left.
+                let at = self.prev_end;
                 Ok(Some(Entry::Assignment(Assignment {
                     pos,
+                    end: at,
                     key,
                     key_quoted: false,
-                    value: Value::Bad(BadVal { pos: self.prev_end }),
+                    value: Value::Bad(BadVal { pos: at, end: at }),
                     leading_comments,
                     trailing_comment: String::new(),
                 })))
@@ -1031,17 +1029,9 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Reads one value. Each value ends where its last token does, which
+    /// `advance` leaves in `prev_end`; a placeholder spans nothing.
     fn parse_value(&mut self) -> Result<Value, PxfError> {
-        self.value_end = None;
-        let value = self.parse_value_at()?;
-        if let Value::Bad(b) = &value {
-            // A placeholder spans nothing.
-            self.value_end = Some(b.pos);
-        }
-        Ok(value)
-    }
-
-    fn parse_value_at(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
 
         if self.tolerant && self.current_starts_entry() {
@@ -1051,31 +1041,49 @@ impl<'a> Parser<'a> {
             // belongs.
             let at = self.prev_end;
             self.errs.push(PxfError::new(at, "missing value"));
-            return Ok(Value::Bad(BadVal { pos: at }));
+            return Ok(Value::Bad(BadVal { pos: at, end: at }));
         }
 
         match self.current.kind {
             TokenKind::String => {
                 let value = std::mem::take(&mut self.current.value);
                 self.advance();
-                Ok(Value::String(StringVal { pos, value }))
+                Ok(Value::String(StringVal {
+                    pos,
+                    end: self.prev_end,
+                    value,
+                }))
             }
             TokenKind::Int => {
                 let raw = std::mem::take(&mut self.current.value);
                 let prec = std::mem::take(&mut self.current.prec);
                 self.advance();
-                Ok(Value::Int(IntVal { pos, raw, prec }))
+                Ok(Value::Int(IntVal {
+                    pos,
+                    end: self.prev_end,
+                    raw,
+                    prec,
+                }))
             }
             TokenKind::Float => {
                 let raw = std::mem::take(&mut self.current.value);
                 let prec = std::mem::take(&mut self.current.prec);
                 self.advance();
-                Ok(Value::Float(FloatVal { pos, raw, prec }))
+                Ok(Value::Float(FloatVal {
+                    pos,
+                    end: self.prev_end,
+                    raw,
+                    prec,
+                }))
             }
             TokenKind::Bool => {
                 let value = self.current.value == "true";
                 self.advance();
-                Ok(Value::Bool(BoolVal { pos, value }))
+                Ok(Value::Bool(BoolVal {
+                    pos,
+                    end: self.prev_end,
+                    value,
+                }))
             }
             TokenKind::Bytes => {
                 // The strict lexer took it, so one of the four encodings
@@ -1086,34 +1094,50 @@ impl<'a> Parser<'a> {
                         self.errs
                             .push(PxfError::new(pos, format!("invalid base64: {e}")));
                         self.advance();
-                        return Ok(Value::Bad(BadVal { pos }));
+                        return Ok(Value::Bad(BadVal { pos, end: pos }));
                     }
                     Err(_) => Vec::new(),
                 };
                 self.advance();
                 Ok(Value::Bytes(BytesVal {
                     pos,
+                    end: self.prev_end,
                     value: decoded,
                 }))
             }
             TokenKind::Timestamp => {
                 let raw = std::mem::take(&mut self.current.value);
                 self.advance();
-                Ok(Value::Timestamp(TimestampVal { pos, raw }))
+                Ok(Value::Timestamp(TimestampVal {
+                    pos,
+                    end: self.prev_end,
+                    raw,
+                }))
             }
             TokenKind::Duration => {
                 let raw = std::mem::take(&mut self.current.value);
                 self.advance();
-                Ok(Value::Duration(DurationVal { pos, raw }))
+                Ok(Value::Duration(DurationVal {
+                    pos,
+                    end: self.prev_end,
+                    raw,
+                }))
             }
             TokenKind::Null => {
                 self.advance();
-                Ok(Value::Null(NullVal { pos }))
+                Ok(Value::Null(NullVal {
+                    pos,
+                    end: self.prev_end,
+                }))
             }
             TokenKind::Ident => {
                 let name = std::mem::take(&mut self.current.value);
                 self.advance();
-                Ok(Value::Ident(IdentVal { pos, name }))
+                Ok(Value::Ident(IdentVal {
+                    pos,
+                    end: self.prev_end,
+                    name,
+                }))
             }
             TokenKind::LBracket => self.parse_list(),
             TokenKind::LBrace => self.parse_block_val(),
@@ -1139,7 +1163,7 @@ impl<'a> Parser<'a> {
                 ) {
                     self.advance();
                 }
-                Ok(Value::Bad(BadVal { pos }))
+                Ok(Value::Bad(BadVal { pos, end: pos }))
             }
         }
     }
@@ -1147,9 +1171,10 @@ impl<'a> Parser<'a> {
     fn parse_list(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
         if self.too_deep(pos)? {
-            self.skip_balanced(TokenKind::LBracket, TokenKind::RBracket);
+            let end = self.skip_balanced(TokenKind::LBracket, TokenKind::RBracket);
             return Ok(Value::List(ListVal {
                 pos,
+                end,
                 elements: Vec::new(),
             }));
         }
@@ -1181,37 +1206,49 @@ impl<'a> Parser<'a> {
                 format!("expected ']', got {}", self.current.kind.name()),
             ))?;
             self.leave();
-            self.value_end = Some(self.current.pos);
-            return Ok(Value::List(ListVal { pos, elements }));
+            return Ok(Value::List(ListVal {
+                pos,
+                end: self.current.pos,
+                elements,
+            }));
         }
         self.advance();
         self.leave();
-        self.value_end = None;
-        Ok(Value::List(ListVal { pos, elements }))
+        Ok(Value::List(ListVal {
+            pos,
+            end: self.prev_end,
+            elements,
+        }))
     }
 
     fn parse_block_val(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
         if self.too_deep(pos)? {
-            self.skip_balanced(TokenKind::LBrace, TokenKind::RBrace);
+            let end = self.skip_balanced(TokenKind::LBrace, TokenKind::RBrace);
             return Ok(Value::Block(BlockVal {
                 pos,
+                end,
                 entries: Vec::new(),
                 trailing_comments: Vec::new(),
             }));
         }
         self.advance(); // consume {
-        let (entries, trailing_comments) = self.parse_body(pos)?;
+        let (entries, trailing_comments, end) = self.parse_body(pos)?;
         Ok(Value::Block(BlockVal {
             pos,
+            end,
             entries,
             trailing_comments,
         }))
     }
 
-    /// Reads a block's entries up to and through its `}`. Returns them and
-    /// the comments after the last of them, before the `}`.
-    fn parse_body(&mut self, open_pos: Position) -> Result<(Vec<Entry>, Vec<Comment>), PxfError> {
+    /// Reads a block's entries up to and through its `}`. Returns them, the
+    /// comments after the last of them, before the `}`, and where the block
+    /// ends: past its `}`, or where tolerant mode closed it.
+    fn parse_body(
+        &mut self,
+        open_pos: Position,
+    ) -> Result<(Vec<Entry>, Vec<Comment>, Position), PxfError> {
         self.enter(open_pos)?;
         let mut entries = Vec::new();
         while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof)
@@ -1249,13 +1286,11 @@ impl<'a> Parser<'a> {
             };
             self.errs.push(PxfError::new(self.current.pos, msg));
             self.leave();
-            self.value_end = Some(self.current.pos);
-            return Ok((entries, trailing));
+            return Ok((entries, trailing, self.current.pos));
         }
         self.advance();
         self.leave();
-        self.value_end = None;
-        Ok((entries, trailing))
+        Ok((entries, trailing, self.prev_end))
     }
 
     /// Reads `@type = "<type-url>"`, the type entry of a
@@ -1294,9 +1329,11 @@ impl<'a> Parser<'a> {
         }
         let url = std::mem::take(&mut self.current.value);
         self.advance();
-        let trailing_comment = self.take_trailing_comment(self.prev_end);
+        let end = self.prev_end;
+        let trailing_comment = self.take_trailing_comment(end);
         Ok(Some(Entry::TypeEntry(TypeEntry {
             pos,
+            end,
             url,
             leading_comments,
             trailing_comment,

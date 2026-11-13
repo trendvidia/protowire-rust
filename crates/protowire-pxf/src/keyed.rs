@@ -608,6 +608,7 @@ fn canon_assignment(a: &mut crate::ast::Assignment, fd: &FieldDescriptor) -> Opt
                     // `children = { ... }` → `children { ... }`.
                     let mut blk = Block {
                         pos: a.pos,
+                        end: a.end,
                         name: std::mem::take(&mut a.key),
                         name_quoted: false,
                         entries: std::mem::take(&mut bv.entries),
@@ -644,6 +645,7 @@ fn canon_keyed_entries(b: &mut Block, fd: &FieldDescriptor, key_fd: &FieldDescri
             if let Value::Block(bv) = &mut a.value {
                 let blk = Block {
                     pos: a.pos,
+                    end: a.end,
                     name: std::mem::take(&mut a.key),
                     name_quoted: a.key_quoted,
                     entries: std::mem::take(&mut bv.entries),
@@ -749,6 +751,7 @@ fn canon_anonymous_keyed(
     }
     let mut blk = Block {
         pos: a.pos,
+        end: a.end,
         name: std::mem::take(&mut a.key),
         name_quoted: false,
         entries: Vec::with_capacity(lv.elements.len()),
@@ -758,6 +761,7 @@ fn canon_anonymous_keyed(
     for (v, key) in lv.elements.drain(..).zip(keys) {
         let Value::Block(BlockVal {
             pos,
+            end,
             mut entries,
             trailing_comments,
         }) = v
@@ -769,6 +773,7 @@ fn canon_anonymous_keyed(
         canon_entries(&mut entries, &elem);
         blk.entries.push(Entry::Block(Block {
             pos,
+            end,
             name_quoted: !ident_safe_entry_name(&key),
             name: key,
             entries,
