@@ -26,6 +26,7 @@ pub mod parser;
 mod post_decode_plan;
 pub mod result;
 mod retired;
+pub mod rewrite;
 mod rfc3339;
 pub mod schema;
 pub mod token;
@@ -55,6 +56,7 @@ pub use limits::{
 };
 pub use parser::{parse, parse_tolerant, parse_tolerant_with_limits, parse_with_limits};
 pub use result::Presence;
+pub use rewrite::Rewriter;
 pub use schema::{
     is_defaultable_message, validate_descriptor, validate_file, Violation, ViolationKind,
 };

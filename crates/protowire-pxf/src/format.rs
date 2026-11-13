@@ -162,12 +162,20 @@ pub fn append_value(dst: &mut String, val: &Value) {
     *dst = f.out;
 }
 
-struct Formatter<'a> {
-    out: String,
+pub(crate) struct Formatter<'a> {
+    pub(crate) out: String,
     indent: &'a str,
 }
 
-impl Formatter<'_> {
+impl<'a> Formatter<'a> {
+    /// A formatter into an empty buffer, indenting by `indent` a level.
+    pub(crate) fn new(indent: &'a str) -> Self {
+        Self {
+            out: String::new(),
+            indent,
+        }
+    }
+
     fn write_indent(&mut self, level: usize) {
         for _ in 0..level {
             self.out.push_str(self.indent);
@@ -255,7 +263,7 @@ impl Formatter<'_> {
         self.out.push('\n');
     }
 
-    fn format_entries(&mut self, entries: &[Entry], level: usize) {
+    pub(crate) fn format_entries(&mut self, entries: &[Entry], level: usize) {
         for entry in entries {
             match entry {
                 Entry::Assignment(a) => {
@@ -334,7 +342,7 @@ impl Formatter<'_> {
         }
     }
 
-    fn format_value(&mut self, val: &Value, level: usize) {
+    pub(crate) fn format_value(&mut self, val: &Value, level: usize) {
         match val {
             Value::String(s) => self.out.push_str(&quote_string(&s.value)),
             Value::Int(i) => self.write_number(&i.raw, &i.prec),
@@ -392,7 +400,7 @@ pub(crate) fn quote_string(s: &str) -> String {
 /// marshaller's `is_valid_ident` applies, and the one keyed entry names
 /// use (protowire#306, #313). Numeric keys (e.g. `404`, `1.5`) and a
 /// leading-dot key stay quoted because the first char isn't ident-start.
-fn needs_quoting(s: &str) -> bool {
+pub(crate) fn needs_quoting(s: &str) -> bool {
     !ident_safe_entry_name(s)
 }
 

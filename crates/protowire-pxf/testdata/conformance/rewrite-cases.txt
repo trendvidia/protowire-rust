@@ -1,0 +1,424 @@
+# Rewriter cases for scripts/rewrite-oracle/main.go, which writes rewrite-oracle.tsv. Vendored
+# verbatim from protowire-java's pxf-runtime/src/test/resources/rewrite/cases.txt (3cdb31a), so
+# both ports replay the same rows; keep the two in sync. The documents and
+# operations are protowire-go v1.17.0's rewriter tests (rewrite_test.go, node_edit_test.go and the
+# rewrite_keyed tests). Each case: === name, doc <quoted>, then one operation per line, its
+# arguments quoted. Values and entries are PXF text, parsed with ParseTolerant.
+=== set-scalar-preserves
+doc "# heading comment\n\nserver {\n\thost = \"prod\"   # primary\n\tport = 8080     # keep me\n}\n"
+set "server.port" "9090"
+=== set-preserves-separator
+doc "labels {\n  \"team\":   \"core\"\n}\n"
+set "labels.team" "\"infra\""
+=== set-inserts-multiline
+doc "server {\n\thost = \"h\"\n}\n"
+set "server.port" "8080"
+=== set-inserts-inline
+doc "inline { a = 1 }\n"
+set "inline.b" "2"
+=== set-inserts-empty-inline
+doc "empty {}\n"
+set "empty.a" "true"
+=== set-appends-top
+doc "a = 1"
+set "b" "\"x\""
+=== set-creates-chain
+doc "server {\n  host = \"h\"\n}\n"
+set "server.tls.min_version" "\"1.3\""
+=== set-map-form
+doc "labels {\n  \"team\": \"core\"\n}\n"
+set "labels.env" "\"prod\""
+=== set-multiline-tabs
+doc "server {\n\ttags = [\"a\"]\n}\n"
+set "server.tags" "[\"x\", \"y\"]"
+=== remove-keeps-leading-comments
+doc "# section\n# about a\na = 1   # trailing\nb = 2\n"
+remove "a"
+=== remove-block
+doc "a = 1\nserver {\n  host = \"h\"\n}\nb = 2\n"
+remove "server"
+=== remove-inline
+doc "inline { a = 1 b = 2 }\n"
+remove "inline.a"
+=== remove-trailing-block-comment
+doc "x = 1 /* gone */\ny = 2\n"
+remove "x"
+=== remove-multiline-block-comment
+doc "x = 1 /* spans\nlines */\ny = 2\n"
+remove "x"
+=== set-nested-badval
+doc "xs = [1]\n"
+set "xs" "[\"a\", $]"
+set "m" "{ k = }"
+=== errors
+doc "server {\n  host = \"h\"\n}\nport = 1\n"
+remove "nope"
+set "server" "1"
+set "port.sub" "1"
+set "" "1"
+set "a" "<nil>"
+=== new-invalid
+doc "port ="
+=== conflict
+doc "server {\n  host = \"h\"\n}\n"
+remove "server"
+set "server.host" "\"x\""
+=== same-path-last-wins
+doc "a = 1\n"
+set "a" "2"
+set "a" "3"
+=== corpus/config.pxf
+doc "@type demo.v1.Config\n\n# Server section \u2014 hand-aligned assignments, mixed indentation, the\n# kind of file goed settings writes must not reflow.\nserver {\n\thost = \"prod.example.com\"   # primary\n\tport = 8080\n\ttimeout    =   30s\n\n\ttls {\n\t  enabled = true\n\t  ciphers = [\n\t    \"AES128\",\n\t    \"AES256\",\n\t  ]\n\t}\n}\n\n/* block comment\n   spanning lines */\nlabels {\n  \"team\":        \"core\"\n  \"cost.center\": 42\n}\n\nweights = [0.25, 0.50, 1e3]\nwindow  = 2024-01-15T10:30:00Z\nblob    = b\"aGVsbG8=\"\nmode    = FAST\nempty {}\ninline { a = 1 }\n"
+corpus
+=== corpus/settings.pxf
+doc "# goed editor settings \u2014 hand-written, comments everywhere\n\ntheme = \"gruvbox-dark\" // switch back to light in summer\nfont_size = 13\ntab_width = 4\n\n# Custom keymap. Order matters to the reader, not the machine.\nkeymap {\n  leader = \",\"\n  save   = \"ctrl+s\"\n\n  # chords\n  split_vertical = \"ctrl+w v\"\n}\n\nrecent = [\n  \"~/src/main.go\",\n  \"~/notes.md\"\n]\nflush = null\nretry = -3\nratio = 0.5\n"
+corpus
+=== chain-document-step
+doc "server {\n    host = \"h\"\n}\n"
+set "server.tls.min_version" "\"1.3\""
+=== multiline-document-step
+doc "server {\n    tags = [\"a\"]\n}\n"
+set "server.tags" "[\"x\", \"y\"]"
+=== replace-specific-sibling
+doc "children {\n    a { type = \"Button\"  text = \"@one\" }\n    b { type = \"Button\"  text = \"@two\" }\n}\n"
+replace "value:text#1" "\"@changed\""
+=== replace-reindents
+doc "server {\n    tags = [\"a\"]\n}\n"
+replace "value:tags#0" "[\"x\", \"y\"]"
+=== replace-last-wins
+doc "a = 1\n"
+replace "value:a#0" "2"
+replace "value:a#0" "3"
+=== replace-errors
+doc "a = 1\n"
+replace "<nil>" "1"
+replace "value:a#0" "<nil>"
+replace "value:a#0" "$"
+replace "<unspanned>" "1"
+=== setspan-splice
+doc "a = 1\n"
+setspan "4" "5" "42"
+=== setspan-out-of-range
+doc "a = 1\n"
+setspan "-1" "2" "x"
+setspan "3" "2" "x"
+setspan "0" "999" "x"
+=== append-sibling-indent
+doc "server {\n    host = \"h\"\n}\n"
+append "block:server#0" "port = 8080"
+=== append-block-node
+doc "children {\n    a { type = \"Button\" }\n}\n"
+append "block:children#0" "b { type = \"Label\" }"
+=== append-document-step
+doc "root {\n    children {\n        greeting {\n            type = \"Label\"\n        }\n    }\n}\n"
+append "block:children#0" "button { type = \"Button\" }"
+=== append-empty-block-step
+doc "root {\n    sub {\n        x = 1\n    }\n    children {\n    }\n}\n"
+append "block:children#0" "button { type = \"Button\" }"
+=== append-empty-inline
+doc "children { }\n"
+append "block:children#0" "a { type = \"Button\" }"
+=== append-inline
+doc "inline { a = 1 }\n"
+append "block:inline#0" "b = 2"
+=== append-map-form
+doc "labels {\n  \"team\": \"core\"\n}\n"
+append "block:labels#0" "env: \"prod\""
+=== append-accumulate
+doc "server {\n  host = \"h\"\n}\n"
+append "block:server#0" "port = 1"
+append "block:server#0" "debug = true"
+=== append-empty-multiline
+doc "server {\n}\n"
+append "block:server#0" "port = 8080"
+=== append-errors
+doc "server {\n}\n"
+append "<nil>" "a = 1"
+append "block:server#0" "<nil>"
+append "block:server#0" "a = $"
+append "<unspanned>" "a = 1"
+=== append-map-key-spelling
+doc "labels { \"team\": \"core\" }\n"
+append "block:labels#0" "404: \"int\""
+append "block:labels#0" "\"123\": \"str\""
+append "block:labels#0" "\"my key\": \"q\""
+append "block:labels#0" "\"team\": \"again\""
+=== setkeyed-replaces
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+setkeyed "children" "greeting" "weight" "5"
+=== setkeyed-quoted-dotted
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+setkeyed "children" "us-east-1" "type" "\"Zone\""
+setkeyed "children" "user.name" "type" "\"Input\""
+=== setkeyed-inserts-field
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+setkeyed "children" "us-east-1" "weight" "3"
+=== setkeyed-creates-element
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+setkeyed "children" "footer" "type" "\"HBox\""
+=== setkeyed-quoted-chain
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+setkeyed "children" "eu-west-2" "geo.zone" "\"b\""
+=== setkeyed-last-wins
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+setkeyed "children" "greeting" "weight" "7"
+setkeyed "children" "greeting" "weight" "9"
+=== setkeyed-assignment-element
+doc "children {\n  greeting = { weight = 1 }\n}\n"
+setkeyed "children" "greeting" "weight" "4"
+=== rmkeyed-whole-line
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+rmkeyed "children" "greeting" "type"
+=== rmel-keeps-siblings
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+rmel "children" "greeting"
+=== insel-appends
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+insel "children" "footer" "" "type = \"HBox\"\nweight = 2"
+=== insel-before
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+insel "children" "header" "greeting" "type = \"Banner\""
+=== insel-quoted
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+insel "children" "ap-south-1" "" "type = \"Region\""
+=== insel-duplicate
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+insel "children" "greeting" "" ""
+insel "children" "us-east-1" "" ""
+=== rename-bare
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+rename "children" "greeting" "welcome"
+=== rename-to-quoted
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+rename "children" "greeting" "welcome-1"
+=== rename-to-bare
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+rename "children" "us-east-1" "primary"
+=== rename-guards
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+rename "children" "greeting" "us-east-1"
+rename "children" "missing" "x"
+rename "children" "greeting" ""
+rename "children" "greeting" "greeting"
+=== move-to-end
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+move "children" "greeting" ""
+=== move-before
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+move "children" "user.name" "greeting"
+=== move-noop
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+move "children" "greeting" "us-east-1"
+=== inline-insert
+doc "children { a { x = 1 } b { x = 2 } }\n"
+insel "children" "c" "b" "x = 3"
+=== inline-move
+doc "children { a { x = 1 } b { x = 2 } }\n"
+move "children" "a" ""
+=== compose
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+setkeyed "children" "greeting" "weight" "10"
+rmel "children" "user.name"
+insel "children" "footer" "" "type = \"HBox\""
+=== keyed-errors
+doc "id = \"root\"\nchildren {\n  # the welcome banner\n  greeting {\n    type = \"Label\"   # widget class\n    weight = 1\n  }\n  \"us-east-1\" {\n    type = \"Region\"\n  }\n  user.name {\n    type = \"Field\"\n  }\n}\n"
+setkeyed "nope" "k" "x" "1"
+setkeyed "id" "k" "x" "1"
+setkeyed "children" "" "x" "1"
+rmkeyed "children" "missing" "x"
+rmkeyed "children" "greeting" "missing"
+move "children" "greeting" "greeting"
+insel "children" "x" "missing" ""
+=== split-find-second
+doc "children {\n  a {\n    type = \"L\"\n  }\n  b {\n    type = \"H\"\n  }\n}\nchildren {\n  c {\n    type = \"V\"\n  }\n}\n"
+setkeyed "children" "c" "type" "\"Grid\""
+=== split-remove-second
+doc "children {\n  a {\n    type = \"L\"\n  }\n  b {\n    type = \"H\"\n  }\n}\nchildren {\n  c {\n    type = \"V\"\n  }\n}\n"
+rmel "children" "c"
+=== split-rename
+doc "children {\n  a {\n    type = \"L\"\n  }\n  b {\n    type = \"H\"\n  }\n}\nchildren {\n  c {\n    type = \"V\"\n  }\n}\n"
+rename "children" "c" "z"
+=== split-duplicate
+doc "children {\n  a {\n    type = \"L\"\n  }\n  b {\n    type = \"H\"\n  }\n}\nchildren {\n  c {\n    type = \"V\"\n  }\n}\n"
+insel "children" "a" "" ""
+=== split-append-last
+doc "children {\n  a {\n    type = \"L\"\n  }\n  b {\n    type = \"H\"\n  }\n}\nchildren {\n  c {\n    type = \"V\"\n  }\n}\n"
+insel "children" "d" "" "type = \"X\""
+=== split-insert-before
+doc "children {\n  a {\n    type = \"L\"\n  }\n  b {\n    type = \"H\"\n  }\n}\nchildren {\n  c {\n    type = \"V\"\n  }\n}\n"
+insel "children" "a2" "b" "type = \"X\""
+=== split-move-across
+doc "children {\n  a {\n    type = \"L\"\n  }\n  b {\n    type = \"H\"\n  }\n}\nchildren {\n  c {\n    type = \"V\"\n  }\n}\n"
+move "children" "c" "a"
+=== anon-requires-declaration
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+setkeyed "regions" "us-east-1" "replicas" "5"
+=== anon-setkeyed
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+keyedby "regions" "name"
+setkeyed "regions" "us-east-1" "replicas" "5"
+=== anon-setkeyed-insert
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+keyedby "regions" "name"
+setkeyed "regions" "eu-west-2" "tier" "\"edge\""
+=== anon-rmkeyed
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+keyedby "regions" "name"
+rmkeyed "regions" "us-east-1" "replicas"
+=== anon-rename
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+keyedby "regions" "name"
+rename "regions" "us-east-1" "us-east-2"
+=== anon-rmel-first
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+keyedby "regions" "name"
+rmel "regions" "us-east-1"
+=== anon-rmel-last
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+keyedby "regions" "name"
+rmel "regions" "eu-west-2"
+=== anon-insel-append
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+keyedby "regions" "name"
+insel "regions" "ap-south-1" "" "replicas = 2"
+=== anon-insel-before
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+keyedby "regions" "name"
+insel "regions" "ca-central-1" "eu-west-2" "replicas = 4"
+=== anon-move
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+keyedby "regions" "name"
+move "regions" "eu-west-2" "us-east-1"
+=== anon-move-end
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+keyedby "regions" "name"
+move "regions" "us-east-1" ""
+=== anon-move-noop
+doc "service = \"edge\"\nregions = [\n  {\n    name = \"us-east-1\"\n    replicas = 3\n  },\n  {\n    name = \"eu-west-2\"\n    replicas = 1\n  }\n]\n"
+keyedby "regions" "name"
+move "regions" "us-east-1" "eu-west-2"
+=== anon-cross-form
+doc "children {\n  a { type = \"L\" }\n}\nchildren = [\n  {\n    id = \"b\"\n  }\n]\n"
+keyedby "children" "id"
+move "children" "a" "b"
+setkeyed "children" "b" "type" "\"H\""
+=== anon-rm-comments-0
+doc "f = [\n  { k = \"a\" }, # after a\n  // second\n  { k = \"b\" }\n]\n"
+keyedby "f" "k"
+rmel "f" "a"
+=== anon-rm-comments-1
+doc "f = [\n  { k = \"a\" }, # after a\n  { k = \"b\" } # after b\n]\n"
+keyedby "f" "k"
+rmel "f" "b"
+=== anon-rm-comments-2
+doc "f = [\n  { k = \"a\" }, # after a\n  // second\n  { k = \"b\" }\n]\n"
+keyedby "f" "k"
+rmel "f" "b"
+=== anon-rm-comments-3
+doc "f = [\n  { k = \"a\" }, # after a\n  // b\n  { k = \"b\" }, # after b\n  // c\n  { k = \"c\" }\n]\n"
+keyedby "f" "k"
+rmel "f" "b"
+=== anon-rm-comments-4
+doc "f = [\n  { k = \"a\" },\n  { k = \"b\" },\n]\n"
+keyedby "f" "k"
+rmel "f" "b"
+=== anon-rm-comments-5
+doc "f = [\n  { k = \"a\" }, # after a\n]\n"
+keyedby "f" "k"
+rmel "f" "a"
+=== anon-rm-comments-6
+doc "f = [ { k = \"a\" }, /* b */ { k = \"b\" } ]\n"
+keyedby "f" "k"
+rmel "f" "b"
+=== anon-rm-comments-7
+doc "f = [\n  { k = \"a\" } # x, y\n  , { k = \"b\" }\n]\n"
+keyedby "f" "k"
+rmel "f" "a"
+=== anon-rm-comments-8
+doc "f = [\n  { k = \"a\" }, { k = \"b\" }\n]\n"
+keyedby "f" "k"
+rmel "f" "a"
+=== anon-ins-comments-0
+doc "f = [\n  { k = \"a\" }, # after a\n]\n"
+keyedby "f" "k"
+insel "f" "b" "" ""
+=== anon-ins-comments-1
+doc "f = [\n  { k = \"a\" } # after a\n]\n"
+keyedby "f" "k"
+insel "f" "b" "" ""
+=== anon-ins-comments-2
+doc "f = [\n  { k = \"a\" } /* after a */\n]\n"
+keyedby "f" "k"
+insel "f" "b" "" ""
+=== anon-ins-comments-3
+doc "f = [\n  { k = \"a\" }\n]\n"
+keyedby "f" "k"
+insel "f" "b" "" ""
+=== anon-ins-comments-4
+doc "f = [ { k = \"a\" } /* a */, ]\n"
+keyedby "f" "k"
+insel "f" "b" "" ""
+=== anon-ins-comments-5
+doc "f = [\n  { k = \"a\" }, # after a\n  // second\n  { k = \"c\" }\n]\n"
+keyedby "f" "k"
+insel "f" "b" "c" ""
+=== anon-mv-comments-0
+doc "f = [\n  { k = \"a\" }, # after a\n  // second\n  { k = \"b\" }, # after b\n  { k = \"c\" } # after c\n]\n"
+keyedby "f" "k"
+move "f" "a" ""
+=== anon-mv-comments-1
+doc "f = [\n  { k = \"a\" }, # after a\n  // second\n  { k = \"b\" }, # after b\n  { k = \"c\" } # after c\n]\n"
+keyedby "f" "k"
+move "f" "c" "a"
+=== anon-mv-comments-2
+doc "f = [\n  { k = \"a\" }, # after a\n  // second\n  { k = \"b\" }, # after b\n  { k = \"c\" } # after c\n]\n"
+keyedby "f" "k"
+move "f" "a" "b"
+=== anon-mv-comments-3
+doc "f = [\n  { k = \"a\" }, # after a\n  // second\n  { k = \"b\" }, # after b\n  { k = \"c\" } # after c\n]\n"
+keyedby "f" "k"
+move "f" "c" ""
+=== anon-mv-inline
+doc "f = [\n  { k = \"a\" }, { k = \"b\" },\n  { k = \"c\" } # after c\n]\n"
+keyedby "f" "k"
+move "f" "c" "b"
+=== anon-mv-other-binding
+doc "f = [\n  { k = \"a\" },\n  { k = \"b\" },\n  { k = \"c\" }\n]\nf = [\n  { k = \"d\" }\n]\n"
+keyedby "f" "k"
+move "f" "a" "d"
+=== anon-mv-past-list
+doc "f = [\n  { k = \"a\" }\n]\nf = [\n  { k = \"c\" },\n  { k = \"d\" }\n]\n"
+keyedby "f" "k"
+move "f" "a" "d"
+=== anon-comments-matrix
+doc ""
+matrix
+=== nested-badval-0
+doc "a = 1\n"
+set "a" "{ x = }"
+replace "value:a#0" "{ x = }"
+=== nested-badval-1
+doc "a = 1\n"
+set "a" "{ b { x = } }"
+replace "value:a#0" "{ b { x = } }"
+=== nested-badval-2
+doc "a = 1\n"
+set "a" "{ b { c { x = } } }"
+replace "value:a#0" "{ b { c { x = } } }"
+=== nested-badval-3
+doc "a = 1\n"
+set "a" "[{ m: { b { x = } } }]"
+replace "value:a#0" "[{ m: { b { x = } } }]"
+# Added by protowire-rust (not in protowire-java's copy): the overlap check at its one-byte
+# boundary, and the reparse safety net, which no protowire-go test reaches.
+=== overlap-by-one-byte
+doc "a = 123\n"
+setspan "4" "6" "9"
+setspan "5" "7" "8"
+=== adjacent-spans
+doc "a = 123\n"
+setspan "4" "5" "9"
+setspan "5" "6" "8"
+=== reparse-refuses
+doc "a = 1\n"
+setspan "4" "5" "}"
