@@ -1,0 +1,124 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for tests/dataset_write.rs: the schema of protowire-go's
+// encoding/pxf/dataset_write_test.go (datasetWriteProtoSrc), verbatim.
+syntax = "proto3";
+package dsw.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+import "pxf/annotations.proto";
+import "pxf/bignum.proto";
+import "pxf/secret.proto";
+
+enum Color {
+  COLOR_UNSPECIFIED = 0;
+  COLOR_RED = 1;
+  COLOR_GREEN = 2;
+}
+
+message Row {
+  string s = 1;
+  bool b = 2;
+  int32 i32 = 3;
+  sint32 si32 = 4;
+  sfixed32 sf32 = 5;
+  int64 i64 = 6;
+  sint64 si64 = 7;
+  sfixed64 sf64 = 8;
+  uint32 u32 = 9;
+  fixed32 f32 = 10;
+  uint64 u64 = 11;
+  fixed64 f64 = 12;
+  float fl = 13;
+  double db = 14;
+  bytes by = 15;
+  Color color = 16;
+  optional int32 opt = 17;
+
+  google.protobuf.Timestamp ts = 20;
+  google.protobuf.Duration dur = 21;
+  google.protobuf.StringValue w_s = 22;
+  google.protobuf.Int64Value w_i64 = 23;
+  google.protobuf.BoolValue w_b = 24;
+  google.protobuf.BytesValue w_by = 25;
+  pxf.BigInt bi = 26;
+  pxf.Decimal dec = 27;
+  pxf.BigFloat bf = 28;
+  pxf.Secret sec = 29;
+
+  // Defaults: an empty cell would read back as the default.
+  string d_s = 40 [(pxf.default) = "dflt"];
+  int32 d_i32 = 41 [(pxf.default) = "7"];
+  optional int32 d_opt = 42 [(pxf.default) = "8"];
+  google.protobuf.Int32Value d_w = 43 [(pxf.default) = "9"];
+  google.protobuf.Timestamp d_ts = 44 [(pxf.default) = "2026-01-01T00:00:00Z"];
+  Color d_color = 45 [(pxf.default) = "COLOR_GREEN"];
+
+  oneof choice {
+    google.protobuf.StringValue c_w = 50 [(pxf.default) = "picked"];
+    int32 c_i = 51;
+    bool c_b = 52;
+  }
+
+  // A scalar member with a default: unset with no member set, it is an
+  // empty cell (null is rejected on a scalar) and reads back as the
+  // default.
+  oneof other {
+    string o_s = 53 [(pxf.default) = "other"];
+    int32 o_i = 54;
+  }
+
+  // Value cells (protowire#341): lists and blocks.
+  repeated int32 list = 60;
+  map<string, int32> m = 61;
+  Inner inner = 62;
+  repeated Inner inners = 63;
+  repeated Keyed keyed = 64 [(pxf.key) = "id"];
+  map<string, Inner> by_key = 65;
+}
+
+message Keyed {
+  string id = 1;
+  int32 v = 2;
+}
+
+message Inner {
+  int32 x = 1;
+  string label = 2;
+  Deep deep = 3;
+}
+
+message Deep {
+  int32 n = 1;
+}
+
+// Required fields below the root, for dotted columns (#155).
+message ReqParent {
+  string id = 1;
+  ReqChild child = 2 [(pxf.required) = true];
+}
+
+message ReqChild {
+  int32 n = 1 [(pxf.required) = true];
+  int32 m = 2;
+}
+
+message Pick {
+  oneof choice {
+    google.protobuf.StringValue c_w = 1 [(pxf.default) = "picked"];
+    int32 c_i = 2;
+    bool c_b = 3;
+  }
+  oneof other {
+    string o_s = 4 [(pxf.default) = "other"];
+    int32 o_i = 5;
+  }
+}
+
+message Req {
+  int32 id = 1 [(pxf.required) = true];
+  optional string name = 2 [(pxf.required) = true];
+  string note = 3;
+}

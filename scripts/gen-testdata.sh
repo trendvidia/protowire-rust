@@ -300,7 +300,7 @@ buf build --as-file-descriptor-set --exclude-source-info \
   -o crates/protowire-pxf/testdata/scan-options-bad-test.binpb
 echo "wrote crates/protowire-pxf/testdata/scan-options-bad-test.binpb (buf)"
 # The schemas of protowire-go's dataset_write tests.
-for f in dataset-write-null-test; do
+for f in dataset-write-test dataset-write-required-list-test dataset-write-null-test; do
   buf build --as-file-descriptor-set --exclude-source-info \
     --path "crates/protowire-pxf/testdata/$f.proto" \
     -o "crates/protowire-pxf/testdata/$f.binpb"

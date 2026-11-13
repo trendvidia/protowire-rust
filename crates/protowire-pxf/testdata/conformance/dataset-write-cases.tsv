@@ -1,0 +1,89 @@
+# Cases for scripts/dataset-write-oracle (see its doc for the format): protowire-go's
+# encoding/pxf/dataset_write_test.go and dataset_write_required_list_test.go,
+# one case per assertion, named by the test it comes from.
+# TestDatasetWrite_Text
+dataset-write-test.binpb	dsw.v1.Row	s,i32,opt,d_i32,d_w,color,ts	header
+dataset-write-test.binpb	dsw.v1.Row	s,i32,opt,d_i32,d_w,color,ts	new
+dataset-write-test.binpb	dsw.v1.Row	s,i32,opt,d_i32,d_w,color,ts	unmarshal s = "a, (b)" i32 = -3 opt = 0 d_i32 = 4 color = COLOR_RED ts = 2026-10-23T00:00:00Z
+# TestDatasetWrite_OneofDefaults
+dataset-write-test.binpb	dsw.v1.Pick	c_w,c_i,c_b,o_s,o_i	set o_i = 4
+dataset-write-test.binpb	dsw.v1.Pick	c_w,c_i,c_b,o_s,o_i	set c_b = false o_s = ""
+dataset-write-test.binpb	dsw.v1.Pick	c_w,c_i,c_b,o_s,o_i	new
+dataset-write-test.binpb	dsw.v1.Pick	c_w,o_s	set c_i = 5 o_i = 6
+dataset-write-test.binpb	dsw.v1.Pick	c_w,o_i	set c_i = 5 o_i = 6
+# TestDatasetWrite_RefusesInvalidSchema, on this port's fixtures for the same two faults
+scan-options-bad-test.binpb	sobad.v1.Bad	id	new
+oneof-two-defaults-test.binpb	oneof_two_defaults_test.v1.TwoDefaults	a,b	new
+# TestDatasetWrite_NullMask
+dataset-write-null-test.binpb	dswnull.v1.N	w,dw,rw,n,o	full w = null dw = null rw = 4 o = null ;; unmarshal w = "set anyway" n = 3 ;; mask n ;; mask rw
+dataset-write-null-test.binpb	dswnull.v1.N	w,dw,rw,n,o	full w = null dw = null rw = 4 o = null ;; unmarshal w = "set anyway" n = 3 ;; mask n ;; mask rw ;; clear rw
+dataset-write-null-test.binpb	dswnull.v1.N	w,dw,rw,n,o	full w = null dw = null rw = 4 o = null ;; unmarshal w = "set anyway" n = 3 ;; mask n ;; mask rw ;; clear _null ;; clear rw
+# TestDatasetWrite_UnsetOptionalScalarWithDefaultIsEmpty
+dataset-write-test.binpb	dsw.v1.Row	d_opt	new
+# TestDatasetWrite_EmptyDefaultedCellsReadBackAsDefaults
+dataset-write-test.binpb	dsw.v1.Row	d_opt,o_s,o_i	new
+# TestDatasetWrite_Required
+dataset-write-test.binpb	dsw.v1.Req	id,note	header
+dataset-write-test.binpb	dsw.v1.Req	id,name,note	new
+dataset-write-test.binpb	dsw.v1.Req	id,name,note	set name = ""
+# TestDatasetWrite_RefusesWhatACellCannotHold
+dataset-write-test.binpb	dsw.v1.Row	-	new
+dataset-write-test.binpb	dsw.v1.Row	inner,inner.x	new
+dataset-write-test.binpb	dsw.v1.Row	list.x	new
+dataset-write-test.binpb	dsw.v1.Row	ts.seconds	new
+dataset-write-test.binpb	dsw.v1.Row	inner.nope	new
+dataset-write-test.binpb	dsw.v1.Row	nope	new
+dataset-write-test.binpb	dsw.v1.Row	s,s	new
+dataset-write-test.binpb	dsw.v1.Row	S	new
+# TestDatasetWrite_ValueCells
+dataset-write-test.binpb	dsw.v1.Row	list,m,inner,inners,keyed,by_key,sec	unmarshal list = [1, 2, 3] m = { "a b": 1 "c": 2 } inner {} inners = [{ x = 1 }, { label = "l,)" }] keyed { a { v = 1 } } by_key = { "k": { x = 2 } } sec { value = "pw" hint = "vault" }
+# TestDatasetWrite_DottedText
+dataset-write-test.binpb	dsw.v1.Row	inner.x,inner.deep.n,s	header
+dataset-write-test.binpb	dsw.v1.Row	inner.x,inner.deep.n,s	unmarshal inner { x = 3 deep { n = 4 } } s = "a"
+dataset-write-test.binpb	dsw.v1.Row	inner.x,inner.deep.n,s	unmarshal inner { x = 3 } s = "a"
+dataset-write-test.binpb	dsw.v1.Row	inner.x,inner.deep.n,s	unmarshal s = "a"
+dataset-write-test.binpb	dsw.v1.Row	inner.x,inner.deep.n,s	unmarshal inner { deep {} }
+# TestDatasetWrite_DottedRequired
+dataset-write-test.binpb	dsw.v1.ReqParent	id,child.m	unmarshal child { n = 1 }
+dataset-write-test.binpb	dsw.v1.ReqParent	id,child.m	unmarshal child { n = 1 m = 5 }
+dataset-write-test.binpb	dsw.v1.ReqParent	id,child.n,child.m	unmarshal child { m = 2 }
+dataset-write-test.binpb	dsw.v1.ReqParent	id	header
+# TestDatasetWrite_DottedIntoSecret
+dataset-write-test.binpb	dsw.v1.Row	sec.value,sec.hint,d_s,d_i32,d_opt,d_w,d_ts,d_color,c_w,o_s	unmarshal sec { value = "pw" hint = "vault" } d_opt = 1 o_s = "x"
+dataset-write-test.binpb	dsw.v1.Row	sec.value,sec.hint,d_s,d_i32,d_opt,d_w,d_ts,d_color,c_w,o_s	unmarshal sec { value = "pw" } d_opt = 1 o_s = "x"
+dataset-write-test.binpb	dsw.v1.Row	sec.value,sec.hint,d_s,d_i32,d_opt,d_w,d_ts,d_color,c_w,o_s	unmarshal sec = "pw" d_opt = 1 o_s = "x"
+dataset-write-test.binpb	dsw.v1.Row	sec.value,sec.hint,d_s,d_i32,d_opt,d_w,d_ts,d_color,c_w,o_s	unmarshal d_opt = 1 o_s = "x"
+# TestAppendDatasetRow_EmptyRequiredList
+dataset-write-required-list-test.binpb	dswl.v1.Ints	f	new
+dataset-write-required-list-test.binpb	dswl.v1.Strs	f	new
+dataset-write-required-list-test.binpb	dswl.v1.Bools	f	new
+dataset-write-required-list-test.binpb	dswl.v1.Bys	f	new
+dataset-write-required-list-test.binpb	dswl.v1.Dbls	f	new
+dataset-write-required-list-test.binpb	dswl.v1.Flts	f	new
+dataset-write-required-list-test.binpb	dswl.v1.Enums	f	new
+dataset-write-required-list-test.binpb	dswl.v1.Msgs	f	new
+dataset-write-required-list-test.binpb	dswl.v1.Keyed	f	new
+dataset-write-required-list-test.binpb	dswl.v1.Maps	f	new
+dataset-write-required-list-test.binpb	dswl.v1.MsgMaps	f	new
+# TestAppendDatasetRow_EmptyRequiredListNested
+dataset-write-required-list-test.binpb	dswl.v1.Outer	ints	set ints {}
+dataset-write-required-list-test.binpb	dswl.v1.Outer	maps	set maps {}
+dataset-write-required-list-test.binpb	dswl.v1.Outer	list	set list = [{}]
+dataset-write-required-list-test.binpb	dswl.v1.Outer	by_key	set by_key = { "a": {} }
+dataset-write-required-list-test.binpb	dswl.v1.Outer	ints.f	set ints {}
+dataset-write-required-list-test.binpb	dswl.v1.Outer	maps.f	set maps {}
+# TestAppendDatasetRow_RequiredListWithElements
+dataset-write-required-list-test.binpb	dswl.v1.Ints	f	set f = [7]
+dataset-write-required-list-test.binpb	dswl.v1.Outer	list	new
+# TestDatasetWrite_RoundTrip, fewer rows (Go writes 2000), and its empty row
+dataset-write-test.binpb	dsw.v1.Row	mask:17592186044415	random 142 100
+dataset-write-test.binpb	dsw.v1.Row	mask:17592186044415	set d_opt = 0 o_s = ""
+# FuzzDatasetWriteRoundTrip: its two seeds, and more column subsets
+dataset-write-test.binpb	dsw.v1.Row	mask:0	random-subset 1 8
+dataset-write-test.binpb	dsw.v1.Row	mask:18446744073709551615	random-subset 142 8
+dataset-write-test.binpb	dsw.v1.Row	mask:6148914691236517205	random-subset 7 8
+dataset-write-test.binpb	dsw.v1.Row	mask:12297829382473034410	random-subset 9 8
+dataset-write-test.binpb	dsw.v1.Row	mask:12345678901	random-subset 3 8
+dataset-write-test.binpb	dsw.v1.Row	mask:987654321987	random-subset 11 8
+# TestDatasetWrite_DottedRoundTrip, fewer rows (Go writes 500)
+dataset-write-test.binpb	dsw.v1.Row	s,inner.x,inner.label,inner.deep.n,i32	random-dotted 342 100
