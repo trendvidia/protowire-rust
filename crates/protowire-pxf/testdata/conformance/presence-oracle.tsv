@@ -65,3 +65,5 @@ keyed/keyed.binpb	keyed.v1.Catalog	choices { alpha { other = "x" } }	ERR	1:19: f
 keyed/keyed.binpb	keyed.v1.Catalog	choices { alpha { other = null } }	ERR	1:19: field "other" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "choices"		ERR	1:19: field "other" shares oneof "pick" with key field "name", which entry name "alpha" already set in keyed field "choices"	
 keyed/keyed.binpb	keyed.v1.Catalog	choices { alpha {} beta { name = "beta" } } choices = [{ other = "x" }]	OK	0a070a05616c7068610a060a04626574610a03120178		OK	0a070a05616c7068610a060a04626574610a03120178	
 keyed/keyed.binpb	keyed.v1.Catalog	choices = [{ name = null }]	OK	0a00	choices[0].name	OK	0a00	
+element-defaults-test.binpb	elemdefaults.v1.P	payload = null one = null	OK	7a0e0a077061796c6f61640a036f6e65	one,payload	OK		
+element-defaults-test.binpb	elemdefaults.v1.P	payload = null one { w = null inner = null deep = null }	OK	2a1612096974656d2d64666c7432097069636b2d64666c747a250a077061796c6f61640a056f6e652e770a096f6e652e696e6e65720a086f6e652e64656570	one.deep,one.inner,one.w,payload	OK	2a00	
