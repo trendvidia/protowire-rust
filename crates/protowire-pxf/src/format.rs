@@ -12,8 +12,12 @@
 //!    control chars — pass through verbatim. Use a `bytes` field for arbitrary
 //!    binary data.
 
-use crate::ast::{DatasetDirective, Directive, Document, Entry, ProtoDirective, ProtoShape, Value};
+use crate::ast::{
+    DatasetDirective, Directive, Document, Entry, MapEntry, ProtoDirective, ProtoShape, Value,
+};
 use crate::keyed::ident_safe_entry_name;
+use crate::lexer::Lexer;
+use crate::token::TokenKind;
 
 #[derive(Debug, Clone)]
 pub struct FormatOptions {
@@ -280,7 +284,7 @@ impl Formatter<'_> {
                     // when the bare spelling would denote the same key
                     // (draft -01 § Entries and Keys, "Canonical spelling of
                     // map keys"; protowire#306).
-                    if m.quoted && needs_quoting(&m.key) {
+                    if map_key_quoted(m) {
                         self.out.push_str(&quote_string(&m.key));
                     } else {
                         self.out.push_str(&m.key);
@@ -392,6 +396,31 @@ fn needs_quoting(s: &str) -> bool {
     !ident_safe_entry_name(s)
 }
 
+/// Whether a map key is written quoted, protowire-go's `mapKeyQuoted`. A
+/// key the document wrote quoted keeps its quotes unless it is
+/// identifier-safe. A key the document wrote bare stays bare, because the
+/// bare spellings `true`, `0` and `123` denote a bool or an integer key
+/// (draft -01 § Entries and Keys, "Canonical spelling of map keys";
+/// protowire#306). A [`MapEntry`] built in code has no document spelling, so
+/// its key is written bare when it lexes as one bare map-key token and quoted
+/// otherwise: an empty key or `my key` still gives a document that parses.
+pub(crate) fn map_key_quoted(m: &MapEntry) -> bool {
+    if m.quoted {
+        return needs_quoting(&m.key);
+    }
+    !lexes_as_bare_map_key(&m.key)
+}
+
+/// Whether `s` is exactly one identifier, integer or bool token: the
+/// spellings a bare map key can have.
+fn lexes_as_bare_map_key(s: &str) -> bool {
+    let mut l = Lexer::new(s);
+    let t = l.next_token();
+    matches!(t.kind, TokenKind::Ident | TokenKind::Int | TokenKind::Bool)
+        && t.value == s
+        && l.next_token().kind == TokenKind::Eof
+}
+
 /// Standard base64 encode with `=` padding (Go's `base64.StdEncoding`).
 pub(crate) fn encode_base64(bytes: &[u8]) -> String {
     const ALPHA: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -425,6 +454,37 @@ pub(crate) fn encode_base64(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::parser::parse;
+
+    /// protowire-go's `TestLexesAsBareMapKey`.
+    #[test]
+    fn lexes_as_bare_map_key_as_go() {
+        for (s, want) in [
+            ("plain", true),
+            ("a.b", true),
+            ("_x1", true),
+            ("404", true),
+            ("-5", true),
+            ("0", true),
+            ("true", true),
+            ("false", true),
+            ("", false),
+            ("null", false),
+            ("my key", false),
+            (" a", false),
+            ("a ", false),
+            ("a\nb", false),
+            ("1.5", false),
+            ("5ms", false),
+            ("2024-01-01", false),
+            ("+1", false),
+            ("\"q\"", false),
+            ("#c", false),
+            ("-", false),
+            ("a:b", false),
+        ] {
+            assert_eq!(super::lexes_as_bare_map_key(s), want, "{s:?}");
+        }
+    }
 
     fn round_trip(src: &str) -> String {
         format(&parse(src).unwrap())

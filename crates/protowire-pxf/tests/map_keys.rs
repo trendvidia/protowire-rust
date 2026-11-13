@@ -393,3 +393,83 @@ fn fmt_pairs_are_fixed_points_and_bind() {
         }
     }
 }
+
+/// protowire-go's `TestMapEntryBuiltInCodeSpelling`: a map entry no parser
+/// made has no document spelling. A key that lexes as one bare map-key token
+/// is written bare, and any other key is quoted so the output still parses.
+/// `quoted` forces quotes on an identifier- or integer-shaped key meant as a
+/// string, and they are dropped again where the bare spelling denotes the
+/// same key.
+#[test]
+fn a_map_entry_built_in_code_is_spelled_as_go() {
+    use protowire_pxf::{Assignment, BlockVal, Document, MapEntry, Position, StringVal, Value};
+    let entry = |key: &str, quoted: bool| {
+        Entry::MapEntry(MapEntry {
+            pos: Position::default(),
+            end: Position::default(),
+            key: key.to_string(),
+            quoted,
+            value: Value::String(StringVal {
+                pos: Position::default(),
+                end: Position::default(),
+                value: "v".into(),
+            }),
+            leading_comments: Vec::new(),
+            trailing_comment: String::new(),
+        })
+    };
+    let doc = Document {
+        entries: vec![Entry::Assignment(Assignment {
+            pos: Position::default(),
+            end: Position::default(),
+            key: "m".into(),
+            key_quoted: false,
+            value: Value::Block(BlockVal {
+                pos: Position::default(),
+                end: Position::default(),
+                entries: vec![
+                    entry("plain", false),
+                    entry("404", false),
+                    entry("-5", false),
+                    entry("true", false),
+                    entry("", false),
+                    entry("my key", false),
+                    entry("null", false),
+                    entry("1.5", false),
+                    entry("123", true),
+                    entry("true", true),
+                    entry("plain", true),
+                    entry("a.b", false),
+                    entry("a.b", true),
+                    entry(".e", false),
+                ],
+                trailing_comments: Vec::new(),
+            }),
+            leading_comments: Vec::new(),
+            trailing_comment: String::new(),
+        })],
+        ..Default::default()
+    };
+    let want = concat!(
+        "m = {\n",
+        "  plain: \"v\"\n",
+        "  404: \"v\"\n",
+        "  -5: \"v\"\n",
+        "  true: \"v\"\n",
+        "  \"\": \"v\"\n",
+        "  \"my key\": \"v\"\n",
+        "  \"null\": \"v\"\n",
+        "  \"1.5\": \"v\"\n",
+        "  \"123\": \"v\"\n",
+        "  \"true\": \"v\"\n",
+        "  plain: \"v\"\n",
+        "  a.b: \"v\"\n",
+        "  a.b: \"v\"\n",
+        "  \".e\": \"v\"\n",
+        "}\n",
+    );
+    let got = format(&doc);
+    assert_eq!(got, want);
+    // It parses back, and the parsed spellings are a fixed point.
+    assert_eq!(format(&parse(&got).unwrap()), want);
+}
