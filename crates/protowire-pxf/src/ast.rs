@@ -267,6 +267,9 @@ pub enum Value {
     Duration(DurationVal),
     List(ListVal),
     Block(BlockVal),
+    /// A value that was missing or malformed, from
+    /// [`crate::parse_tolerant`] only.
+    Bad(BadVal),
 }
 
 impl Value {
@@ -283,6 +286,7 @@ impl Value {
             Value::Duration(v) => v.pos,
             Value::List(v) => v.pos,
             Value::Block(v) => v.pos,
+            Value::Bad(v) => v.pos,
         }
     }
 }
@@ -329,6 +333,19 @@ pub struct BytesVal {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NullVal {
+    pub pos: Position,
+}
+
+/// A placeholder for a value that was required but missing or malformed,
+/// as protowire-go's `BadVal`. Only [`crate::parse_tolerant`] makes one;
+/// [`crate::parse`] never does. For a missing value, `pos` is just past the
+/// token that required it (right after a dangling `=` or key), where the
+/// value would be typed; for a malformed literal, it is the literal's own.
+/// The syntax error is among those `parse_tolerant` returns with the
+/// document. [`crate::format()`] writes nothing for it, so a formatted
+/// tolerant tree that holds one may not parse again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BadVal {
     pub pos: Position,
 }
 
