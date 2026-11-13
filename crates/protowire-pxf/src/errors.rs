@@ -35,6 +35,30 @@ impl PxfError {
         }
     }
 
+    /// An error with `source` as its cause: the decoder's error for a
+    /// typed one, such as a [`crate::KeyedError`].
+    pub(crate) fn with_source(
+        pos: Position,
+        msg: impl Into<String>,
+        source: Arc<dyn StdError + Send + Sync>,
+    ) -> Self {
+        Self {
+            pos,
+            msg: msg.into(),
+            source: Some(source),
+        }
+    }
+
+    /// The same error at another position and with another text, keeping
+    /// its source.
+    pub(crate) fn relocated(self, pos: Position, msg: impl Into<String>) -> Self {
+        Self {
+            pos,
+            msg: msg.into(),
+            source: self.source,
+        }
+    }
+
     /// The error of a validator that refused a decode: its text, no
     /// position, and the validator's error as the source.
     pub(crate) fn from_validator(e: protowire_check::BoxError) -> Self {
@@ -69,6 +93,13 @@ impl PxfError {
     /// error [`crate::parse`] gives it.
     pub fn is_no_dataset(&self) -> bool {
         self.source.as_deref().is_some_and(|e| e.is::<NoDataset>())
+    }
+
+    /// The keyed repeated field error, when the decode refused a keyed
+    /// field's entries (draft -01 §3.13), as `errors.As(err, &kerr)` asks
+    /// in protowire-go; `None` for any other error.
+    pub fn keyed_error(&self) -> Option<&crate::KeyedError> {
+        self.source.as_deref()?.downcast_ref()
     }
 }
 
