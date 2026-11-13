@@ -153,6 +153,33 @@ fn corrupt_framing_sticks() {
     }
 }
 
+/// A frame body of exactly the cap reads; one byte more is corrupt
+/// framing, as protowire-go compares (`bodyLen > max`).
+#[test]
+fn the_cap_is_the_largest_frame_read() {
+    let codec = codec();
+    let mut enc = codec.new_encoder(Vec::new());
+    enc.encode(&new_simple(1, 2)).unwrap();
+    let framed = enc.into_inner();
+    let body = framed.len() - 6;
+    let mut dec = codec.new_decoder(Cursor::new(framed.clone()));
+    dec.set_max_frame_size(body);
+    assert!(
+        dec.decode(&mut DynamicMessage::new(simple())).unwrap(),
+        "at the cap"
+    );
+    let mut dec = codec.new_decoder(Cursor::new(framed));
+    dec.set_max_frame_size(body - 1);
+    let err = dec.decode(&mut DynamicMessage::new(simple())).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "sbe: stream framing corrupt: frame size {body} exceeds max {}",
+            body - 1
+        )
+    );
+}
+
 /// `FuzzStreamDecode`'s body over its seeds and every prefix of the Go
 /// stream: decoding never panics, and stops at the first error.
 #[test]

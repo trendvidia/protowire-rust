@@ -178,7 +178,33 @@ fn a_length_past_ten_bytes_is_corrupt_framing() {
     let err = Decoder::new(Cursor::new(ten))
         .decode(&mut StreamMsg::default())
         .unwrap_err();
-    assert!(err.is_framing_corrupt(), "{err:?}");
+    assert_eq!(
+        err.to_string(),
+        "pb: stream framing corrupt: binary: varint overflows a 64-bit integer"
+    );
+}
+
+/// A frame of exactly the cap reads; one byte more is corrupt framing, as
+/// protowire-go compares (`n > max`).
+#[test]
+fn the_cap_is_the_largest_frame_read() {
+    let mut enc = Encoder::new(Vec::new());
+    enc.encode(&msg(0, "", vec![7; 100])).unwrap();
+    let framed = enc.into_inner();
+    let body = framed.len() - 1; // a one-byte length
+    let mut dec = Decoder::new(Cursor::new(framed.clone()));
+    dec.set_max_frame_size(body);
+    assert!(dec.decode(&mut StreamMsg::default()).unwrap(), "at the cap");
+    let mut dec = Decoder::new(Cursor::new(framed));
+    dec.set_max_frame_size(body - 1);
+    let err = dec.decode(&mut StreamMsg::default()).unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "pb: stream framing corrupt: frame size {body} exceeds max {}",
+            body - 1
+        )
+    );
 }
 
 /// `TestStreamInnerUnmarshalRecoverable`: a frame whose body does not decode
