@@ -12,6 +12,9 @@
 //! this file defines the data shapes, builders, and queries.
 
 mod codec;
+pub mod stream;
+
+pub use stream::{Decoder, Encoder, StreamError, DEFAULT_MAX_FRAME_SIZE};
 
 use std::collections::HashMap;
 
