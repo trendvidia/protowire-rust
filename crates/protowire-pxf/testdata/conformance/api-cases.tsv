@@ -260,3 +260,8 @@ secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	tenant_keys = {
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	db_password { value = "x" }
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	backup_keys = [{ value = "k0" }]
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	tenant_keys = { "acme": { value = "k1" } }
+null-number-test.binpb	nullnumber.v1.Root	marshal	items = [{ a = 1 data = 2 }]
+null-number-test.binpb	nullnumber.v1.Root	marshal	by_key = { "k": { a = 3 data = 4 } }
+null-number-test.binpb	nullnumber.v1.Root	marshal	one { a = 5 data = 6 }
+null-number-test.binpb	nullnumber.v1.Root	marshal-any	payload { @type = "type.googleapis.com/nullnumber.v1.Elem" a = 7 data = 8 }
+null-number-test.binpb	nullnumber.v1.Root	marshal-any	payload { @type = "type.googleapis.com/nullnumber.v1.Root" name = "inner" items = [{ data = 9 }] }

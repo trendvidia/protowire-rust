@@ -12,6 +12,8 @@
 //	full <doc>             UnmarshalFull
 //	full-skip <doc>        UnmarshalFull with SkipPostDecode
 //	marshal <doc>          Unmarshal, then Marshal
+//	marshal-any <doc>      the same, both with the type resolver, so an Any
+//	                       is read and written as @type sugar
 //	secret <doc>           UnmarshalFull with an OnSecretField hook that
 //	                       records each call; secret-plain with Unmarshal;
 //	                       secret-err with a hook that fails
@@ -132,6 +134,15 @@ func main() {
 			if err := pxf.Unmarshal([]byte(c[3]), m); err != nil {
 				row = "ERR\t" + oneLine(err.Error())
 			} else if text, err := pxf.Marshal(m); err != nil {
+				row = "ERR\t" + oneLine(err.Error())
+			} else {
+				row = "OK\t" + oneLine(string(text))
+			}
+		case "marshal-any":
+			m := dynamicpb.NewMessage(desc)
+			if err := (pxf.UnmarshalOptions{TypeResolver: resolver{files}}).Unmarshal([]byte(c[3]), m); err != nil {
+				row = "ERR\t" + oneLine(err.Error())
+			} else if text, err := (pxf.MarshalOptions{TypeResolver: resolver{files}}).Marshal(m); err != nil {
 				row = "ERR\t" + oneLine(err.Error())
 			} else {
 				row = "OK\t" + oneLine(string(text))

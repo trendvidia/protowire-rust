@@ -267,3 +267,8 @@ secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	tenant_keys = {
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	db_password { value = "x" }	ERR	1:23: pxf.Secret hook for "db_password": vault closed		db_password=x
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	backup_keys = [{ value = "k0" }]	ERR	1:26: pxf.Secret hook for "backup_keys[0]": vault closed		backup_keys[0]=k0
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-err	tenant_keys = { "acme": { value = "k1" } }	ERR	1:35: pxf.Secret hook for "tenant_keys[\\"acme\\"]": vault closed		tenant_keys["acme"]=k1
+null-number-test.binpb	nullnumber.v1.Root	marshal	items = [{ a = 1 data = 2 }]	OK	items = [\n  {\n    a = 1\n    data = 2\n  }\n]\n
+null-number-test.binpb	nullnumber.v1.Root	marshal	by_key = { "k": { a = 3 data = 4 } }	OK	by_key = {\n  k: {\n    a = 3\n    data = 4\n  }\n}\n
+null-number-test.binpb	nullnumber.v1.Root	marshal	one { a = 5 data = 6 }	OK	one {\n  a = 5\n  data = 6\n}\n
+null-number-test.binpb	nullnumber.v1.Root	marshal-any	payload { @type = "type.googleapis.com/nullnumber.v1.Elem" a = 7 data = 8 }	OK	payload {\n  @type = "type.googleapis.com/nullnumber.v1.Elem"\n  a = 7\n  data = 8\n}\n
+null-number-test.binpb	nullnumber.v1.Root	marshal-any	payload { @type = "type.googleapis.com/nullnumber.v1.Root" name = "inner" items = [{ data = 9 }] }	OK	payload {\n  @type = "type.googleapis.com/nullnumber.v1.Root"\n  items = [\n    {\n      data = 9\n    }\n  ]\n  name = "inner"\n}\n
