@@ -168,7 +168,8 @@ impl<R: Read> DatasetReader<R> {
     /// when this returns `Ok(_)`.
     ///
     /// Returns an `Err` if the input is a well-formed document with no
-    /// `@dataset` directive (`pxf: no @dataset directive in stream`), the
+    /// `@dataset` directive (an error whose [`PxfError::is_no_dataset`]
+    /// holds), the
     /// error [`crate::parse`] returns for a malformed one (a header cut
     /// short included), a read failure, or if the header byte budget
     /// (64 KiB) is exceeded.
@@ -534,10 +535,7 @@ impl<R: Read> DatasetReader<R> {
                 let mut doc = self.parse_header(end)?;
                 if doc.datasets.is_empty() {
                     // Should not happen: the scan found an @dataset.
-                    return Err(PxfError::new(
-                        Position::default(),
-                        "pxf: no @dataset directive in stream",
-                    ));
+                    return Err(PxfError::no_dataset());
                 }
                 let ds = doc.datasets.swap_remove(0);
                 self.type_ = ds.r#type;
@@ -570,10 +568,7 @@ impl<R: Read> DatasetReader<R> {
                 if self.utf8_stuck() {
                     return Err(self.fail_utf8());
                 }
-                return Err(PxfError::new(
-                    Position::default(),
-                    "pxf: no @dataset directive in stream",
-                ));
+                return Err(PxfError::no_dataset());
             }
             if self.buf().len() >= DEFAULT_HEADER_MAX_BYTES {
                 return Err(PxfError::new(

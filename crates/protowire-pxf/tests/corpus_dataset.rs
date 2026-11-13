@@ -134,7 +134,7 @@ fn via_stream(doc: &str, d: &MessageDescriptor) -> Result<Vec<DynamicMessage>, S
     loop {
         let mut r = match DatasetReader::new(src) {
             Ok(r) => r,
-            Err(e) if e.to_string().contains("no @dataset directive") && readers > 0 => {
+            Err(e) if e.is_no_dataset() && readers > 0 => {
                 return Ok(out);
             }
             Err(e) => return Err(e.to_string()),

@@ -51,7 +51,43 @@ impl PxfError {
     pub fn check_error(&self) -> Option<&protowire_check::Error> {
         self.source.as_deref()?.downcast_ref()
     }
+
+    /// The error [`crate::DatasetReader::new`] returns for a well-formed
+    /// input with no `@dataset` directive: [`NoDataset`]'s text, no
+    /// position, and [`NoDataset`] as the source.
+    pub(crate) fn no_dataset() -> Self {
+        Self {
+            pos: Position::default(),
+            msg: NoDataset.to_string(),
+            source: Some(Arc::new(NoDataset)),
+        }
+    }
+
+    /// Whether this is the error for an input with no `@dataset`
+    /// directive, as `errors.Is(err, pxf.ErrNoDataset)` asks in
+    /// protowire-go. A malformed input is not one: it fails with the
+    /// error [`crate::parse`] gives it.
+    pub fn is_no_dataset(&self) -> bool {
+        self.source.as_deref().is_some_and(|e| e.is::<NoDataset>())
+    }
 }
+
+/// protowire-go's `ErrNoDataset`: the input holds no `@dataset` directive.
+///
+/// [`crate::DatasetReader::new`] fails with a [`PxfError`] whose
+/// [`source`](std::error::Error::source) is this, so a caller asks
+/// [`PxfError::is_no_dataset`], or finds it in an error chain, instead of
+/// comparing text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NoDataset;
+
+impl fmt::Display for NoDataset {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("pxf: no @dataset directive in stream")
+    }
+}
+
+impl StdError for NoDataset {}
 
 /// Errors are equal when their positions and texts are; the source is not
 /// compared.
@@ -102,7 +138,7 @@ mod tests {
         let at = PxfError::new(Position::new(2, 1), "unknown field \"x\"");
         assert!(at.has_position());
         assert_eq!(at.to_string(), "2:1: unknown field \"x\"");
-        let none = PxfError::new(Position::default(), "pxf: no @dataset directive in stream");
+        let none = PxfError::no_dataset();
         assert!(!none.has_position());
         assert_eq!(none.to_string(), "pxf: no @dataset directive in stream");
     }
