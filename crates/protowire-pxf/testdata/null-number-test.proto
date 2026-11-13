@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// Local fixture for tests/api_oracle.rs (#173): a body inside the root
+// whose field has the number of the root's _null FieldMask. Only the root's
+// own _null field is the mask; a field of that number anywhere else is data.
+syntax = "proto3";
+package nullnumber.v1;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/field_mask.proto";
+
+message Elem {
+  int32 a = 1;
+  int32 data = 2;
+}
+
+message Root {
+  repeated Elem items = 1;
+  google.protobuf.FieldMask _null = 2;
+  map<string, Elem> by_key = 3;
+  google.protobuf.Any payload = 4;
+  Elem one = 5;
+  string name = 6;
+}

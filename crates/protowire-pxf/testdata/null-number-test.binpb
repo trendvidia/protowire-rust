@@ -1,0 +1,28 @@
+
+ä
+google/protobuf/any.protogoogle.protobuf"6
+Any
+type_url (	RtypeUrl
+value (RvalueBv
+com.google.protobufBAnyProtoPZ,google.golang.org/protobuf/types/known/anypb¢GPBªGoogle.Protobuf.WellKnownTypesbproto3
+æ
+ google/protobuf/field_mask.protogoogle.protobuf"!
+	FieldMask
+paths (	RpathsB…
+com.google.protobufBFieldMaskProtoPZ2google.golang.org/protobuf/types/known/fieldmaskpbø¢GPBªGoogle.Protobuf.WellKnownTypesbproto3
+ì
+null-number-test.protonullnumber.v1google/protobuf/any.proto google/protobuf/field_mask.proto"(
+Elem
+a (Ra
+data (Rdata"Ó
+Root)
+items (2.nullnumber.v1.ElemRitems/
+_null (2.google.protobuf.FieldMaskRNull5
+by_key (2.nullnumber.v1.Root.ByKeyEntryRbyKey.
+payload (2.google.protobuf.AnyRpayload%
+one (2.nullnumber.v1.ElemRone
+name (	RnameM
+
+ByKeyEntry
+key (	Rkey)
+value (2.nullnumber.v1.ElemRvalue:8bproto3

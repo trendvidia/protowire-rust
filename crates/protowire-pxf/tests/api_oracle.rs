@@ -21,19 +21,23 @@ use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor};
 use protowire_pxf::annotations::{get_default, is_required};
 use protowire_pxf::{
     append_value, apply_default, format_value, marshal, parse, unmarshal, unmarshal_full, Entry,
-    MarshalOptions, PoolResolver, SecretHook, UnmarshalOptions,
+    MarshalOptions, PoolResolver, SecretHook, TypeResolver, UnmarshalOptions,
 };
 
 const ORACLE: &str = include_str!("../testdata/conformance/api-oracle.tsv");
 
 fn pools() -> HashMap<&'static str, DescriptorPool> {
-    let sets: [(&str, &[u8]); 4] = [
+    let sets: [(&str, &[u8]); 5] = [
         (
             "layered-test.binpb",
             include_bytes!("../testdata/layered-test.binpb"),
         ),
         ("d4-test.binpb", include_bytes!("../testdata/d4-test.binpb")),
         ("test.binpb", include_bytes!("../testdata/test.binpb")),
+        (
+            "null-number-test.binpb",
+            include_bytes!("../testdata/null-number-test.binpb"),
+        ),
         (
             "secret-hook-test.binpb",
             include_bytes!("../testdata/secret-hook-test.binpb"),
@@ -137,9 +141,28 @@ fn run() -> (Vec<String>, HashMap<String, usize>) {
                     }
                 }
             }
-            "marshal" => {
-                let got = unmarshal(c[3], &desc, UnmarshalOptions::default())
-                    .and_then(|m| marshal(&m, &desc, MarshalOptions::default()));
+            "marshal" | "marshal-any" => {
+                // marshal-any reads and writes an Any as @type sugar.
+                let resolver = PoolResolver(&pools[set]);
+                let resolver = (op == "marshal-any").then_some(&resolver as &dyn TypeResolver);
+                let got = unmarshal(
+                    c[3],
+                    &desc,
+                    UnmarshalOptions {
+                        type_resolver: resolver,
+                        ..Default::default()
+                    },
+                )
+                .and_then(|m| {
+                    marshal(
+                        &m,
+                        &desc,
+                        MarshalOptions {
+                            type_resolver: resolver,
+                            ..Default::default()
+                        },
+                    )
+                });
                 let got = match got {
                     Ok(text) => format!("OK\t{text}"),
                     Err(e) => format!("ERR\t{e}"),
@@ -262,6 +285,7 @@ fn every_case_meets_the_reference() {
             "full",
             "full-skip",
             "marshal",
+            "marshal-any",
             "format",
             "secret",
             "secret-plain",
@@ -271,7 +295,7 @@ fn every_case_meets_the_reference() {
             "default"
         ]
         .map(count),
-        [25, 13, 2, 10, 32, 32, 6, 130, 3, 9]
+        [25, 13, 5, 2, 10, 32, 32, 6, 130, 3, 9]
     );
     assert_eq!(count("pinned"), WAITS_ON_98.len());
     // The invalid-UTF-8 rows held to their position only, until #170.

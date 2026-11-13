@@ -241,8 +241,12 @@ impl<'a> Encoder<'a> {
         // The fields' annotations, read at the first unset field.
         let mut plan: Option<Arc<[PlanField]>> = None;
         for fd in declaration_order(&desc) {
+            // Skip the root's _null FieldMask field itself. Level 0 is the
+            // root: a list element or map value has an empty path too when
+            // no null set is tracked, and its field of the same number is
+            // data (#173).
             if let Some(null_fd) = &self.null_mask_fd {
-                if self.path_prefix.is_empty() && fd.number() == null_fd.number() {
+                if level == 0 && fd.number() == null_fd.number() {
                     continue;
                 }
             }

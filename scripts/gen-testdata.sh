@@ -306,3 +306,7 @@ for f in dataset-write-test dataset-write-required-list-test dataset-write-null-
     -o "crates/protowire-pxf/testdata/$f.binpb"
   echo "wrote crates/protowire-pxf/testdata/$f.binpb (buf)"
 done
+buf build --as-file-descriptor-set --exclude-source-info \
+  --path crates/protowire-pxf/testdata/null-number-test.proto \
+  -o crates/protowire-pxf/testdata/null-number-test.binpb
+echo "wrote crates/protowire-pxf/testdata/null-number-test.binpb (buf)"
