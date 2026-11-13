@@ -146,6 +146,14 @@ protowire-go's own compiler, and the oracle holds its descriptor set, since
 two redefinitions of one type cannot share a `.binpb`. Regenerate with
 `scripts/gen-wkt-shape-oracle.sh`.
 
+`tests/dataset_write.rs` holds the `@dataset` writer to protowire-go's
+`AppendDatasetHeader` and `AppendDatasetRow`. Each case of
+`dataset-write-cases.tsv` builds a message in Go, from documents or from Go's
+own random row generators. `dataset-write-oracle.tsv` holds that message's
+bytes, the text Go wrote and what Go's reader read back. Regenerate with
+`scripts/gen-dataset-write-oracle.sh`; pass `REF=v1.17.0` (or the release
+being matched) to pin the reference.
+
 `crates/protowire/tests/retired_oracle.rs` holds pxf validation and the SBE
 codec to protowire-go on descriptors whose options sit at the extension
 numbers retired in v1.12.0. The umbrella crate hosts it because it needs

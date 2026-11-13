@@ -31,6 +31,9 @@ use crate::post_decode_plan::{post_decode_plan, PlanField};
 use crate::result::Presence;
 use crate::token::Position;
 
+mod dataset_write;
+pub use dataset_write::{append_dataset_header, append_dataset_row};
+
 #[derive(Clone, Copy)]
 pub struct MarshalOptions<'a> {
     /// Indent string per level. Defaults to two spaces.
@@ -184,20 +187,7 @@ impl<'a> Encoder<'a> {
         self.null_mask_fd = find_null_mask_field(desc);
         if let Some(fd) = self.null_mask_fd.clone() {
             if root.has_field(&fd) {
-                let mask = root.get_field(&fd);
-                if let Value::Message(fm) = mask.as_ref() {
-                    if let Some(paths_fd) = fm.descriptor().get_field_by_name("paths") {
-                        if let Value::List(items) = fm.get_field(&paths_fd).into_owned() {
-                            let mut set: HashSet<String> = HashSet::new();
-                            for item in items {
-                                if let Value::String(s) = item {
-                                    set.insert(s);
-                                }
-                            }
-                            self.null_set = Some(set);
-                        }
-                    }
-                }
+                self.null_set = read_null_mask(root, &fd);
                 return;
             }
         }
@@ -262,7 +252,10 @@ impl<'a> Encoder<'a> {
                 }
             }
             let path = format!("{}{}", self.path_prefix, fd.name());
-            if self.null_set.as_ref().is_some_and(|s| s.contains(&path)) {
+            // A field in the null set that cannot hold `null` is written as
+            // if the set did not name it: `null` on it is a decode error
+            // (protowire-go#151).
+            if self.null_set.as_ref().is_some_and(|s| s.contains(&path)) && holds_null(&fd) {
                 self.write_field_prefix(level, fd.name());
                 self.buf.push_str("null\n");
                 continue;
@@ -1115,6 +1108,40 @@ fn unset_field(parent: &DynamicMessage, fd: &FieldDescriptor, plan: &[PlanField]
     } else {
         Unset::Skip
     }
+}
+
+/// The paths of `root`'s `_null` `FieldMask`, the field `fd`, as a set;
+/// `None` if the field does not hold a `FieldMask`'s shape.
+fn read_null_mask(root: &DynamicMessage, fd: &FieldDescriptor) -> Option<HashSet<String>> {
+    let mask = root.get_field(fd);
+    let Value::Message(fm) = mask.as_ref() else {
+        return None;
+    };
+    let paths_fd = fm.descriptor().get_field_by_name("paths")?;
+    let Value::List(items) = fm.get_field(&paths_fd).into_owned() else {
+        return None;
+    };
+    Some(
+        items
+            .into_iter()
+            .filter_map(|item| match item {
+                Value::String(s) => Some(s),
+                _ => None,
+            })
+            .collect(),
+    )
+}
+
+/// Whether `fd` can be written `null`: protowire-go's `nullable`. A field
+/// with presence that is neither repeated nor a map, a proto2 `required`
+/// field, nor `(pxf.required)` or `@required` (protowire-go#268). The
+/// decoder's own check lacks the last case, which #106 tracks.
+fn holds_null(fd: &FieldDescriptor) -> bool {
+    fd.supports_presence()
+        && !fd.is_list()
+        && !fd.is_map()
+        && fd.cardinality() != prost_reflect::Cardinality::Required
+        && !crate::annotations::is_required(fd)
 }
 
 /// `desc`'s fields in the order the schema declares them, as protowire-go

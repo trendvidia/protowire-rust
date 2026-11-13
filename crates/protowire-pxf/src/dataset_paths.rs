@@ -27,9 +27,10 @@ struct PathNode<'a> {
 /// A trie keeps this linear in the header's bytes: a parser meets this
 /// header before any limit but `MaxMessageSize` applies to it, so comparing
 /// every pair of columns would be quadratic in attacker-chosen input.
-pub(crate) fn column_path_error(cols: &[String]) -> Option<(usize, String)> {
+pub(crate) fn column_path_error<S: AsRef<str>>(cols: &[S]) -> Option<(usize, String)> {
     let mut nodes: Vec<PathNode<'_>> = vec![PathNode::default()];
     for (i, c) in cols.iter().enumerate() {
+        let c = c.as_ref();
         if c.starts_with('.') || c.ends_with('.') || c.contains("..") {
             return Some((
                 i,
@@ -45,7 +46,7 @@ pub(crate) fn column_path_error(cols: &[String]) -> Option<(usize, String)> {
         let mut created = false;
         for seg in c.split('.') {
             if let Some(prev) = nodes[at].column {
-                return Some((i, overlap(&cols[prev])));
+                return Some((i, overlap(cols[prev].as_ref())));
             }
             at = match nodes[at].children.get(seg) {
                 Some(&next) => next,
@@ -68,7 +69,7 @@ pub(crate) fn column_path_error(cols: &[String]) -> Option<(usize, String)> {
             ));
         }
         if !created {
-            return Some((i, overlap(&cols[nodes[at].first])));
+            return Some((i, overlap(cols[nodes[at].first].as_ref())));
         }
         nodes[at].column = Some(i);
     }
@@ -107,15 +108,16 @@ fn is_literal_type(full: &str) -> bool {
 /// A path deeper than `max_depth` is refused here, because a row's body is
 /// built by recursing over the path before the decoder can count its
 /// depth, and a recursive row type admits a path of any length.
-pub(crate) fn check_column_paths(
+pub(crate) fn check_column_paths<S: AsRef<str>>(
     desc: &MessageDescriptor,
-    cols: &[String],
+    cols: &[S],
     max_depth: usize,
 ) -> Option<String> {
     if let Some((_, msg)) = column_path_error(cols) {
         return Some(msg);
     }
     for c in cols {
+        let c = c.as_ref();
         let mut md = desc.clone();
         let mut consumed = 0;
         let mut depth = 0;

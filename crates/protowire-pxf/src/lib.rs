@@ -41,7 +41,7 @@ pub use decode::{
     apply_default, unmarshal, unmarshal_full, PoolResolver, SecretHook, TypeResolver,
     UnmarshalOptions,
 };
-pub use encode::{marshal, MarshalOptions};
+pub use encode::{append_dataset_header, append_dataset_row, marshal, MarshalOptions};
 pub use errors::PxfError;
 pub use format::{append_value, format, format_value, format_with_options, FormatOptions};
 pub use keyed::{canonicalize_keyed, ident_safe_entry_name, key_field};
