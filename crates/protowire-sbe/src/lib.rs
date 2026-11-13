@@ -15,6 +15,7 @@ pub(crate) mod gofmt;
 pub mod marshal;
 pub mod prototoxml;
 pub mod saxlite;
+pub mod stream;
 pub mod template;
 pub mod unmarshal;
 pub mod view;
@@ -27,6 +28,7 @@ pub use codec::{
 pub use errors::SbeError;
 pub use marshal::marshal;
 pub use prototoxml::proto_to_xml;
+pub use stream::{Decoder, Encoder, StreamError, DEFAULT_MAX_FRAME_SIZE};
 pub use template::{
     build_template, field_encoding_size, FieldTemplate, GroupTemplate, MessageTemplate, SbeEncoding,
 };
