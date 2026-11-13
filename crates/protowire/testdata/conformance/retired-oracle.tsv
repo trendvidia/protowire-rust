@@ -1,4 +1,4 @@
-# What protowire-go at f2baa11 does with each case of retired-cases.tsv.
+# What protowire-go at ca79f5c does with each case of retired-cases.tsv.
 # Produced by scripts/gen-wkt-shape-oracle.sh. Do not edit.
 # Rows: id, op, then the verdict. fds: the case's descriptor set in hex.
 # validate: ValidateFile's count and violations, "[kind] text" joined by " | ".

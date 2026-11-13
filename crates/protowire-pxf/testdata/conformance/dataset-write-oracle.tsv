@@ -1,4 +1,4 @@
-# What protowire-go at f2baa11's @dataset writer does with each case of dataset-write-cases.tsv.
+# What protowire-go at ca79f5c's @dataset writer does with each case of dataset-write-cases.tsv.
 # Produced by scripts/gen-dataset-write-oracle.sh. Do not edit.
 # Columns: descriptor set, message, columns, build, the row's index, its pb hex, then
 # OK and the text or ERR and the error for: the header, the row, the read-back

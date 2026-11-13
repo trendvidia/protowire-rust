@@ -1,4 +1,4 @@
-# What protowire-go at f2baa11's Parse and ParseTolerant do with each case of tolerant-cases.tsv.
+# What protowire-go at ca79f5c's Parse and ParseTolerant do with each case of tolerant-cases.tsv.
 # Produced by scripts/gen-tolerant-oracle.sh. Do not edit.
 # Columns: the case, Parse's verdict (OK, or ERR and the error), ParseTolerant's errors
 # (line:col:offset|msg joined by ' ; ', or NONE), and its tree in the dump format of

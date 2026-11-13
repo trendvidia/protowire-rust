@@ -11,7 +11,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 go_repo="$repo_root/../protowire-go"
 ref="${REF:-origin/main}"
-sha="$(git -C "$go_repo" rev-parse --short "$ref")"
+sha="$(git -C "$go_repo" rev-parse --short "$ref^{commit}")"
 conformance="$repo_root/crates/protowire-pxf/testdata/conformance"
 
 work="$(mktemp -d)"
