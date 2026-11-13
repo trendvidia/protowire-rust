@@ -13,6 +13,7 @@ format changes.
 
 ### Added
 
+- **`PxfError::is_no_dataset`** ([#130](https://github.com/trendvidia/protowire-rust/issues/130), protowire-go's `ErrNoDataset`). A caller can tell an input with no `@dataset` directive from any other `DatasetReader::new` failure without comparing text. The error's `source()` is the new `NoDataset`, so it is also found in an error chain. Its text and missing position are as before. A malformed input still fails with `parse`'s error, which is not one.
 - **A `@dataset` writer: `append_dataset_header` and `append_dataset_row`** ([#129](https://github.com/trendvidia/protowire-rust/issues/129), protowire-go's `AppendDatasetHeader`, `AppendDatasetRow`). A table can now be written as well as read. The header names the row type and its columns; each row is one message, on one line.
   - **Cells:** each is the text `marshal` writes for the field. A list, map or block is one cell on one line. A column may be a dotted path into a sub-message (`inner.x`). An unset field with `(pxf.default)` or `(pxf.required)` is written so that it reads back as it was, as protowire-go writes it: its zero, `[]`, `{}` or `null`, or an empty cell.
   - **Refusals:** a column list or a row the reader would refuse is refused, with protowire-go's text, and `dst` is left as it was. That covers a column that is not a field, a path through a list or into a literal, a required field left out, and a schema the reader refuses. A path deeper than `MAX_NESTING_DEPTH` is refused too, since this port's reader refuses it.

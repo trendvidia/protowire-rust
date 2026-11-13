@@ -8,7 +8,7 @@ use std::io::Cursor;
 
 use prost_reflect::{DescriptorPool, MessageDescriptor, ReflectMessage, Value};
 use protowire_pxf::ast::Value as AstValue;
-use protowire_pxf::{bind_row, DatasetReader, PxfError, UnmarshalOptions};
+use protowire_pxf::{bind_row, DatasetReader, NoDataset, PxfError, UnmarshalOptions};
 
 const TEST_FDS: &[u8] = include_bytes!("../testdata/test.binpb");
 
@@ -39,15 +39,55 @@ fn header_exposes_type_and_columns() {
 #[test]
 fn no_table_returns_error() {
     let err = reader("@type foo.Msg\nname = \"x\"\n").err().expect("err");
-    // protowire-go's ErrNoDataset, word for word, with no position (#138).
+    // protowire-go's ErrNoDataset, word for word, with no position (#138),
+    // and matched by type rather than text (#130).
+    assert!(err.is_no_dataset());
     assert_eq!(err.to_string(), "pxf: no @dataset directive in stream");
+    let src = std::error::Error::source(&err).expect("source");
+    assert_eq!(src.downcast_ref::<NoDataset>(), Some(&NoDataset));
 }
 
 #[test]
 fn empty_input_returns_error() {
     let err = reader("").err().expect("err");
     // protowire-go's ErrNoDataset, word for word, with no position (#138).
+    assert!(err.is_no_dataset());
     assert_eq!(err.to_string(), "pxf: no @dataset directive in stream");
+}
+
+/// protowire-go's `TestTableReader_NoTableInStream`: a body with no
+/// directive at all.
+#[test]
+fn a_body_alone_has_no_dataset() {
+    let err = reader("string_field = \"x\"").err().expect("err");
+    assert!(err.is_no_dataset());
+}
+
+/// A malformed input is not a document without a dataset: it fails with
+/// `parse`'s error, which `is_no_dataset` refuses. protowire-go's
+/// `TestTableReader_UnterminatedStringInLeadingDirective`,
+/// `_AtTableWithoutOpenParen_ReportsParseError` and
+/// `_UnterminatedStringBetweenAtTableAndLParen`.
+#[test]
+fn a_malformed_header_is_not_no_dataset() {
+    for input in [
+        "@header H { note = \"open\n }\n@dataset T (a)\n(\"x\")",
+        "@dataset T",
+        "@dataset T \"open\n (a)\n(\"x\")",
+    ] {
+        let err = reader(input).err().expect(input);
+        assert!(!err.is_no_dataset(), "{input:?}: {err}");
+        let perr = protowire_pxf::parse(input).expect_err(input);
+        assert_eq!(err.to_string(), perr.to_string(), "{input:?}");
+    }
+}
+
+/// Only the reader's own refusal is one: an error with the same text but
+/// another origin is not.
+#[test]
+fn the_text_alone_is_not_no_dataset() {
+    let lookalike = PxfError::new(Default::default(), "pxf: no @dataset directive in stream");
+    assert!(!lookalike.is_no_dataset());
 }
 
 #[test]
