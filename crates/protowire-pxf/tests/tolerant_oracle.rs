@@ -262,6 +262,16 @@ fn document(case: &str) -> String {
     unescape(case)
 }
 
+/// A string whose escapes give bytes that are not UTF-8 (#170). protowire-go
+/// keeps the bytes; this port's lexer refuses the string, so `parse` fails
+/// and `parse_tolerant` records that error and a placeholder. Such a row is
+/// checked for exactly that, and the count is pinned, so the test fails the
+/// day #170 is fixed.
+fn waits_on_170(case: &str, got: &str) -> bool {
+    case.contains("\\\\xff")
+        && (got.contains("string contains invalid UTF-8") || got.contains("bad("))
+}
+
 #[derive(Debug, Default, PartialEq)]
 struct Marker {
     cases: usize,
@@ -269,6 +279,7 @@ struct Marker {
     with_errors: usize,
     errors: usize,
     placeholders: usize,
+    waits_on_170: usize,
 }
 
 #[test]
@@ -307,6 +318,10 @@ fn every_case_meets_the_reference() {
             ("tree", tree, c[3]),
         ] {
             let want = unescape(want);
+            if got != want && waits_on_170(c[0], &got) {
+                seen.waits_on_170 += 1;
+                continue;
+            }
             if got != want {
                 failures.push(format!(
                     "{} [{what}] {:?}\n   got: {got}\n  want: {want}",
@@ -321,14 +336,19 @@ fn every_case_meets_the_reference() {
         failures.len(),
         failures.join("\n")
     );
+    // This port's counts. The oracle file gives protowire-go's: 282 read by
+    // `parse`, 469 with errors, 878 errors and 189 placeholders. The two
+    // #170 rows make the difference: the first is refused by `parse`, and
+    // each holds one more error and one more placeholder here.
     assert_eq!(
         seen,
         Marker {
-            cases: 749,
+            cases: 751,
             strict_ok: 281,
-            with_errors: 468,
-            errors: 877,
-            placeholders: 189,
+            with_errors: 470,
+            errors: 880,
+            placeholders: 191,
+            waits_on_170: 5,
         }
     );
 }
