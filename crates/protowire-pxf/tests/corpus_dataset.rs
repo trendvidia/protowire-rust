@@ -2,7 +2,7 @@
 // Copyright (c) 2026 TrendVidia, LLC.
 //! `@dataset` value cells, column paths and the end of a row sequence
 //! (draft -01 §3.4.4; protowire#341, #342, #336). `testdata/dataset/` is
-//! vendored from trendvidia/protowire at e9e0a17.
+//! vendored from trendvidia/protowire at e653718.
 
 mod common;
 
@@ -42,6 +42,10 @@ const VERDICTS: &[(&str, &str)] = &[
         "null is not allowed on scalar field \"int32_field\"",
     ),
     ("null-on-optional-cell", ""),
+    (
+        "null-on-required-cell",
+        "null is not allowed on required field \"o\": a required field holds a value",
+    ),
     ("dotted-column", ""),
     ("dotted-grouping", ""),
     ("dotted-null-leaf", ""),
@@ -150,6 +154,18 @@ fn via_stream(doc: &str, d: &MessageDescriptor) -> Result<Vec<DynamicMessage>, S
     }
 }
 
+/// A path whose refusal has another text than the fixture's verdict, and
+/// that text. `unmarshal_full` decodes the document's body against the row
+/// type before any row is bound. A `@dataset` document has an empty body,
+/// so a row type with a required field is refused there first, as absent.
+/// protowire-go v1.17.0's `UnmarshalFull` gives the same text on this
+/// fixture (probed 2026-11-13).
+const PATH_VERDICTS: &[(&str, &str, &str)] = &[(
+    "null-on-required-cell",
+    "full",
+    "1:1: required field \"o\" is absent",
+)];
+
 #[test]
 fn every_fixture_meets_its_verdict_on_every_path() {
     let (test, paths) = (pool(TEST), pool(PATHS));
@@ -169,6 +185,10 @@ fn every_fixture_meets_its_verdict_on_every_path() {
             ("stream", via_stream(doc, &d)),
         ];
         for (path, got) in &results {
+            let want = PATH_VERDICTS
+                .iter()
+                .find(|(s, p, _)| s == stem && p == path)
+                .map_or(want, |o| o.2);
             match (got, want) {
                 (Ok(_), "") => {}
                 (Ok(_), w) => problems.push(format!("{stem}/{path}: accepted, want {w:?}")),

@@ -173,7 +173,8 @@ protowire-java's runner; regenerate with `scripts/gen-rewrite-oracle.sh`.
   generation script.
 - "Null suppresses default": a field set to `null` in PXF is *present*
   (intentionally null), so post-decode must not overwrite it with a
-  default. Required-validation skips null too.
+  default. A null on a required field is refused at decode (#106), so
+  required-validation never meets one.
 - Map keys are sorted lexicographically by their formatted-string form,
   not numerically (`int_map = { 10: …, 2: … }` keeps that order).
 - `1.5s` cannot be a single DURATION token — the `.` forces float lexing

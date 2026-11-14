@@ -52,7 +52,10 @@ fixtures are in [`../strings/`](../strings/).
 applies the singular-field null rules, so `null` in a plain `int32`
 column is an error. `null-on-optional-cell` (accept) is the other side:
 `null` in an `optional int32` column leaves the field unset and
-present-but-null. Its general fixtures are in [`../nulls/`](../nulls/).
+present-but-null. `null-on-required-cell` (reject) is the exception: in a
+column whose field has `(pxf.required)`, `null` is an error, as an empty
+cell is, since a required field holds a value. Its general fixtures are
+in [`../nulls/`](../nulls/).
 
 The `dotted-*` fixtures and `duplicate-column` pin column paths (issue
 [#342](https://github.com/trendvidia/protowire/issues/342), v1.13). A

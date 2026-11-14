@@ -354,8 +354,8 @@ fn every_case_meets_the_reference() {
     assert_eq!(
         seen,
         Marker {
-            cases: 751,
-            strict_ok: 281,
+            cases: 753,
+            strict_ok: 283,
             with_errors: 470,
             errors: 880,
             placeholders: 191,

@@ -4,7 +4,7 @@
 //! (draft -01 § Booleans, Null, and Identifier Values and § String
 //! Literals; protowire#339, #379, #380, #350). `testdata/nulls/`,
 //! `testdata/strings/` and `testdata/dataset/` are vendored from
-//! trendvidia/protowire at e9e0a17.
+//! trendvidia/protowire at e653718.
 
 mod common;
 
@@ -50,7 +50,7 @@ fn editions_schemas_still_do_not_load() {
 #[test]
 fn every_null_fixture_meets_its_verdict() {
     let files = fixtures("nulls");
-    assert_eq!(files.len(), 19, "the README lists nineteen fixtures");
+    assert_eq!(files.len(), 20, "the README lists twenty fixtures");
     let mut ran = 0;
     for (stem, doc) in files {
         if EDITIONS.contains(&stem.as_str()) {
@@ -72,7 +72,7 @@ fn every_null_fixture_meets_its_verdict() {
         assert_eq!(msg.fields().count(), 0, "{stem}: a default must not apply");
         assert_eq!(presence.null_paths().count(), 1, "{stem}: present-but-null");
     }
-    assert_eq!(ran, 17);
+    assert_eq!(ran, 18);
 }
 
 #[test]
@@ -86,6 +86,28 @@ fn a_null_error_names_the_field() {
     ] {
         let e = unmarshal(doc, &d, opts).expect_err(doc);
         assert!(e.msg.contains(want), "{doc}: {}", e.msg);
+    }
+    // A required field holds a value, so null on it is refused whatever
+    // its presence (#106, protowire-go#268), with protowire-go's text.
+    for (ty, doc, want) in [
+        (
+            "nulls.v1.Required",
+            "r = null",
+            "1:5: null is not allowed on required field \"r\": a required field holds a value",
+        ),
+        (
+            "nulls.v1.RequiredWrapper",
+            "w = null",
+            "1:5: null is not allowed on required field \"w\": a required field holds a value",
+        ),
+    ] {
+        let d = desc(ty);
+        for e in [
+            unmarshal(doc, &d, opts).expect_err(doc),
+            unmarshal_full(doc, &d, opts).map(|_| ()).expect_err(doc),
+        ] {
+            assert_eq!(e.to_string(), want, "{ty}: {doc}");
+        }
     }
 }
 

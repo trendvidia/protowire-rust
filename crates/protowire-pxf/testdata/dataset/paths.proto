@@ -58,3 +58,9 @@ message Event {
   pxf.Secret pw = 14;
   optional int32 opt = 15;
 }
+
+// A required field that could otherwise hold null (null-on-required-cell).
+message RowReq {
+  string id = 1;
+  optional int32 o = 2 [(pxf.required) = true];
+}

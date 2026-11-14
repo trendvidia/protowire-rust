@@ -1,0 +1,6 @@
+@type nulls.v1.RequiredWrapper
+
+# Reject: null on a wrapper field marked (pxf.required). A message field
+# may hold null, but not one that is required: it holds a value.
+
+w = null
