@@ -51,6 +51,9 @@ pub(crate) const TYPE_ENTRY_MISPLACED: &str =
 /// Go interface of the same name. The URL prefix (`type.googleapis.com/…`) is
 /// the implementation's responsibility — strip it as appropriate.
 pub trait TypeResolver {
+    /// The message type `url` names, or `None` when there is none. A decode
+    /// then fails with `cannot resolve Any type "<url>": not found`, the text
+    /// protowire-go gives for a resolver whose error is "not found".
     fn find_message_by_url(&self, url: &str) -> Option<MessageDescriptor>;
 }
 
@@ -1760,11 +1763,10 @@ impl<'a> Decoder<'a> {
         self.advance();
         if let Some(b) = self.bad_string.take() {
             // No type is named by bytes that are not UTF-8.
-            let url = quote_bytes(&b);
-            return Err(self.err(match self.type_resolver {
-                None => format!("cannot resolve Any type {url}: no type_resolver"),
-                Some(_) => format!("cannot resolve Any type {url}"),
-            }));
+            return Err(self.err(unresolved_any(
+                &quote_bytes(&b),
+                self.type_resolver.is_some(),
+            )));
         }
         if !matches!(self.current.kind, TokenKind::String) {
             return Err(self.err(format!(
@@ -1776,15 +1778,15 @@ impl<'a> Decoder<'a> {
         let url_pos = self.current.pos;
         self.advance();
 
-        let resolver = self.type_resolver.ok_or_else(|| {
-            PxfError::new(
-                url_pos,
-                format!("cannot resolve Any type {type_url:?}: no type_resolver"),
-            )
-        })?;
-        let inner_desc = resolver.find_message_by_url(&type_url).ok_or_else(|| {
-            PxfError::new(url_pos, format!("cannot resolve Any type {:?}", type_url))
-        })?;
+        let inner_desc = self
+            .type_resolver
+            .and_then(|r| r.find_message_by_url(&type_url))
+            .ok_or_else(|| {
+                PxfError::new(
+                    url_pos,
+                    unresolved_any(&quote(&type_url), self.type_resolver.is_some()),
+                )
+            })?;
         Ok((type_url, url_pos, DynamicMessage::new(inner_desc)))
     }
 
@@ -2393,6 +2395,21 @@ fn wrapper_name(kind: &Kind) -> &'static str {
 
 fn is_any_full_name(full: &str) -> bool {
     full == "google.protobuf.Any"
+}
+
+/// The error for an Any type URL that names no type, the URL already quoted
+/// as Go's `%q`. protowire-go appends its resolver's error. A
+/// [`TypeResolver`] answers `None` instead, and the text is what a Go
+/// resolver that says "not found" gives, as protowire-java's is (#192).
+/// Without a resolver it names this port's option where Go names its own.
+fn unresolved_any(quoted_url: &str, have_resolver: bool) -> String {
+    if have_resolver {
+        format!("cannot resolve Any type {quoted_url}: not found")
+    } else {
+        format!(
+            "cannot resolve Any type {quoted_url}: no TypeResolver (UnmarshalOptions::type_resolver)"
+        )
+    }
 }
 
 /// The elements a repeated field already holds, so a second binding of
