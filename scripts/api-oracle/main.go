@@ -39,6 +39,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protodesc"
@@ -77,8 +78,25 @@ func check(err error) {
 	}
 }
 
+// oneLine escapes a verdict onto one line: backslashes, tabs and newlines,
+// and any byte that is not UTF-8 as \xNN, so the oracle stays a text file.
+// protowire-go's errors can quote a document's invalid bytes raw (#170).
 func oneLine(s string) string {
-	return strings.NewReplacer(`\`, `\\`, "\t", `\t`, "\n", `\n`).Replace(s)
+	s = strings.NewReplacer(`\`, `\\`, "\t", `\t`, "\n", `\n`).Replace(s)
+	if utf8.ValidString(s) {
+		return s
+	}
+	var b strings.Builder
+	for len(s) > 0 {
+		r, n := utf8.DecodeRuneInString(s)
+		if r == utf8.RuneError && n == 1 {
+			fmt.Fprintf(&b, `\x%02x`, s[0])
+		} else {
+			b.WriteString(s[:n])
+		}
+		s = s[n:]
+	}
+	return b.String()
 }
 
 func sorted(paths []string) string {
@@ -121,9 +139,12 @@ func main() {
 		}
 		var row string
 		switch c[2] {
-		case "full", "full-skip":
+		case "full", "full-skip", "discard":
 			m := dynamicpb.NewMessage(desc)
-			res, err := pxf.UnmarshalOptions{SkipPostDecode: c[2] == "full-skip"}.UnmarshalFull([]byte(c[3]), m)
+			res, err := pxf.UnmarshalOptions{
+				SkipPostDecode: c[2] == "full-skip",
+				DiscardUnknown: c[2] == "discard",
+			}.UnmarshalFull([]byte(c[3]), m)
 			if err != nil {
 				row = "ERR\t" + oneLine(err.Error()) + "\t\t"
 			} else {

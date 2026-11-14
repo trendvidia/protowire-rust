@@ -112,6 +112,27 @@ pub(crate) fn read_value(
     depth: usize,
     limits: Limits,
 ) -> Result<Value, PxfError> {
+    read_value_with(lex, current, depth, limits, false)
+}
+
+/// [`read_value`] for a value the decoder drops: a string in it that is not
+/// UTF-8 is read as a string, since its text is never read (#170).
+pub(crate) fn read_dropped_value(
+    lex: &mut Lexer<'_>,
+    current: &mut Token,
+    depth: usize,
+    limits: Limits,
+) -> Result<Value, PxfError> {
+    read_value_with(lex, current, depth, limits, true)
+}
+
+fn read_value_with(
+    lex: &mut Lexer<'_>,
+    current: &mut Token,
+    depth: usize,
+    limits: Limits,
+    take_invalid_strings: bool,
+) -> Result<Value, PxfError> {
     let mut p = Parser {
         lex: lex.clone(),
         current: std::mem::replace(current, Token::new(TokenKind::Eof, "", Position::new(1, 1))),
@@ -121,11 +142,12 @@ pub(crate) fn read_value(
         limits,
         tolerant: false,
         errs: Vec::new(),
+        take_invalid_strings,
     };
-    let value = p.parse_value()?;
-    lex.restore(p.lex.snapshot());
+    let value = p.parse_value();
+    lex.resume_after(&mut p.lex);
     *current = p.current;
-    Ok(value)
+    value
 }
 
 /// The error for anything after a dataset's rows that is neither a row nor
@@ -208,6 +230,11 @@ pub(crate) struct Parser<'a> {
     /// block boundary. Off, every path is the strict parser's.
     tolerant: bool,
     errs: Vec<PxfError>,
+    /// Read a string literal that is not UTF-8, with its bytes kept by the
+    /// lexer, as a string: the decoder's reader of a value it drops, whose
+    /// strings are never read (#170). Off, such a literal is the lexer's
+    /// `Illegal` token, as it is for `parse`.
+    take_invalid_strings: bool,
 }
 
 impl<'a> Parser<'a> {
@@ -236,6 +263,7 @@ impl<'a> Parser<'a> {
             limits,
             tolerant: false,
             errs: Vec::new(),
+            take_invalid_strings: false,
         }
     }
 
@@ -368,6 +396,13 @@ impl<'a> Parser<'a> {
                         text: std::mem::take(&mut self.current.value),
                     });
                     continue;
+                }
+                TokenKind::Illegal
+                    if self.take_invalid_strings
+                        && self.lex.at_invalid_string(self.current.pos) =>
+                {
+                    self.current.kind = TokenKind::String;
+                    return;
                 }
                 _ => return,
             }

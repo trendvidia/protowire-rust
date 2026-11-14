@@ -27,7 +27,11 @@ use protowire_pxf::{
 const ORACLE: &str = include_str!("../testdata/conformance/api-oracle.tsv");
 
 fn pools() -> HashMap<&'static str, DescriptorPool> {
-    let sets: [(&str, &[u8]); 5] = [
+    let sets: [(&str, &[u8]); 6] = [
+        (
+            "keyed-entry-name-test.binpb",
+            include_bytes!("../testdata/keyed-entry-name-test.binpb"),
+        ),
         (
             "layered-test.binpb",
             include_bytes!("../testdata/layered-test.binpb"),
@@ -48,23 +52,30 @@ fn pools() -> HashMap<&'static str, DescriptorPool> {
         .collect()
 }
 
-/// The oracle's escapes undone: `\\`, `\t` and `\n`.
+/// The oracle's escapes undone: `\\`, `\t`, `\n`, and `\xNN` for a byte
+/// that is not UTF-8. protowire-go's error can quote a document's invalid
+/// bytes raw, which a Rust `String` cannot hold, so such a text is compared
+/// as it reads: each invalid byte as U+FFFD (#170).
 fn unescape(s: &str) -> String {
-    let mut out = String::new();
+    let mut out = Vec::new();
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
         if c != '\\' {
-            out.push(c);
+            out.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes());
             continue;
         }
         match chars.next() {
-            Some('n') => out.push('\n'),
-            Some('t') => out.push('\t'),
-            Some(c) => out.push(c),
-            None => out.push('\\'),
+            Some('n') => out.push(b'\n'),
+            Some('t') => out.push(b'\t'),
+            Some('x') => {
+                let hex: String = chars.by_ref().take(2).collect();
+                out.push(u8::from_str_radix(&hex, 16).expect("\\xNN"));
+            }
+            Some(c) => out.extend_from_slice(c.encode_utf8(&mut [0; 4]).as_bytes()),
+            None => out.push(b'\\'),
         }
     }
-    out
+    String::from_utf8_lossy(&out).into_owned()
 }
 
 fn unhex(s: &str) -> Vec<u8> {
@@ -72,19 +83,6 @@ fn unhex(s: &str) -> Vec<u8> {
         .step_by(2)
         .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex"))
         .collect()
-}
-
-/// Rows whose verdict and position agree but whose text cannot yet: a string
-/// holding invalid UTF-8, which this port's lexer refuses with its own text
-/// where protowire-go's decoder names the field (#170). They are compared up
-/// to the position, and their count is pinned.
-fn waits_on_170(want: &str) -> bool {
-    want.contains("invalid UTF-8")
-}
-
-/// The position an error starts with, `line:col`.
-fn position(e: &str) -> &str {
-    e.split(": ").next().unwrap_or(e)
 }
 
 /// Two messages are the same when their bytes decode to the same message,
@@ -103,6 +101,32 @@ fn same(desc: &MessageDescriptor, got: &DynamicMessage, want_hex: &str) -> bool 
 /// The test fails the day one of them matches, so the pin is removed.
 const WAITS_ON_98: &[(&str, &str)] = &[("f32", "-0")];
 
+/// Documents whose row differs for a reason tracked in an issue of its own,
+/// by op and document. Each fails the day it matches, so its pin is removed.
+const PINNED: &[(&str, &str, u32)] = &[
+    // A `@dataset` cell is kept as a parsed value, which cannot hold bytes
+    // that are not UTF-8; protowire-go's keeps them.
+    (
+        "full",
+        r#"@dataset test.v1.AllTypes (string_field) ("\xff")"#,
+        191,
+    ),
+    // protowire-go quotes its resolver's error; this port's resolver gives
+    // none.
+    ("marshal-any", r#"payload { @type = "\xff" }"#, 192),
+    (
+        "marshal-any",
+        r#"payload { @type = "nope.v1.Missing" }"#,
+        192,
+    ),
+    // protowire-go refuses a quoted type name in the header.
+    (
+        "full",
+        r#"@type "test.v1.AllTypes" string_field = "x""#,
+        193,
+    ),
+];
+
 /// Checks every row, and returns the differences and the rows run by op.
 fn run() -> (Vec<String>, HashMap<String, usize>) {
     let pools = pools();
@@ -115,9 +139,10 @@ fn run() -> (Vec<String>, HashMap<String, usize>) {
         *ops.entry(op.to_string()).or_default() += 1;
         let field = || desc.get_field_by_name(c[3]).expect(c[3]);
         let diff = match op {
-            "full" | "full-skip" => {
+            "full" | "full-skip" | "discard" => {
                 let opts = UnmarshalOptions {
                     skip_post_decode: op == "full-skip",
+                    discard_unknown: op == "discard",
                     ..Default::default()
                 };
                 match (unmarshal_full(c[3], &desc, opts), c[4]) {
@@ -217,11 +242,6 @@ fn run() -> (Vec<String>, HashMap<String, usize>) {
                 };
                 let calls = calls.into_inner().join(" ; ");
                 match (got, c[4]) {
-                    (Err(e), "ERR") if waits_on_170(c[5]) => {
-                        *ops.entry("utf8".into()).or_default() += 1;
-                        (position(&e.to_string()) != position(c[5]))
-                            .then(|| format!("position\n   got: {e}\n  want: {}", c[5]))
-                    }
                     (Err(e), "ERR") => {
                         let got = format!("{e}\t{calls}");
                         let want = format!("{}\t{}", unescape(c[5]), unescape(c[7]));
@@ -264,12 +284,17 @@ fn run() -> (Vec<String>, HashMap<String, usize>) {
             }
             other => panic!("op {other:?}"),
         };
-        let pinned = op == "apply" && WAITS_ON_98.contains(&(c[3], c[4]));
+        let pinned = match PINNED.iter().find(|(o, doc, _)| *o == op && *doc == c[3]) {
+            Some((_, _, issue)) => Some(*issue),
+            None => (op == "apply" && WAITS_ON_98.contains(&(c[3], c[4]))).then_some(98),
+        };
         match (diff, pinned) {
-            (Some(_), true) => *ops.entry("pinned".into()).or_default() += 1,
-            (None, true) => diffs.push(format!("{c:?}: matches now; remove its #98 pin")),
-            (Some(d), false) => diffs.push(format!("{message} {op} {:?}: {d}", &c[3..])),
-            (None, false) => {}
+            (Some(_), Some(_)) => *ops.entry("pinned".into()).or_default() += 1,
+            (None, Some(issue)) => {
+                diffs.push(format!("{c:?}: matches now; remove its #{issue} pin"))
+            }
+            (Some(d), None) => diffs.push(format!("{message} {op} {:?}: {d}", &c[3..])),
+            (None, None) => {}
         }
     }
     (diffs, ops)
@@ -284,6 +309,7 @@ fn every_case_meets_the_reference() {
         [
             "full",
             "full-skip",
+            "discard",
             "marshal",
             "marshal-any",
             "format",
@@ -295,11 +321,9 @@ fn every_case_meets_the_reference() {
             "default"
         ]
         .map(count),
-        [46, 13, 5, 2, 10, 32, 32, 6, 130, 3, 9]
+        [95, 13, 5, 5, 6, 10, 37, 37, 6, 130, 3, 9]
     );
-    assert_eq!(count("pinned"), WAITS_ON_98.len());
-    // The invalid-UTF-8 rows held to their position only, until #170.
-    assert_eq!(count("utf8"), 8);
+    assert_eq!(count("pinned"), WAITS_ON_98.len() + PINNED.len());
     assert!(
         diffs.is_empty(),
         "{} rows differ from protowire-go:\n{}",

@@ -26,15 +26,18 @@ use crate::bigfloat::{clip_literal, parse_big_float, parse_big_float_default, Bi
 use crate::bignum::{parse_big_int, parse_decimal, BigIntLit, DecimalLit};
 use crate::dataset_paths::column_path_error;
 use crate::errors::PxfError;
-use crate::go_strconv::{decode_base64_lenient, parse_float, parse_int, parse_uint, quote};
+use crate::go_strconv::{
+    decode_base64_lenient, parse_float, parse_int, parse_uint, quote, quote_bytes,
+};
 use crate::keyed::{
-    duplicate_key_error, empty_name_error, key_field, quoted_name_unkeyed_error, KeyedElemState,
+    duplicate_key_error, empty_name_error, key_field, quoted_name_unkeyed_error,
+    quoted_name_unkeyed_error_bytes, KeyedElemState,
 };
 use crate::lexer::Lexer;
 use crate::limits::{Limits, MAX_NUMERIC_LITERAL_DIGITS};
 use crate::parser::{
-    find_matching_brace, non_name_assign_error, non_name_block_error, read_value,
-    top_level_map_entry_error,
+    find_matching_brace, non_name_assign_error, non_name_block_error, read_dropped_value,
+    read_value, top_level_map_entry_error,
 };
 use crate::post_decode_plan::post_decode_plan;
 use crate::result::Presence;
@@ -319,6 +322,12 @@ struct Decoder<'a> {
     /// Set for the one `decode_fields` call that reads an `Any`'s body, which
     /// is never a Secret block, whatever type it packs.
     any_body: bool,
+    /// The bytes of the current token when it is a string literal that is
+    /// not UTF-8 (#170). The token is `Illegal`, so a site that does not
+    /// look refuses it with the lexer's text; the sites that look give
+    /// protowire-go's text for where the string stood, or, where
+    /// protowire-go never reads the string, take it.
+    bad_string: Option<Vec<u8>>,
 }
 
 impl<'a> Decoder<'a> {
@@ -357,7 +366,16 @@ impl<'a> Decoder<'a> {
             post_decode_any: true,
             on_secret: None,
             any_body: false,
+            bad_string: None,
         }
+        .keeping_invalid_strings()
+    }
+
+    /// The decoder reads the bytes of a string literal that is not UTF-8,
+    /// to say where it stood or to take it (#170).
+    fn keeping_invalid_strings(mut self) -> Self {
+        self.lex.keep_invalid_strings();
+        self
     }
 
     fn enter(&mut self) -> Result<(), PxfError> {
@@ -379,7 +397,7 @@ impl<'a> Decoder<'a> {
     /// name the limit rather than "expected bytes". Call before deciding
     /// what was wanted instead.
     fn illegal(&self) -> Result<(), PxfError> {
-        if matches!(self.current.kind, TokenKind::Illegal) {
+        if matches!(self.current.kind, TokenKind::Illegal) && self.bad_string.is_none() {
             return Err(self.err(self.current.value.clone()));
         }
         Ok(())
@@ -467,8 +485,21 @@ impl<'a> Decoder<'a> {
         loop {
             self.current = self.lex.next_token();
             if !matches!(self.current.kind, TokenKind::Comment | TokenKind::Newline) {
+                self.bad_string = self.lex.take_invalid_string(self.current.pos);
                 return;
             }
+        }
+    }
+
+    /// After the parser has read a value over this decoder's lexer: the
+    /// current token is the parser's, and so are its kept bytes.
+    fn after_parser(&mut self) {
+        self.bad_string = self.lex.take_invalid_string(self.current.pos);
+        if self.bad_string.is_some() {
+            // A parser reading a dropped value turns it into a string; the
+            // decoder sees it as its own lexer gives it.
+            self.current.kind = TokenKind::Illegal;
+            self.current.value = "string contains invalid UTF-8".into();
         }
     }
 
@@ -477,10 +508,12 @@ impl<'a> Decoder<'a> {
     fn peek_kind(&mut self) -> TokenKind {
         let snap = self.lex.snapshot();
         let saved = self.current.clone();
+        let bad = self.bad_string.take();
         self.advance();
         let k = self.current.kind;
         self.lex.restore(snap);
         self.current = saved;
+        self.bad_string = bad;
         k
     }
 
@@ -500,7 +533,9 @@ impl<'a> Decoder<'a> {
         if matches!(self.current.kind, TokenKind::Comma | TokenKind::RParen) {
             return Ok(None);
         }
-        read_value(&mut self.lex, &mut self.current, 0, self.limits).map(Some)
+        let read = read_value(&mut self.lex, &mut self.current, 0, self.limits).map(Some);
+        self.after_parser();
+        read
     }
 
     fn consume_directives(&mut self) -> Result<(), PxfError> {
@@ -561,7 +596,7 @@ impl<'a> Decoder<'a> {
                     // skipped by counting braces; `body` stays the raw bytes.
                     if matches!(self.current.kind, TokenKind::LBrace) {
                         let open = self.current.pos.offset;
-                        read_value(&mut self.lex, &mut self.current, 0, self.limits)?;
+                        self.read_dropped_value(0)?;
                         let input = self.lex.input_view();
                         let close = find_matching_brace(input, open);
                         if close < 0 {
@@ -708,6 +743,12 @@ impl<'a> Decoder<'a> {
                             self.advance();
                             (ProtoShape::Source, String::new(), body)
                         }
+                        // The body is bytes, whatever they are (#170).
+                        TokenKind::Illegal if self.bad_string.is_some() => {
+                            let body = self.bad_string.take().unwrap_or_default();
+                            self.advance();
+                            (ProtoShape::Source, String::new(), body)
+                        }
                         TokenKind::Bytes => {
                             let raw = std::mem::take(&mut self.current.value);
                             let decoded = crate::go_strconv::decode_base64_descriptor(&raw)
@@ -754,6 +795,9 @@ impl<'a> Decoder<'a> {
     /// The current token, as an error names it: protowire-go's
     /// `tokenErrMsg`, an ILLEGAL token's own text or `kind ("value")`.
     fn token_err_msg(&self) -> String {
+        if let Some(b) = &self.bad_string {
+            return format!("string ({})", quote_bytes(b));
+        }
         if matches!(self.current.kind, TokenKind::Illegal) {
             return self.current.value.clone();
         }
@@ -908,6 +952,14 @@ impl<'a> Decoder<'a> {
         if matches!(key_kind, TokenKind::AtType) {
             return Err(self.err_at(pos, TYPE_ENTRY_MISPLACED));
         }
+        // A quoted key that is not UTF-8 is a quoted key: protowire-go's
+        // token holds its bytes, and the errors below quote them (#170).
+        let key_bytes = self.bad_string.take();
+        let key_kind = if key_bytes.is_some() {
+            TokenKind::String
+        } else {
+            key_kind
+        };
         // The grammar's key set (parseEntry), so a bool or integer key
         // before '=' or '{' gets the parser's error below, not this one.
         if !matches!(
@@ -923,7 +975,14 @@ impl<'a> Decoder<'a> {
             ));
         }
         let key_quoted = matches!(key_kind, TokenKind::String);
-        let key = std::mem::take(&mut self.current.value);
+        let key = match &key_bytes {
+            Some(b) => String::from_utf8_lossy(b).into_owned(),
+            None => std::mem::take(&mut self.current.value),
+        };
+        let quoted_name_error = |pos| match &key_bytes {
+            Some(b) => quoted_name_unkeyed_error_bytes(pos, b),
+            None => quoted_name_unkeyed_error(pos, &key),
+        };
         // Only an integer key carries a suffix; the grammar errors below
         // write it as part of the key, as protowire-go's keyPrec does.
         let key_prec = std::mem::take(&mut self.current.prec);
@@ -943,7 +1002,7 @@ impl<'a> Decoder<'a> {
                     // repeated fields' blocks (draft -01 §3.13), which
                     // have their own loop — in message context a quoted
                     // name never names a field.
-                    return Err(quoted_name_unkeyed_error(pos, &key));
+                    return Err(quoted_name_error(pos));
                 }
                 let fd = match desc.get_field_by_name(&key) {
                     Some(fd) => fd,
@@ -972,6 +1031,11 @@ impl<'a> Decoder<'a> {
                     return Ok(Step::Read);
                 }
                 if let Some(ke) = &scope.ke {
+                    if fd.name() == ke.key_fd.name() {
+                        if let Some(b) = &self.bad_string {
+                            ke.check_explicit_key_bytes(b, self.current.pos)?;
+                        }
+                    }
                     if fd.name() == ke.key_fd.name()
                         && matches!(self.current.kind, TokenKind::String)
                     {
@@ -990,7 +1054,7 @@ impl<'a> Decoder<'a> {
                     return Err(non_name_block_error(pos, key_kind, &key, &key_prec));
                 }
                 if key_quoted {
-                    return Err(quoted_name_unkeyed_error(pos, &key));
+                    return Err(quoted_name_error(pos));
                 }
                 let fd = match desc.get_field_by_name(&key) {
                     Some(fd) => fd,
@@ -1072,8 +1136,12 @@ impl<'a> Decoder<'a> {
                 ))
             }
             _ => Err(self.err(format!(
-                "expected '=', ':', or '{{' after {:?}, got {}",
-                key, self.current.kind
+                "expected '=', ':', or '{{' after {}, got {}",
+                match &key_bytes {
+                    Some(b) => quote_bytes(b),
+                    None => format!("{key:?}"),
+                },
+                self.current.kind
             ))),
         }
     }
@@ -1404,6 +1472,12 @@ impl<'a> Decoder<'a> {
                 )));
             }
             TokenKind::Ident | TokenKind::String => {}
+            _ if self.bad_string.is_some() => {
+                return Err(self.err(format!(
+                    "invalid UTF-8 in entry name for keyed field {:?}",
+                    fd.name()
+                )));
+            }
             _ => {
                 return Err(self.err(format!(
                     "expected entry name (identifier or string) in keyed field {:?}, got {}",
@@ -1546,7 +1620,13 @@ impl<'a> Decoder<'a> {
         map: &HashMap<MapKey, Value>,
     ) -> Result<(MapKey, Elem), PxfError> {
         let pos = self.current.pos;
-        let tk = self.current.kind;
+        // A quoted key that is not UTF-8 is read as a quoted key (#170).
+        let key_bytes = self.bad_string.take();
+        let tk = if key_bytes.is_some() {
+            TokenKind::String
+        } else {
+            self.current.kind
+        };
         if map.len() >= self.limits.max_repeated_count {
             return Err(self.err_at(
                 pos,
@@ -1576,7 +1656,10 @@ impl<'a> Decoder<'a> {
                 ),
             ));
         }
-        let key_str = std::mem::take(&mut self.current.value);
+        let key_str = match &key_bytes {
+            Some(b) => String::from_utf8_lossy(b).into_owned(),
+            None => std::mem::take(&mut self.current.value),
+        };
         let key_kind = tk;
         self.advance();
 
@@ -1593,6 +1676,11 @@ impl<'a> Decoder<'a> {
             }
         }
 
+        if key_bytes.is_some() && matches!(key_fd.kind(), Kind::String) {
+            return Err(self.err_at(pos, "invalid UTF-8 in string map key"));
+        }
+        // Another key type reads the key's text, which protowire-go quotes
+        // raw in its error, and which a Rust error holds as U+FFFD.
         let key = decode_map_key(fd, key_fd, key_str, key_kind, pos)?;
         // Compared as values of the key type, so 1 and "1" are one key
         // of an integer-keyed map.
@@ -1668,6 +1756,14 @@ impl<'a> Decoder<'a> {
             )));
         }
         self.advance();
+        if let Some(b) = self.bad_string.take() {
+            // No type is named by bytes that are not UTF-8.
+            let url = quote_bytes(&b);
+            return Err(self.err(match self.type_resolver {
+                None => format!("cannot resolve Any type {url}: no type_resolver"),
+                Some(_) => format!("cannot resolve Any type {url}"),
+            }));
+        }
         if !matches!(self.current.kind, TokenKind::String) {
             return Err(self.err(format!(
                 "expected a string type URL after @type =, got {}",
@@ -1807,8 +1903,16 @@ impl<'a> Decoder<'a> {
         // A pxf.Secret written as a string literal sets its value alone
         // (draft -01 § pxf.Secret): `pw = "x"`, in a field, a list element
         // or a map value. The block form falls through.
-        if full == "pxf.Secret" && matches!(self.current.kind, TokenKind::String) {
+        if full == "pxf.Secret"
+            && (matches!(self.current.kind, TokenKind::String) || self.bad_string.is_some())
+        {
             if self.on_secret.is_some() {
+                if self.bad_string.is_some() {
+                    return Err(self.err(format!(
+                        "invalid UTF-8 in pxf.Secret value for field {:?}",
+                        named.name()
+                    )));
+                }
                 // The hook takes the value; the Secret stays empty.
                 let path = secret_path.expect("a path whenever the hook is set");
                 self.call_secret_hook(&path, &self.current.value, self.current.pos)?;
@@ -1883,6 +1987,9 @@ impl<'a> Decoder<'a> {
                 )));
             }
             self.advance();
+            if self.bad_string.is_some() {
+                return Err(self.err(format!("invalid UTF-8 in pxf.Secret {name}")));
+            }
             self.illegal()?;
             if !matches!(self.current.kind, TokenKind::String) {
                 return Err(self.err(format!(
@@ -1961,6 +2068,17 @@ impl<'a> Decoder<'a> {
         let kind = fd.kind();
         match kind {
             Kind::String => {
+                if self.bad_string.is_some() {
+                    // HARDENING.md § UTF-8: a string field holds UTF-8; a
+                    // `\xHH` escape can write any byte, and bytes go in b"…".
+                    return Err(self.err_at(
+                        pos,
+                        format!(
+                            "invalid UTF-8 in string field {:?} (use b\"…\" for raw bytes)",
+                            named.name()
+                        ),
+                    ));
+                }
                 if !matches!(self.current.kind, TokenKind::String) {
                     return Err(
                         self.err_at(pos, format!("expected string for field {:?}", named.name()))
@@ -2139,9 +2257,23 @@ impl<'a> Decoder<'a> {
     /// Consume the value of a field `discard_unknown` drops. It is read
     /// with the parser, not by counting braces: dropping a field does not
     /// exempt it from the grammar, and the same rule covers its depth.
+    ///
+    /// Its strings are never read, so one that is not UTF-8 is taken, as
+    /// protowire-go takes it (#170).
     fn skip_value(&mut self) -> Result<(), PxfError> {
-        read_value(&mut self.lex, &mut self.current, self.depth, self.limits)?;
-        Ok(())
+        self.read_dropped_value(self.depth)
+    }
+
+    /// Reads a value with the parser and drops it: a value `discard_unknown`
+    /// drops, or a directive's body, which is kept as its bytes. A string
+    /// in it that is not UTF-8 is taken, since its text is never read.
+    fn read_dropped_value(&mut self, depth: usize) -> Result<(), PxfError> {
+        if self.bad_string.take().is_some() {
+            self.current.kind = TokenKind::String;
+        }
+        let read = read_dropped_value(&mut self.lex, &mut self.current, depth, self.limits);
+        self.after_parser();
+        read.map(drop)
     }
 }
 

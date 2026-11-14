@@ -286,3 +286,71 @@ secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	db_password = 5
 test.binpb	test.v1.AllTypes	full	repeated_nested = [5]
 layered-test.binpb	layered_test.v1.WKTMaps	full	when = { "k": 5 }
 test.binpb	test.v1.AllTypes	full	nested_map = { "k": 5 }
+test.binpb	test.v1.AllTypes	full	string_field = "\xff"
+test.binpb	test.v1.AllTypes	full	string_field = "a\xffb"
+test.binpb	test.v1.AllTypes	full	string_field = "\xc0\x80"
+test.binpb	test.v1.AllTypes	full	string_field = "\xed\xa0\x80"
+test.binpb	test.v1.AllTypes	full	string_field = """\xff"""
+test.binpb	test.v1.AllTypes	full	bytes_field = "\xff\xfe"
+test.binpb	test.v1.AllTypes	full	repeated_string = ["ok", "\xff"]
+test.binpb	test.v1.AllTypes	full	string_map = { "\xff": "x" }
+test.binpb	test.v1.AllTypes	full	string_map = { "k": "\xff" }
+test.binpb	test.v1.AllTypes	full	int_map = { 1: "\xff" }
+test.binpb	test.v1.AllTypes	full	int_map = { "\xff": "x" }
+test.binpb	test.v1.AllTypes	full	nested_map = { "\xff": { name = "x" } }
+test.binpb	test.v1.AllTypes	full	nested_map = { "k": "\xff" }
+test.binpb	test.v1.AllTypes	full	nested_field { name = "\xff" }
+test.binpb	test.v1.AllTypes	full	nested_field = { name = "\xff" }
+test.binpb	test.v1.AllTypes	full	repeated_nested = [{ name = "\xff" }]
+test.binpb	test.v1.AllTypes	full	text_choice = "\xff"
+test.binpb	test.v1.AllTypes	full	nullable_string = "\xff"
+test.binpb	test.v1.AllTypes	full	nullable_int = "\xff"
+test.binpb	test.v1.AllTypes	full	int32_field = "\xff"
+test.binpb	test.v1.AllTypes	full	bool_field = "\xff"
+test.binpb	test.v1.AllTypes	full	float_field = "\xff"
+test.binpb	test.v1.AllTypes	full	enum_field = "\xff"
+test.binpb	test.v1.AllTypes	full	ts_field = "\xff"
+test.binpb	test.v1.AllTypes	full	dur_field = "\xff"
+test.binpb	test.v1.AllTypes	full	nested_field = "\xff"
+test.binpb	test.v1.AllTypes	full	"\xff" = 1
+test.binpb	test.v1.AllTypes	full	"\xff" { name = "x" }
+test.binpb	test.v1.AllTypes	full	nested_field { "\xff" = 1 }
+test.binpb	test.v1.AllTypes	full	string_map = { "\xff": "x" } string_field = "\xfe"
+test.binpb	test.v1.AllTypes	discard	unknown_field = "\xff" string_field = "ok"
+test.binpb	test.v1.AllTypes	discard	unknown { a = "\xff" } string_field = "ok"
+test.binpb	test.v1.AllTypes	discard	unknown = ["\xff", { b = "\xfe" }] string_field = "ok"
+test.binpb	test.v1.AllTypes	discard	unknown = { "\xff": "\xfe" } string_field = "ok"
+test.binpb	test.v1.AllTypes	discard	string_field = "\xff"
+keyed-entry-name-test.binpb	keyedname.v1.P	full	kn { "\xff" { } }
+keyed-entry-name-test.binpb	keyedname.v1.P	full	kn { "\xff" = { } }
+keyed-entry-name-test.binpb	keyedname.v1.P	full	kn { a { inner { "\xff" { } } } }
+keyed-entry-name-test.binpb	keyedname.v1.P	full	kn = [{ name = "\xff" }]
+keyed-entry-name-test.binpb	keyedname.v1.P	full	kn { a { name = "\xff" } }
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "\xff" }
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "keyedname.v1.Element" name = "\xff" }
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "keyedname.v1.Element" label = "ok" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { fingerprint = "\xff" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = { hint = "\xff" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { fingerprint = "\xff" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = { hint = "\xff" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "a": "\xff" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "\xff": "x" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	api_token = "ok" db_password = "\xff"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "a": "\xff" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "\xff": "x" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	api_token = "ok" db_password = "\xff"
+layered-test.binpb	layered_test.v1.WKTMaps	full	labels = { "k": "\xff" }
+layered-test.binpb	layered_test.v1.WKTDefaults	full	sv = "\xff"
+layered-test.binpb	layered_test.v1.WKTDefaults	full	bytv = "\xff"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	db_password = "\xff\xfe"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	backup_keys = ["\xff"]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	tenant_keys = { "a": "\xff" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	db_password { hint = "\xff" }
+test.binpb	test.v1.AllTypes	full	@type "\xff" string_field = "x"
+test.binpb	test.v1.AllTypes	full	@type test.v1.AllTypes string_field = "x"
+test.binpb	test.v1.AllTypes	full	@proto "\xff" string_field = "x"
+test.binpb	test.v1.AllTypes	full	@meta { a = "\xff" } string_field = "x"
+test.binpb	test.v1.AllTypes	full	@meta { a = "ok" } string_field = "x"
+test.binpb	test.v1.AllTypes	full	@dataset test.v1.AllTypes (string_field) ("\xff")
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "nope.v1.Missing" }
+test.binpb	test.v1.AllTypes	full	@type "test.v1.AllTypes" string_field = "x"

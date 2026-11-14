@@ -199,6 +199,17 @@ pub(crate) fn quoted_name_unkeyed_error(pos: Position, name: &str) -> PxfError {
     keyed_quoted_name_unkeyed(pos, name).into()
 }
 
+/// [`quoted_name_unkeyed_error`] for a name that is not UTF-8, quoted as
+/// protowire-go quotes it (#170).
+pub(crate) fn quoted_name_unkeyed_error_bytes(pos: Position, name: &[u8]) -> PxfError {
+    let mut e = keyed_quoted_name_unkeyed(pos, &String::from_utf8_lossy(name));
+    e.msg = format!(
+        "quoted entry name {} is only valid inside a keyed repeated field's block (draft -01 §3.13)",
+        crate::go_strconv::quote_bytes(name)
+    );
+    e.into()
+}
+
 /// The key-field checks for the immediate body of one element of a keyed
 /// repeated field: an explicit assignment to the key field must not be
 /// empty, and in the named (keyed-block) form must agree with the entry
@@ -218,6 +229,33 @@ pub(crate) struct KeyedElemState {
 
 impl KeyedElemState {
     /// [`Self::explicit_key_conflict`], as the decoder's error.
+    /// [`Self::check_explicit_key`] for a value that is not UTF-8. It is
+    /// not empty and matches no entry name, so it conflicts in the named
+    /// form; in the anonymous form the string field refuses it (#170).
+    pub(crate) fn check_explicit_key_bytes(
+        &self,
+        value: &[u8],
+        pos: Position,
+    ) -> Result<(), PxfError> {
+        if !self.named {
+            return Ok(());
+        }
+        Err(KeyedError {
+            pos,
+            kind: KeyedErrorKind::KeyConflict,
+            field: self.field.clone(),
+            key: self.entry_name.clone(),
+            msg: format!(
+                "key field {:?} = {} conflicts with entry name {:?} in keyed field {:?}",
+                self.key_fd.name(),
+                crate::go_strconv::quote_bytes(value),
+                self.entry_name,
+                self.field
+            ),
+        }
+        .into())
+    }
+
     pub(crate) fn check_explicit_key(&self, value: &str, pos: Position) -> Result<(), PxfError> {
         match self.explicit_key_conflict(value, pos) {
             None => Ok(()),
