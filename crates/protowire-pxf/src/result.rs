@@ -36,6 +36,9 @@ use crate::ast::{DatasetDirective, Directive, ProtoDirective};
 pub struct Presence {
     present: HashSet<String>,
     nulls: HashSet<String>,
+    /// The paths of `nulls`, in the order they were marked: document order,
+    /// which the root's `_null` mask keeps, as protowire-go's does (#174).
+    null_order: Vec<String>,
     directives: Vec<Directive>,
     datasets: Vec<DatasetDirective>,
     protos: Vec<ProtoDirective>,
@@ -54,7 +57,9 @@ impl Presence {
     pub fn mark_null(&mut self, path: impl Into<String>) {
         let p = path.into();
         self.present.insert(p.clone());
-        self.nulls.insert(p);
+        if self.nulls.insert(p.clone()) {
+            self.null_order.push(p);
+        }
     }
 
     /// True iff the field was assigned a non-null value.
@@ -72,10 +77,11 @@ impl Presence {
         !self.present.contains(path)
     }
 
-    /// Iterate over all paths explicitly set to `null`, in insertion order is
-    /// not guaranteed (HashSet). Callers that need stable order should sort.
+    /// Iterate over all paths explicitly set to `null`, in the order they
+    /// were marked. The decoder marks each as it binds it, so that is the
+    /// document's order, the order of the root's `_null` mask.
     pub fn null_paths(&self) -> impl Iterator<Item = &str> {
-        self.nulls.iter().map(|s| s.as_str())
+        self.null_order.iter().map(|s| s.as_str())
     }
 
     /// Iterate over every path the document mentioned: set to a value or to

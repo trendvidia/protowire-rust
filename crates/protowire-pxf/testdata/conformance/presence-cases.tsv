@@ -61,3 +61,5 @@ keyed/keyed.binpb	keyed.v1.Catalog	choices { alpha { other = "x" } }
 keyed/keyed.binpb	keyed.v1.Catalog	choices { alpha { other = null } }
 keyed/keyed.binpb	keyed.v1.Catalog	choices { alpha {} beta { name = "beta" } } choices = [{ other = "x" }]
 keyed/keyed.binpb	keyed.v1.Catalog	choices = [{ name = null }]
+element-defaults-test.binpb	elemdefaults.v1.P	payload = null one = null
+element-defaults-test.binpb	elemdefaults.v1.P	payload = null one { w = null inner = null deep = null }
