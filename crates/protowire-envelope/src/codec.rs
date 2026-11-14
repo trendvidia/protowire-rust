@@ -18,7 +18,7 @@
 //! the contract regardless.
 
 use protowire_pb::wire::{Reader, Result, WireType, Writer};
-use protowire_pb::{read_message, write_map_entry, write_message, Message};
+use protowire_pb::{read_map_entry, read_message, write_map_entry, write_message, Message};
 
 use crate::{AppError, Envelope, FieldError};
 
@@ -55,32 +55,12 @@ impl Message for FieldError {
         }
         Ok(())
     }
-}
 
-/// One entry of `AppError.metadata`, read through [`read_message`] so that
-/// it is one descent and its length is checked, as for any nested message
-/// (HARDENING.md § Recursion; protowire#449).
-#[derive(Default)]
-struct MetadataEntry {
-    key: String,
-    value: String,
-}
-
-impl Message for MetadataEntry {
-    fn encode_to(&self, w: &mut Writer) {
-        w.tag(1, WireType::LengthDelimited);
-        w.string(&self.key);
-        w.tag(2, WireType::LengthDelimited);
-        w.string(&self.value);
-    }
-
-    fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
-        match num {
-            1 => self.key = r.string()?,
-            2 => self.value = r.string()?,
-            _ => r.skip(wt)?,
-        }
-        Ok(())
+    /// protowire-go's `envelope.FieldError` field names.
+    fn field_name(num: u32) -> Option<&'static str> {
+        ["Field", "Code", "Message", "Args"]
+            .get(num.checked_sub(1)? as usize)
+            .copied()
     }
 }
 
@@ -121,15 +101,24 @@ impl Message for AppError {
                 r.push_element(&mut self.details, detail)?;
             }
             5 => {
-                let e: MetadataEntry = read_message(r)?;
-                if !self.metadata.contains_key(&e.key) {
-                    r.check_repeated(self.metadata.len())?;
+                // One descent, its length checked as for any nested message
+                // (HARDENING.md § Recursion; protowire#449).
+                let (k, v) = read_map_entry(r, |r| r.string(), |r| r.string())?;
+                if !self.metadata.contains_key(&k) {
+                    r.check_map(self.metadata.len())?;
                 }
-                self.metadata.insert(e.key, e.value);
+                self.metadata.insert(k, v);
             }
             _ => r.skip(wt)?,
         }
         Ok(())
+    }
+
+    /// protowire-go's `envelope.AppError` field names.
+    fn field_name(num: u32) -> Option<&'static str> {
+        ["Code", "Message", "Args", "Details", "Metadata"]
+            .get(num.checked_sub(1)? as usize)
+            .copied()
     }
 }
 
@@ -154,7 +143,7 @@ impl Message for Envelope {
 
     fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
         match num {
-            1 => self.status = r.varint()? as i32,
+            1 => self.status = r.int32()?,
             2 => self.transport_error = r.string()?,
             3 => self.data = r.bytes()?,
             4 => self.error = Some(read_message(r)?),
@@ -162,13 +151,20 @@ impl Message for Envelope {
         }
         Ok(())
     }
+
+    /// protowire-go's `envelope.Envelope` field names.
+    fn field_name(num: u32) -> Option<&'static str> {
+        ["Status", "TransportError", "Data", "Error"]
+            .get(num.checked_sub(1)? as usize)
+            .copied()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::new_app_error;
-    use protowire_pb::{unmarshal, unmarshal_with, Error, Limits};
+    use protowire_pb::{unmarshal, unmarshal_with, Limits};
 
     /// `protowire_pb::marshal` for values well inside the depth limit.
     fn marshal<M: protowire_pb::Message>(value: &M) -> Vec<u8> {
@@ -391,7 +387,10 @@ mod tests {
             ..Default::default()
         };
         let err = protowire_pb::unmarshal_with::<Envelope>(&bytes, two).unwrap_err();
-        assert_eq!(err.to_string(), "repeated field exceeds MaxRepeatedCount=2");
+        assert_eq!(
+            err.to_string(),
+            "field Error: field Args: repeated field exceeds MaxRepeatedCount=2"
+        );
     }
 
     #[test]
@@ -438,7 +437,7 @@ mod tests {
             unmarshal_with::<Envelope>(&bytes, limit(1))
                 .unwrap_err()
                 .to_string(),
-            "nesting depth exceeds MaxNestingDepth=1"
+            "field Error: field Metadata: nesting depth exceeds MaxNestingDepth=1"
         );
     }
 
@@ -450,15 +449,16 @@ mod tests {
         let mut huge = vec![0x2a];
         huge.extend_from_slice(&[0xff; 9]);
         huge.push(0x01);
-        assert!(matches!(
-            unmarshal::<AppError>(&huge),
-            Err(Error::NestedExceedsBuffer)
-        ));
-        // Length 1, but the entry's field runs on to 3 bytes.
+        assert_eq!(
+            unmarshal::<AppError>(&huge).unwrap_err().to_string(),
+            "field Metadata: corrupt map entry"
+        );
+        // Length 1, but the entry's field runs on to 3 bytes: the key is
+        // read inside the entry, so it is cut off there.
         let overrun = [0x2a, 0x01, 0x0a, 0x01, b'k'];
-        assert!(matches!(
-            unmarshal::<AppError>(&overrun),
-            Err(Error::Overrun { .. })
-        ));
+        assert_eq!(
+            unmarshal::<AppError>(&overrun).unwrap_err().to_string(),
+            "field Metadata: map key: corrupt string"
+        );
     }
 }

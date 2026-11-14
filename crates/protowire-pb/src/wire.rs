@@ -24,7 +24,7 @@ pub const MAX_MESSAGE_SIZE: usize = 64 << 20;
 /// by [`MAX_MESSAGE_SIZE`] transitively; the check keeps the bound when a
 /// caller raises the message cap alone. A `Message` impl enforces it by
 /// appending through [`Reader::push_element`] (and checking a map with
-/// [`Reader::check_repeated`]) rather than pushing directly.
+/// [`Reader::check_map`]) rather than pushing directly.
 pub const MAX_REPEATED_COUNT: usize = MAX_MESSAGE_SIZE;
 
 /// HARDENING.md `MaxNumericLiteralDigits` — bounds the magnitude of a
@@ -47,7 +47,7 @@ pub const MAX_BIG_FLOAT_EXPONENT: usize = 16384;
 pub struct Limits {
     /// [`MAX_MESSAGE_SIZE`]: total input to this call.
     pub max_message_size: usize,
-    /// [`MAX_NESTING_DEPTH`]: submessage / map-entry recursion.
+    /// [`MAX_NESTING_DEPTH`]: submessage / group / map-entry recursion.
     pub max_nesting_depth: usize,
     /// [`MAX_REPEATED_COUNT`]: elements of a repeated or map field.
     pub max_repeated_count: usize,
@@ -70,36 +70,97 @@ impl Default for Limits {
     }
 }
 
+/// What a [`Reader`] could not read, as protowire-go's pb codec names it in
+/// `corrupt <kind>`. A value is corrupt when its bytes stop before it ends,
+/// or when a varint runs past 64 bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Kind {
+    /// A field's tag, or field number 0.
+    Tag,
+    Bool,
+    /// A signed integer, plain or zigzag.
+    Int,
+    Uint,
+    Float64,
+    Float32,
+    /// A `fixed32` read as such; protowire-go's codec has no such field.
+    Fixed32,
+    /// A `fixed64` read as such; protowire-go's codec has no such field.
+    Fixed64,
+    String,
+    Bytes,
+    EmbeddedMessage,
+    /// The length of a packed repeated field.
+    PackedField,
+    MapEntry,
+    TagInMapEntry,
+}
+
+impl std::fmt::Display for Kind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Kind::Tag => "tag",
+            Kind::Bool => "bool",
+            Kind::Int => "int",
+            Kind::Uint => "uint",
+            Kind::Float64 => "float64",
+            Kind::Float32 => "float32",
+            Kind::Fixed32 => "fixed32",
+            Kind::Fixed64 => "fixed64",
+            Kind::String => "string",
+            Kind::Bytes => "bytes",
+            Kind::EmbeddedMessage => "embedded message",
+            Kind::PackedField => "packed field",
+            Kind::MapEntry => "map entry",
+            Kind::TagInMapEntry => "tag in map entry",
+        })
+    }
+}
+
+/// A decode error, worded as protowire-go's `pb.Unmarshal` words it (#144).
+/// An error inside a field the message names ([`crate::Message::field_name`])
+/// comes wrapped in [`Error::Field`], one wrapper per message it sits in:
+/// `field Error: field Code: invalid UTF-8 in string`.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum Error {
-    #[error("truncated varint")]
-    TruncatedVarint,
-    #[error("varint exceeds 10 bytes")]
-    VarintTooLong,
-    #[error("truncated fixed32")]
-    TruncatedFixed32,
-    #[error("truncated fixed64")]
-    TruncatedFixed64,
-    #[error("truncated length-delimited")]
-    TruncatedLengthDelim,
-    #[error("invalid tag: field number 0 at offset {0}")]
-    InvalidTag(usize),
+    /// A value of this kind stops before it ends, or its varint runs past
+    /// 64 bits.
+    #[error("corrupt {0}")]
+    Corrupt(Kind),
+    /// A field the message does not name could not be read or skipped.
+    #[error("corrupt field {0}")]
+    CorruptField(u32),
+    /// A map entry field other than the key (1) and value (2) could not be
+    /// skipped.
+    #[error("corrupt unknown field {0} in map entry")]
+    CorruptMapEntryField(u32),
+    #[error("invalid UTF-8 in string")]
+    InvalidUtf8,
+    /// An error inside the field `name`, as [`crate::Message::field_name`]
+    /// names it.
+    #[error("field {name}: {inner}")]
+    Field {
+        name: &'static str,
+        inner: Box<Error>,
+    },
+    /// An error in a map entry's key.
+    #[error("map key: {0}")]
+    MapKey(Box<Error>),
+    /// An error in a map entry's value.
+    #[error("map value: {0}")]
+    MapValue(Box<Error>),
     #[error("unknown wire type {0}")]
     UnknownWireType(u8),
-    #[error("group wire types are not supported")]
-    GroupNotSupported,
-    #[error("invalid utf-8 in string field: {0}")]
-    InvalidUtf8(#[from] std::string::FromUtf8Error),
-    #[error("nested message exceeds buffer")]
-    NestedExceedsBuffer,
-    #[error("message overran (pos={pos}, end={end})")]
-    Overrun { pos: usize, end: usize },
     #[error("nesting depth exceeds MaxNestingDepth={0}")]
     DepthExceeded(usize),
     #[error("input of {len} bytes exceeds MaxMessageSize={max}")]
     MessageTooLarge { len: usize, max: usize },
     #[error("repeated field exceeds MaxRepeatedCount={0}")]
     RepeatedCountExceeded(usize),
+    #[error("map field exceeds MaxRepeatedCount={0}")]
+    MapCountExceeded(usize),
     /// A big number ([`crate::big`]) that a limit refuses, or that has no
     /// wire form; the text is protowire-go's.
     #[error("{0}")]
@@ -364,7 +425,13 @@ pub struct Reader<'a> {
     /// This decode's limits; `read_message` and the element helpers below
     /// read them, and a packed sub-reader inherits them.
     pub(crate) limits: Limits,
+    /// The field number of the last tag read, so [`Reader::skip`] can find
+    /// the end of a group that field starts.
+    last_field: u32,
 }
+
+/// The largest field number a tag can carry (2^29 - 1).
+const MAX_FIELD_NUMBER: u64 = (1 << 29) - 1;
 
 impl<'a> Reader<'a> {
     pub fn new(data: &'a [u8]) -> Self {
@@ -381,6 +448,7 @@ impl<'a> Reader<'a> {
             pos: 0,
             depth: 0,
             limits,
+            last_field: 0,
         }
     }
 
@@ -399,13 +467,21 @@ impl<'a> Reader<'a> {
         Ok(())
     }
 
-    /// Refuse to add an element to a repeated or map field that already
-    /// holds `len` elements when `len` has reached `max_repeated_count`.
-    /// For a map, check with the map's length before inserting a key it
-    /// does not already hold.
+    /// Refuse to add an element to a repeated field that already holds
+    /// `len` elements when `len` has reached `max_repeated_count`.
     pub fn check_repeated(&self, len: usize) -> Result<()> {
         if len >= self.limits.max_repeated_count {
             return Err(Error::RepeatedCountExceeded(self.limits.max_repeated_count));
+        }
+        Ok(())
+    }
+
+    /// [`Reader::check_repeated`] for a map, worded as protowire-go words
+    /// it: check with the map's length before inserting a key it does not
+    /// already hold.
+    pub fn check_map(&self, len: usize) -> Result<()> {
+        if len >= self.limits.max_repeated_count {
+            return Err(Error::MapCountExceeded(self.limits.max_repeated_count));
         }
         Ok(())
     }
@@ -416,13 +492,19 @@ impl<'a> Reader<'a> {
     /// length prefix is validated against the buffer before the slice is
     /// taken.
     pub fn packed(&mut self) -> Result<Reader<'a>> {
-        let view = self.bytes_view()?;
-        Ok(Reader {
-            data: view,
+        let view = self.len_view(Kind::PackedField)?;
+        Ok(self.over(view))
+    }
+
+    /// A reader over `data` that shares this one's depth and limits.
+    pub(crate) fn over(&self, data: &'a [u8]) -> Reader<'a> {
+        Reader {
+            data,
             pos: 0,
             depth: self.depth,
             limits: self.limits,
-        })
+            last_field: 0,
+        }
     }
 
     pub fn data(&self) -> &'a [u8] {
@@ -437,64 +519,98 @@ impl<'a> Reader<'a> {
         self.data.len().saturating_sub(self.pos)
     }
 
-    /// Read an unsigned varint, up to 10 bytes (uint64 range).
-    pub fn varint(&mut self) -> Result<u64> {
+    /// A varint of at most 10 bytes whose value fits 64 bits, as
+    /// protobuf-go's `ConsumeVarint` reads one: a tenth byte above 1 sets a
+    /// bit past the 64th, and is refused.
+    fn raw_varint(&mut self) -> Option<u64> {
         let mut result: u64 = 0;
-        let mut shift = 0u32;
         for i in 0..10 {
-            if self.pos >= self.data.len() {
-                return Err(Error::TruncatedVarint);
-            }
-            let byte = self.data[self.pos];
+            let byte = *self.data.get(self.pos)?;
             self.pos += 1;
-            result |= ((byte & 0x7f) as u64) << shift;
-            if byte & 0x80 == 0 {
-                return Ok(result);
+            if i == 9 && byte > 1 {
+                return None;
             }
-            shift += 7;
-            if i == 9 {
-                return Err(Error::VarintTooLong);
+            result |= ((byte & 0x7f) as u64) << (7 * i);
+            if byte & 0x80 == 0 {
+                return Some(result);
             }
         }
-        Err(Error::VarintTooLong)
+        None
     }
 
-    /// Decode a zigzag varint as a 32-bit signed integer.
+    fn varint_as(&mut self, kind: Kind) -> Result<u64> {
+        self.raw_varint().ok_or(Error::Corrupt(kind))
+    }
+
+    /// Read an unsigned varint (uint64 range).
+    pub fn varint(&mut self) -> Result<u64> {
+        self.varint_as(Kind::Uint)
+    }
+
+    /// A `bool`: any varint other than 0 is true.
+    pub fn bool(&mut self) -> Result<bool> {
+        Ok(self.varint_as(Kind::Bool)? != 0)
+    }
+
+    /// A proto3 `int64`: the varint as signed.
+    pub fn int64(&mut self) -> Result<i64> {
+        Ok(self.varint_as(Kind::Int)? as i64)
+    }
+
+    /// A proto3 `int32`: the varint's low 32 bits as signed, so a negative
+    /// value written as 10 bytes reads back.
+    pub fn int32(&mut self) -> Result<i32> {
+        Ok(self.varint_as(Kind::Int)? as i32)
+    }
+
+    /// A proto3 `uint64`.
+    pub fn uint64(&mut self) -> Result<u64> {
+        self.varint_as(Kind::Uint)
+    }
+
+    /// A proto3 `uint32`: the varint's low 32 bits.
+    pub fn uint32(&mut self) -> Result<u32> {
+        Ok(self.varint_as(Kind::Uint)? as u32)
+    }
+
+    /// Decode a zigzag varint as a 32-bit signed integer (`sint32`).
     pub fn zigzag32(&mut self) -> Result<i32> {
-        let u = self.varint()? as u32;
+        let u = self.varint_as(Kind::Int)? as u32;
         Ok(((u >> 1) as i32) ^ -((u & 1) as i32))
     }
 
-    /// Decode a zigzag varint as a 64-bit signed integer.
+    /// Decode a zigzag varint as a 64-bit signed integer (`sint64`).
     pub fn zigzag64(&mut self) -> Result<i64> {
-        let u = self.varint()?;
+        let u = self.varint_as(Kind::Int)?;
         Ok(((u >> 1) as i64) ^ -((u & 1) as i64))
     }
 
+    fn take<const N: usize>(&mut self, kind: Kind) -> Result<[u8; N]> {
+        let end = self.pos.checked_add(N).filter(|&e| e <= self.data.len());
+        let end = end.ok_or(Error::Corrupt(kind))?;
+        let bytes = self.data[self.pos..end].try_into().unwrap();
+        self.pos = end;
+        Ok(bytes)
+    }
+
     pub fn fixed32(&mut self) -> Result<u32> {
-        if self.pos + 4 > self.data.len() {
-            return Err(Error::TruncatedFixed32);
-        }
-        let v = u32::from_le_bytes(self.data[self.pos..self.pos + 4].try_into().unwrap());
-        self.pos += 4;
-        Ok(v)
+        Ok(u32::from_le_bytes(self.take(Kind::Fixed32)?))
     }
 
     pub fn fixed64(&mut self) -> Result<u64> {
-        if self.pos + 8 > self.data.len() {
-            return Err(Error::TruncatedFixed64);
-        }
-        let v = u64::from_le_bytes(self.data[self.pos..self.pos + 8].try_into().unwrap());
-        self.pos += 8;
-        Ok(v)
+        Ok(u64::from_le_bytes(self.take(Kind::Fixed64)?))
     }
 
     pub fn float(&mut self) -> Result<f32> {
-        Ok(f32::from_bits(self.fixed32()?))
+        Ok(f32::from_bits(u32::from_le_bytes(
+            self.take(Kind::Float32)?,
+        )))
     }
 
     pub fn double(&mut self) -> Result<f64> {
-        Ok(f64::from_bits(self.fixed64()?))
+        Ok(f64::from_bits(u64::from_le_bytes(
+            self.take(Kind::Float64)?,
+        )))
     }
 
     /// Length-prefixed bytes; returns a copy.
@@ -503,81 +619,102 @@ impl<'a> Reader<'a> {
     }
 
     /// Length-prefixed bytes; returns a borrow into the underlying buffer.
+    pub fn bytes_view(&mut self) -> Result<&'a [u8]> {
+        self.len_view(Kind::Bytes)
+    }
+
+    /// A varint length and the bytes it covers, or `Corrupt(kind)` when
+    /// they run past the buffer.
     ///
     /// Guards against attacker-supplied length-prefix overflow per
     /// HARDENING.md §API contract item 3: a 10-byte varint of `2^64-1`
     /// would wrap `pos + len` to a small value and slip past a naive
-    /// bounds check, then trip a slice-indexing panic. Compute the end
-    /// offset with `checked_add` and reject before slicing.
-    pub fn bytes_view(&mut self) -> Result<&'a [u8]> {
-        let len = self.read_length()?;
-        let end = self.pos + len;
+    /// bounds check, then trip a slice-indexing panic. The end offset is
+    /// computed with `checked_add` and refused before slicing. Every
+    /// length-delimited consumer goes through here, so the guard exists in
+    /// exactly one place.
+    pub(crate) fn len_view(&mut self, kind: Kind) -> Result<&'a [u8]> {
+        let len = self.varint_as(kind)?;
+        let end = usize::try_from(len)
+            .ok()
+            .and_then(|len| self.pos.checked_add(len))
+            .filter(|&end| end <= self.data.len())
+            .ok_or(Error::Corrupt(kind))?;
         let view = &self.data[self.pos..end];
         self.pos = end;
         Ok(view)
     }
 
-    /// Read a varint length and validate it fits in the remaining buffer.
-    /// Returns the length as `usize` ready for slicing. Used by every
-    /// length-delimited consumer (`bytes_view`, `skip`, `read_message`)
-    /// so the overflow guard exists in exactly one place.
-    fn read_length(&mut self) -> Result<usize> {
-        let len = self.varint()?;
-        let len = usize::try_from(len).map_err(|_| Error::TruncatedLengthDelim)?;
-        let end = self
-            .pos
-            .checked_add(len)
-            .ok_or(Error::TruncatedLengthDelim)?;
-        if end > self.data.len() {
-            return Err(Error::TruncatedLengthDelim);
-        }
-        Ok(len)
-    }
-
-    /// UTF-8 length-prefixed string.
+    /// UTF-8 length-prefixed string, refused when it is not valid UTF-8
+    /// (HARDENING.md § UTF-8).
     pub fn string(&mut self) -> Result<String> {
-        let bytes = self.bytes_view()?.to_vec();
-        Ok(String::from_utf8(bytes)?)
+        let bytes = self.len_view(Kind::String)?;
+        std::str::from_utf8(bytes)
+            .map(str::to_owned)
+            .map_err(|_| Error::InvalidUtf8)
     }
 
-    /// Decode a tag varint into (field_number, wire_type).
+    /// Decode a tag varint into (field_number, wire_type), as protobuf-go's
+    /// `ConsumeTag` does: a field number of 0 or past 2^29 - 1 is a corrupt
+    /// tag. Wire types 6 and 7 name no encoding, so the field cannot be
+    /// read: `corrupt field N`, protowire-go's text for an unknown field.
     pub fn tag(&mut self) -> Result<(u32, WireType)> {
-        let t = self.varint()?;
-        let wire_type = WireType::from_u8((t & 0x7) as u8)?;
-        let field_number = (t >> 3) as u32;
-        if field_number == 0 {
-            return Err(Error::InvalidTag(self.pos));
+        let t = self.varint_as(Kind::Tag)?;
+        let field_number = t >> 3;
+        if field_number == 0 || field_number > MAX_FIELD_NUMBER {
+            return Err(Error::Corrupt(Kind::Tag));
         }
+        let field_number = field_number as u32;
+        self.last_field = field_number;
+        let wire_type =
+            WireType::from_u8((t & 0x7) as u8).map_err(|_| Error::CorruptField(field_number))?;
         Ok((field_number, wire_type))
     }
 
-    /// Skip the value of a field with the given wire type.
+    /// Skip the value of a field with the given wire type, the one of the
+    /// tag just read. A group is skipped to the end-group tag of the same
+    /// field, and each group inside it is one descent (HARDENING.md §
+    /// Recursion). An end-group tag with no group open cannot be skipped.
     pub fn skip(&mut self, wire_type: WireType) -> Result<()> {
         match wire_type {
             WireType::Varint => {
-                self.varint()?;
+                self.raw_varint().ok_or(Error::Corrupt(Kind::Uint))?;
             }
             WireType::Fixed64 => {
-                if self.pos + 8 > self.data.len() {
-                    return Err(Error::TruncatedFixed64);
-                }
-                self.pos += 8;
+                self.take::<8>(Kind::Fixed64)?;
             }
             WireType::LengthDelimited => {
-                let len = self.read_length()?;
-                self.pos += len;
+                self.len_view(Kind::Bytes)?;
             }
             WireType::Fixed32 => {
-                if self.pos + 4 > self.data.len() {
-                    return Err(Error::TruncatedFixed32);
-                }
-                self.pos += 4;
+                self.take::<4>(Kind::Fixed32)?;
             }
-            WireType::StartGroup | WireType::EndGroup => {
-                return Err(Error::GroupNotSupported);
-            }
+            WireType::StartGroup => self.skip_group(self.last_field)?,
+            WireType::EndGroup => return Err(Error::Corrupt(Kind::Tag)),
         }
         Ok(())
+    }
+
+    /// Skips the fields of the group `field` starts, through its end-group
+    /// tag.
+    fn skip_group(&mut self, field: u32) -> Result<()> {
+        if self.depth >= self.limits.max_nesting_depth {
+            return Err(Error::DepthExceeded(self.limits.max_nesting_depth));
+        }
+        self.depth += 1;
+        let result = (|| loop {
+            let (num, wt) = self.tag()?;
+            if wt == WireType::EndGroup {
+                return if num == field {
+                    Ok(())
+                } else {
+                    Err(Error::Corrupt(Kind::Tag))
+                };
+            }
+            self.skip(wt)?;
+        })();
+        self.depth -= 1;
+        result
     }
 }
 
@@ -760,7 +897,7 @@ mod tests {
     #[test]
     fn truncated_varint_is_rejected() {
         let mut r = Reader::new(&[0x80]);
-        assert!(matches!(r.varint(), Err(Error::TruncatedVarint)));
+        assert!(matches!(r.varint(), Err(Error::Corrupt(Kind::Uint))));
     }
 
     #[test]
@@ -774,7 +911,7 @@ mod tests {
         bytes.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]);
         let mut r = Reader::new(&bytes);
         let (_, _) = r.tag().unwrap();
-        assert!(matches!(r.bytes_view(), Err(Error::TruncatedLengthDelim)));
+        assert!(matches!(r.bytes_view(), Err(Error::Corrupt(Kind::Bytes))));
     }
 
     #[test]
@@ -783,6 +920,6 @@ mod tests {
         bytes.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]);
         let mut r = Reader::new(&bytes);
         let (_, wt) = r.tag().unwrap();
-        assert!(matches!(r.skip(wt), Err(Error::TruncatedLengthDelim)));
+        assert!(matches!(r.skip(wt), Err(Error::Corrupt(Kind::Bytes))));
     }
 }
