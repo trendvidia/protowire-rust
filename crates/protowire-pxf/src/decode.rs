@@ -246,6 +246,50 @@ fn unmarshal_inner(
     Ok((msg, presence))
 }
 
+/// Which reader takes a block's body ([`Decoder::body_form`]).
+enum BodyForm {
+    /// A `pxf.Secret` block with the hook set, at this path.
+    Secret(String),
+    /// An Any's body, opening with `@type`.
+    Any,
+    /// The message's own fields.
+    Fields,
+}
+
+/// What one body's entries have bound so far: each message body is its own
+/// scope.
+struct BodyScope {
+    set_oneofs: HashMap<String, String>,
+    /// The singular fields this body has bound (draft -01 § Entries and
+    /// Keys; protowire#347).
+    bound: HashSet<u32>,
+    /// The keyed-element checks, when the body is one element of a keyed
+    /// repeated field.
+    ke: Option<KeyedElemState>,
+}
+
+/// A list element or map value as far as its body.
+enum Elem {
+    /// Read whole.
+    Value(Value),
+    /// A message's block, past its `{`.
+    Body(DynamicMessage),
+}
+
+/// What reads the value of the entry [`Decoder::next_entry`] stopped at.
+enum Step {
+    /// The body's end.
+    End,
+    /// Nothing: the entry was read whole.
+    Read,
+    /// `name = value`, at the value.
+    Value(FieldDescriptor),
+    /// A keyed repeated field's block body (draft -01 §3.13), past its `{`.
+    Keyed(FieldDescriptor, FieldDescriptor),
+    /// A message field's block body, past its `{`.
+    Block(FieldDescriptor, DynamicMessage),
+}
+
 struct Decoder<'a> {
     lex: Lexer<'a>,
     current: Token,
@@ -361,6 +405,17 @@ impl<'a> Decoder<'a> {
         }
         let saved = std::mem::take(&mut self.path_prefix);
         self.path_prefix = format!("{saved}{name}[{i}].");
+        saved
+    }
+
+    /// [`Self::enter_index`] for a singular field's body: `name.`.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn enter_field(&mut self, name: &str) -> String {
+        if !self.tracks_paths() {
+            return String::new();
+        }
+        let saved = std::mem::take(&mut self.path_prefix);
+        self.path_prefix = format!("{saved}{name}.");
         saved
     }
 
@@ -749,255 +804,294 @@ impl<'a> Decoder<'a> {
         if in_block {
             self.enter()?;
         }
-        let result = self.decode_fields_inner(msg, in_block);
+        // Chosen here, not in the loop that reads a body's fields, so an
+        // Any's body holds one such loop on the stack and not two (#179).
+        let result = match self.body_form(msg, in_block) {
+            BodyForm::Secret(path) => self.decode_secret_block(msg, &path),
+            BodyForm::Any => self.decode_any_body(msg),
+            BodyForm::Fields => self.decode_fields_inner(msg, in_block),
+        };
         if in_block {
             self.leave();
         }
         result
     }
 
+    /// Which reader takes a body: a Secret's block with the hook set, an
+    /// Any's typed body, or the message's fields.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn body_form(&mut self, msg: &DynamicMessage, in_block: bool) -> BodyForm {
+        if !in_block {
+            return BodyForm::Fields;
+        }
+        let desc = msg.descriptor();
+        // With the hook set, a Secret's block body routes its value through
+        // it, as its shorthand does (protowire-go's decodeSecretBlockInto).
+        // The caller extended the path by the Secret's own name.
+        if !std::mem::take(&mut self.any_body) && self.on_secret.is_some() && is_secret(&desc) {
+            let path = self
+                .path_prefix
+                .strip_suffix('.')
+                .unwrap_or(&self.path_prefix)
+                .to_string();
+            return BodyForm::Secret(path);
+        }
+        // A block bound to google.protobuf.Any may open with a type entry
+        // (draft -01 "Any Blocks"; protowire#354), wherever a body is
+        // written: a singular field, a list element, a map value. Without
+        // one, the block is the Any's own fields, type_url and value.
+        if matches!(self.current.kind, TokenKind::AtType)
+            && is_any_full_name(crate::wkt::dispatch_name(&desc))
+        {
+            return BodyForm::Any;
+        }
+        BodyForm::Fields
+    }
+
+    /// The fields of a message body. Each entry is read and checked by
+    /// [`Self::next_entry`], out of line: the checks build error messages,
+    /// and an unoptimized build gives every temporary its own stack slot,
+    /// so here they would cost every level of a nested document (#179).
+    /// Each helper split out of a recursive reader this way is inlined back
+    /// into it in an optimized build, which shares slots between
+    /// temporaries and where the call would cost time.
     fn decode_fields_inner(
         &mut self,
         msg: &mut DynamicMessage,
         in_block: bool,
     ) -> Result<(), PxfError> {
         let desc = msg.descriptor();
-        // With the hook set, a Secret's block body routes its value through
-        // it, as its shorthand does (protowire-go's decodeSecretBlockInto).
-        // The caller extended the path by the Secret's own name.
-        if in_block
-            && !std::mem::take(&mut self.any_body)
-            && self.on_secret.is_some()
-            && is_secret(&desc)
-        {
-            let path = self
-                .path_prefix
-                .strip_suffix('.')
-                .unwrap_or(&self.path_prefix)
-                .to_string();
-            return self.decode_secret_block(msg, &path);
-        }
-        // A block bound to google.protobuf.Any may open with a type entry
-        // (draft -01 "Any Blocks"; protowire#354), wherever a body is
-        // written: a singular field, a list element, a map value. Without
-        // one, the block is the Any's own fields, type_url and value.
-        if in_block
-            && matches!(self.current.kind, TokenKind::AtType)
-            && is_any_full_name(crate::wkt::dispatch_name(&desc))
-        {
-            return self.decode_any_body(msg);
-        }
-        let mut set_oneofs: HashMap<String, String> = HashMap::new();
-        // The singular fields this body has bound (draft -01 § Entries and
-        // Keys; protowire#347): each message body is its own scope.
-        let mut bound: HashSet<u32> = HashSet::new();
-        // A keyed-element context applies to exactly this body: the
-        // immediate entries of one element of a keyed repeated field.
-        // Take it so nested submessages don't inherit the key checks.
-        let ke = self.keyed_elem.take();
-
+        let mut scope = BodyScope {
+            set_oneofs: HashMap::new(),
+            bound: HashSet::new(),
+            // A keyed-element context applies to exactly this body: the
+            // immediate entries of one element of a keyed repeated field.
+            // Take it so nested submessages don't inherit the key checks.
+            ke: self.keyed_elem.take(),
+        };
         loop {
-            if in_block && matches!(self.current.kind, TokenKind::RBrace) {
-                self.advance();
-                return Ok(());
-            }
-            if matches!(self.current.kind, TokenKind::Eof) {
-                if in_block {
-                    return Err(self.err("expected '}', got EOF"));
-                }
-                return Ok(());
-            }
+            let read = match self.next_entry(&desc, &mut scope, in_block) {
+                Err(e) => Err(e),
+                Ok(Step::End) => return Ok(()),
+                Ok(Step::Read) => Ok(()),
+                Ok(Step::Value(fd)) => self.decode_field_value(msg, &fd),
+                Ok(Step::Keyed(fd, key_fd)) => self.decode_keyed_block_body(msg, &fd, &key_fd),
+                Ok(Step::Block(fd, sub)) => self.decode_sub_body(msg, &fd, sub),
+            };
+            read?;
+        }
+    }
 
-            let pos = self.current.pos;
-            let key_kind = self.current.kind;
-            if matches!(key_kind, TokenKind::AtType) {
-                return Err(self.err_at(pos, TYPE_ENTRY_MISPLACED));
-            }
-            // The grammar's key set (parseEntry), so a bool or integer key
-            // before '=' or '{' gets the parser's error below, not this one.
-            if !matches!(
-                key_kind,
-                TokenKind::Ident | TokenKind::String | TokenKind::Int | TokenKind::Bool
-            ) {
-                return Err(self.err_at(
-                    pos,
-                    format!(
-                        "expected identifier, string, integer, or bool, got {}",
-                        self.token_err_msg()
-                    ),
-                ));
-            }
-            let key_quoted = matches!(key_kind, TokenKind::String);
-            let key = std::mem::take(&mut self.current.value);
-            // Only an integer key carries a suffix; the grammar errors below
-            // write it as part of the key, as protowire-go's keyPrec does.
-            let key_prec = std::mem::take(&mut self.current.prec);
+    /// Reads one entry of a body as far as its value, and says what reads
+    /// the value. An entry it reads whole (a null, an unknown field
+    /// skipped) is [`Step::Read`].
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn next_entry(
+        &mut self,
+        desc: &MessageDescriptor,
+        scope: &mut BodyScope,
+        in_block: bool,
+    ) -> Result<Step, PxfError> {
+        if in_block && matches!(self.current.kind, TokenKind::RBrace) {
             self.advance();
+            return Ok(Step::End);
+        }
+        if matches!(self.current.kind, TokenKind::Eof) {
+            if in_block {
+                return Err(self.err("expected '}', got EOF"));
+            }
+            return Ok(Step::End);
+        }
 
-            match self.current.kind {
-                TokenKind::Equals => {
-                    // No field has an integer or bool name, so this is the
-                    // parser's error whatever discard_unknown says.
-                    if matches!(key_kind, TokenKind::Int | TokenKind::Bool) {
-                        return Err(non_name_assign_error(pos, key_kind, &key, &key_prec));
-                    }
-                    self.advance();
-                    if key_quoted {
-                        // The grammar accepts a string at entry-name position
-                        // everywhere; the schema layer restricts it to keyed
-                        // repeated fields' blocks (draft -01 §3.13), which
-                        // have their own loop — in message context a quoted
-                        // name never names a field.
-                        return Err(quoted_name_unkeyed_error(pos, &key));
-                    }
-                    let fd = match desc.get_field_by_name(&key) {
-                        Some(fd) => fd,
-                        None => {
-                            if self.discard_unknown {
-                                self.skip_value()?;
-                                continue;
-                            }
-                            return Err(self.err_at(
-                                pos,
-                                format!("unknown field {:?} in {}", key, desc.full_name()),
-                            ));
-                        }
-                    };
-                    if let Some(ke) = &ke {
-                        ke.check_binding(&fd, matches!(self.current.kind, TokenKind::Null), pos)?;
-                    }
-                    check_bound(&fd, &mut bound, pos)?;
-                    self.check_oneof(&fd, &mut set_oneofs, pos)?;
-                    if matches!(self.current.kind, TokenKind::Null) {
-                        if !nullable(&fd) {
-                            return Err(null_not_allowed(self.current.pos, &fd));
-                        }
-                        self.mark_null(&fd);
-                        self.advance();
-                        continue;
-                    }
-                    if let Some(ke) = &ke {
-                        if fd.name() == ke.key_fd.name()
-                            && matches!(self.current.kind, TokenKind::String)
-                        {
-                            // Explicit assignment to the element's key field:
-                            // the empty string is never a valid key, and in
-                            // the named form the value must agree with the
-                            // entry name (draft -01 §3.13).
-                            ke.check_explicit_key(&self.current.value, self.current.pos)?;
-                        }
-                    }
-                    self.mark_present(&fd);
-                    self.decode_field_value(msg, &fd)?;
+        let pos = self.current.pos;
+        let key_kind = self.current.kind;
+        if matches!(key_kind, TokenKind::AtType) {
+            return Err(self.err_at(pos, TYPE_ENTRY_MISPLACED));
+        }
+        // The grammar's key set (parseEntry), so a bool or integer key
+        // before '=' or '{' gets the parser's error below, not this one.
+        if !matches!(
+            key_kind,
+            TokenKind::Ident | TokenKind::String | TokenKind::Int | TokenKind::Bool
+        ) {
+            return Err(self.err_at(
+                pos,
+                format!(
+                    "expected identifier, string, integer, or bool, got {}",
+                    self.token_err_msg()
+                ),
+            ));
+        }
+        let key_quoted = matches!(key_kind, TokenKind::String);
+        let key = std::mem::take(&mut self.current.value);
+        // Only an integer key carries a suffix; the grammar errors below
+        // write it as part of the key, as protowire-go's keyPrec does.
+        let key_prec = std::mem::take(&mut self.current.prec);
+        self.advance();
+
+        match self.current.kind {
+            TokenKind::Equals => {
+                // No field has an integer or bool name, so this is the
+                // parser's error whatever discard_unknown says.
+                if matches!(key_kind, TokenKind::Int | TokenKind::Bool) {
+                    return Err(non_name_assign_error(pos, key_kind, &key, &key_prec));
                 }
-                TokenKind::LBrace => {
-                    if matches!(key_kind, TokenKind::Int | TokenKind::Bool) {
-                        return Err(non_name_block_error(pos, key_kind, &key, &key_prec));
-                    }
-                    if key_quoted {
-                        return Err(quoted_name_unkeyed_error(pos, &key));
-                    }
-                    let fd = match desc.get_field_by_name(&key) {
-                        Some(fd) => fd,
-                        None => {
-                            if self.discard_unknown {
-                                // From the '{', so it reads as a block.
-                                self.skip_value()?;
-                                continue;
-                            }
-                            return Err(self.err_at(
-                                pos,
-                                format!("unknown field {:?} in {}", key, desc.full_name()),
-                            ));
-                        }
-                    };
-                    self.advance();
-                    if fd.is_list() {
-                        // Keyed repeated field (draft -01 §3.13): the block
-                        // form is a sequence of named entries, one per
-                        // element.
-                        if let Some(key_fd) = key_field(&fd) {
-                            self.mark_present(&fd);
-                            self.decode_keyed_block_body(msg, &fd, &key_fd)?;
-                            continue;
-                        }
-                        if matches!(self.current.kind, TokenKind::String) {
-                            // The block spells the keyed form on a field
-                            // with no (pxf.key); report the quoted entry
-                            // name — the more specific schema violation —
-                            // rather than the generic shape error.
-                            return Err(quoted_name_unkeyed_error(
-                                self.current.pos,
-                                &self.current.value,
-                            ));
-                        }
-                        return Err(self.err_at(
-                            pos,
-                            format!(
-                                "repeated field {:?} must use list syntax: {} = [...]",
-                                key, key
-                            ),
-                        ));
-                    }
-                    if fd.is_map() {
-                        return Err(self.err_at(
-                            pos,
-                            format!(
-                                "map field {:?} must use assignment syntax: {} = {{ ... }}",
-                                key, key
-                            ),
-                        ));
-                    }
-                    if !matches!(fd.kind(), Kind::Message(_)) {
-                        return Err(self.err_at(
-                            pos,
-                            format!(
-                                "field {:?} is not a message type, cannot use block syntax",
-                                key
-                            ),
-                        ));
-                    }
-                    if let Some(ke) = &ke {
-                        ke.check_binding(&fd, false, pos)?;
-                    }
-                    check_bound(&fd, &mut bound, pos)?;
-                    self.check_oneof(&fd, &mut set_oneofs, pos)?;
-                    self.mark_present(&fd);
-                    let inner_desc = match fd.kind() {
-                        Kind::Message(m) => m,
-                        _ => unreachable!(),
-                    };
-                    let mut sub = DynamicMessage::new(inner_desc);
-                    if self.tracks_paths() {
-                        let saved = std::mem::take(&mut self.path_prefix);
-                        self.path_prefix = format!("{}{}.", saved, fd.name());
-                        self.decode_fields(&mut sub, true)?;
-                        self.path_prefix = saved;
-                    } else {
-                        self.decode_fields(&mut sub, true)?;
-                    }
-                    msg.set_field(&fd, Value::Message(sub));
+                self.advance();
+                if key_quoted {
+                    // The grammar accepts a string at entry-name position
+                    // everywhere; the schema layer restricts it to keyed
+                    // repeated fields' blocks (draft -01 §3.13), which
+                    // have their own loop — in message context a quoted
+                    // name never names a field.
+                    return Err(quoted_name_unkeyed_error(pos, &key));
                 }
-                TokenKind::Colon => {
-                    if !in_block {
-                        // The parser's grammar error: no map entry stands
-                        // at the top level of a document, whatever the
-                        // schema.
-                        return Err(top_level_map_entry_error(pos));
+                let fd = match desc.get_field_by_name(&key) {
+                    Some(fd) => fd,
+                    None => {
+                        if self.discard_unknown {
+                            self.skip_value()?;
+                            return Ok(Step::Read);
+                        }
+                        return Err(self.err_at(
+                            pos,
+                            format!("unknown field {:?} in {}", key, desc.full_name()),
+                        ));
+                    }
+                };
+                if let Some(ke) = &scope.ke {
+                    ke.check_binding(&fd, matches!(self.current.kind, TokenKind::Null), pos)?;
+                }
+                check_bound(&fd, &mut scope.bound, pos)?;
+                self.check_oneof(&fd, &mut scope.set_oneofs, pos)?;
+                if matches!(self.current.kind, TokenKind::Null) {
+                    if !nullable(&fd) {
+                        return Err(null_not_allowed(self.current.pos, &fd));
+                    }
+                    self.mark_null(&fd);
+                    self.advance();
+                    return Ok(Step::Read);
+                }
+                if let Some(ke) = &scope.ke {
+                    if fd.name() == ke.key_fd.name()
+                        && matches!(self.current.kind, TokenKind::String)
+                    {
+                        // Explicit assignment to the element's key field:
+                        // the empty string is never a valid key, and in
+                        // the named form the value must agree with the
+                        // entry name (draft -01 §3.13).
+                        ke.check_explicit_key(&self.current.value, self.current.pos)?;
+                    }
+                }
+                self.mark_present(&fd);
+                Ok(Step::Value(fd))
+            }
+            TokenKind::LBrace => {
+                if matches!(key_kind, TokenKind::Int | TokenKind::Bool) {
+                    return Err(non_name_block_error(pos, key_kind, &key, &key_prec));
+                }
+                if key_quoted {
+                    return Err(quoted_name_unkeyed_error(pos, &key));
+                }
+                let fd = match desc.get_field_by_name(&key) {
+                    Some(fd) => fd,
+                    None => {
+                        if self.discard_unknown {
+                            // From the '{', so it reads as a block.
+                            self.skip_value()?;
+                            return Ok(Step::Read);
+                        }
+                        return Err(self.err_at(
+                            pos,
+                            format!("unknown field {:?} in {}", key, desc.full_name()),
+                        ));
+                    }
+                };
+                self.advance();
+                if fd.is_list() {
+                    // Keyed repeated field (draft -01 §3.13): the block
+                    // form is a sequence of named entries, one per
+                    // element.
+                    if let Some(key_fd) = key_field(&fd) {
+                        self.mark_present(&fd);
+                        return Ok(Step::Keyed(fd, key_fd));
+                    }
+                    if matches!(self.current.kind, TokenKind::String) {
+                        // The block spells the keyed form on a field
+                        // with no (pxf.key); report the quoted entry
+                        // name — the more specific schema violation —
+                        // rather than the generic shape error.
+                        return Err(quoted_name_unkeyed_error(
+                            self.current.pos,
+                            &self.current.value,
+                        ));
                     }
                     return Err(self.err_at(
                         pos,
-                        "unexpected ':' in message context, use '=' for field assignments",
+                        format!(
+                            "repeated field {:?} must use list syntax: {} = [...]",
+                            key, key
+                        ),
                     ));
                 }
-                _ => {
-                    return Err(self.err(format!(
-                        "expected '=', ':', or '{{' after {:?}, got {}",
-                        key, self.current.kind
-                    )));
+                if fd.is_map() {
+                    return Err(self.err_at(
+                        pos,
+                        format!(
+                            "map field {:?} must use assignment syntax: {} = {{ ... }}",
+                            key, key
+                        ),
+                    ));
                 }
+                let Kind::Message(inner_desc) = fd.kind() else {
+                    return Err(self.err_at(
+                        pos,
+                        format!(
+                            "field {:?} is not a message type, cannot use block syntax",
+                            key
+                        ),
+                    ));
+                };
+                if let Some(ke) = &scope.ke {
+                    ke.check_binding(&fd, false, pos)?;
+                }
+                check_bound(&fd, &mut scope.bound, pos)?;
+                self.check_oneof(&fd, &mut scope.set_oneofs, pos)?;
+                self.mark_present(&fd);
+                Ok(Step::Block(fd, DynamicMessage::new(inner_desc)))
             }
+            TokenKind::Colon => {
+                if !in_block {
+                    // The parser's grammar error: no map entry stands
+                    // at the top level of a document, whatever the
+                    // schema.
+                    return Err(top_level_map_entry_error(pos));
+                }
+                Err(self.err_at(
+                    pos,
+                    "unexpected ':' in message context, use '=' for field assignments",
+                ))
+            }
+            _ => Err(self.err(format!(
+                "expected '=', ':', or '{{' after {:?}, got {}",
+                key, self.current.kind
+            ))),
         }
+    }
+
+    /// Reads a message body into `sub`, its `{` consumed, under `fd`'s path,
+    /// and sets it on `msg`.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn decode_sub_body(
+        &mut self,
+        msg: &mut DynamicMessage,
+        fd: &FieldDescriptor,
+        mut sub: DynamicMessage,
+    ) -> Result<(), PxfError> {
+        let saved = self.enter_field(fd.name());
+        self.decode_fields(&mut sub, true)?;
+        self.path_prefix = saved;
+        msg.set_field(fd, Value::Message(sub));
+        Ok(())
     }
 
     fn check_oneof(
@@ -1048,45 +1142,60 @@ impl<'a> Decoder<'a> {
             return self.decode_list_inline(msg, fd);
         }
         if let Kind::Message(inner_desc) = fd.kind() {
-            let mut sub = DynamicMessage::new(inner_desc);
-            let at = self
-                .on_secret
-                .map(|_| format!("{}{}", self.path_prefix, fd.name()));
-            if let Some(inner) = self.try_decode_wkt(&mut sub, at)? {
-                msg.set_field(fd, Value::Message(sub));
-                if let Some(p) = self.presence.as_mut() {
-                    for name in inner {
-                        p.mark_present(format!("{}{}.{name}", self.path_prefix, fd.name()));
-                    }
-                }
-                return Ok(());
-            }
-            if !matches!(self.current.kind, TokenKind::LBrace) {
-                return Err(self.err(format!(
-                    "expected {} for message field {:?}, got {}",
-                    msg_value_forms(&sub.descriptor()),
-                    fd.name(),
-                    self.token_err_msg()
-                )));
-            }
-            self.advance();
-            if self.tracks_paths() {
-                let saved = std::mem::take(&mut self.path_prefix);
-                self.path_prefix = format!("{}{}.", saved, fd.name());
-                self.decode_fields(&mut sub, true)?;
-                self.path_prefix = saved;
-            } else {
-                self.decode_fields(&mut sub, true)?;
-            }
+            return match self.message_value(msg, fd, DynamicMessage::new(inner_desc))? {
+                Some(sub) => self.decode_sub_body(msg, fd, sub),
+                None => Ok(()),
+            };
+        }
+        self.decode_scalar_value(msg, fd)
+    }
+
+    /// A singular message field's value as far as its body: a well-known
+    /// type's literal, read whole and set on `msg` (`None`), or a block,
+    /// returned past its `{`.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn message_value(
+        &mut self,
+        msg: &mut DynamicMessage,
+        fd: &FieldDescriptor,
+        mut sub: DynamicMessage,
+    ) -> Result<Option<DynamicMessage>, PxfError> {
+        let at = self
+            .on_secret
+            .map(|_| format!("{}{}", self.path_prefix, fd.name()));
+        if let Some(inner) = self.try_decode_wkt(&mut sub, at)? {
             msg.set_field(fd, Value::Message(sub));
-            return Ok(());
+            if let Some(p) = self.presence.as_mut() {
+                for name in inner {
+                    p.mark_present(format!("{}{}.{name}", self.path_prefix, fd.name()));
+                }
+            }
+            return Ok(None);
         }
-        if matches!(fd.kind(), Kind::Enum(_)) {
-            let v = self.consume_enum(fd)?;
-            msg.set_field(fd, v);
-            return Ok(());
+        if !matches!(self.current.kind, TokenKind::LBrace) {
+            return Err(self.err(format!(
+                "expected {} for message field {:?}, got {}",
+                msg_value_forms(&sub.descriptor()),
+                fd.name(),
+                self.token_err_msg()
+            )));
         }
-        let v = self.consume_scalar(fd)?;
+        self.advance();
+        Ok(Some(sub))
+    }
+
+    /// An enum or scalar field's value, set on `msg`.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn decode_scalar_value(
+        &mut self,
+        msg: &mut DynamicMessage,
+        fd: &FieldDescriptor,
+    ) -> Result<(), PxfError> {
+        let v = if matches!(fd.kind(), Kind::Enum(_)) {
+            self.consume_enum(fd)?
+        } else {
+            self.consume_scalar(fd)?
+        };
         msg.set_field(fd, v);
         Ok(())
     }
@@ -1096,79 +1205,149 @@ impl<'a> Decoder<'a> {
         msg: &mut DynamicMessage,
         fd: &FieldDescriptor,
     ) -> Result<(), PxfError> {
-        if !matches!(self.current.kind, TokenKind::LBracket) {
-            return Err(self.err(format!("expected '[' for repeated field {:?}", fd.name())));
-        }
-        self.enter()?;
-        self.advance();
-
         // A repeated field bound more than once concatenates in document
         // order (draft -01 § Entries and Keys), so start from what is there.
-        let mut elems = existing_list(msg, fd);
-        let element_kind = fd.kind();
+        let mut elems = self.list_open(msg, fd)?;
         // Non-None: the anonymous form of a keyed repeated field, whose
         // element bodies get the key-field checks (draft -01 §3.13).
         let key_fd = key_field(fd);
 
         while !matches!(self.current.kind, TokenKind::RBracket | TokenKind::Eof) {
-            self.illegal()?;
-            if elems.len() >= self.limits.max_repeated_count {
-                return Err(self.err(format!(
-                    "repeated field {:?} exceeds MaxRepeatedCount={}",
-                    fd.name(),
-                    self.limits.max_repeated_count
-                )));
-            }
-            if matches!(self.current.kind, TokenKind::Null) {
-                return Err(self.err(format!(
-                    "null is not allowed in repeated field {:?}",
-                    fd.name()
-                )));
-            }
-            let v = match &element_kind {
-                Kind::Message(inner_desc) => {
-                    let mut sub = DynamicMessage::new(inner_desc.clone());
-                    let at = self
-                        .on_secret
-                        .map(|_| format!("{}{}[{}]", self.path_prefix, fd.name(), elems.len()));
-                    if self.try_decode_wkt(&mut sub, at)?.is_none() {
-                        if !matches!(self.current.kind, TokenKind::LBrace) {
-                            return Err(self.err(format!(
-                                "expected '{{' for repeated message element, got {}",
-                                self.token_err_msg()
-                            )));
-                        }
-                        self.advance();
-                        if let Some(key_fd) = &key_fd {
-                            self.keyed_elem = Some(KeyedElemState {
-                                field: fd.name().to_string(),
-                                key_fd: key_fd.clone(),
-                                entry_name: String::new(),
-                                named: false,
-                            });
-                        }
-                        let saved = self.enter_index(fd.name(), elems.len());
-                        self.decode_fields(&mut sub, true)?;
-                        self.path_prefix = saved;
-                    }
-                    Value::Message(sub)
+            let read = match self.list_element(fd, elems.len(), key_fd.as_ref()) {
+                Err(e) => Err(e),
+                Ok(Elem::Value(v)) => Ok(v),
+                Ok(Elem::Body(sub)) => {
+                    let saved = self.enter_index(fd.name(), elems.len());
+                    self.decode_element_body(sub, saved)
                 }
-                Kind::Enum(_) => self.consume_enum(fd)?,
-                _ => self.consume_scalar(fd)?,
             };
-            elems.push(v);
-            if matches!(self.current.kind, TokenKind::Comma) {
-                self.advance();
-            }
+            self.push_element(&mut elems, read)?;
         }
+        self.close_list(msg, fd, elems)
+    }
 
-        if !matches!(self.current.kind, TokenKind::RBracket) {
-            return Err(self.err(format!("expected ']', got {}", self.current.kind)));
+    /// A list's `[`, consumed and counted, and the elements `msg` already
+    /// holds.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn list_open(
+        &mut self,
+        msg: &mut DynamicMessage,
+        fd: &FieldDescriptor,
+    ) -> Result<Vec<Value>, PxfError> {
+        if !matches!(self.current.kind, TokenKind::LBracket) {
+            return Err(self.err(format!("expected '[' for repeated field {:?}", fd.name())));
+        }
+        self.enter()?;
+        self.advance();
+        Ok(existing_list(msg, fd))
+    }
+
+    /// Adds a list element, and its comma.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn push_element(
+        &mut self,
+        elems: &mut Vec<Value>,
+        read: Result<Value, PxfError>,
+    ) -> Result<(), PxfError> {
+        elems.push(read?);
+        if matches!(self.current.kind, TokenKind::Comma) {
+            self.advance();
+        }
+        Ok(())
+    }
+
+    /// A list's `]`, and the list set on `msg`.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn close_list(
+        &mut self,
+        msg: &mut DynamicMessage,
+        fd: &FieldDescriptor,
+        elems: Vec<Value>,
+    ) -> Result<(), PxfError> {
+        self.close(TokenKind::RBracket)?;
+        msg.set_field(fd, Value::List(elems));
+        Ok(())
+    }
+
+    /// An element's or map value's body into `sub`, its `{` consumed, its
+    /// path entered; `saved` is the path to restore.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn decode_element_body(
+        &mut self,
+        mut sub: DynamicMessage,
+        saved: String,
+    ) -> Result<Value, PxfError> {
+        self.decode_fields(&mut sub, true)?;
+        self.path_prefix = saved;
+        Ok(Value::Message(sub))
+    }
+
+    /// The `n`th element of list `fd` as far as its body: a value read
+    /// whole, or a message element's block, past its `{`.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn list_element(
+        &mut self,
+        fd: &FieldDescriptor,
+        n: usize,
+        key_fd: Option<&FieldDescriptor>,
+    ) -> Result<Elem, PxfError> {
+        self.illegal()?;
+        if n >= self.limits.max_repeated_count {
+            return Err(self.err(format!(
+                "repeated field {:?} exceeds MaxRepeatedCount={}",
+                fd.name(),
+                self.limits.max_repeated_count
+            )));
+        }
+        if matches!(self.current.kind, TokenKind::Null) {
+            return Err(self.err(format!(
+                "null is not allowed in repeated field {:?}",
+                fd.name()
+            )));
+        }
+        Ok(Elem::Value(match fd.kind() {
+            Kind::Message(inner_desc) => {
+                let mut sub = DynamicMessage::new(inner_desc);
+                let at = self
+                    .on_secret
+                    .map(|_| format!("{}{}[{}]", self.path_prefix, fd.name(), n));
+                if self.try_decode_wkt(&mut sub, at)?.is_none() {
+                    if !matches!(self.current.kind, TokenKind::LBrace) {
+                        return Err(self.err(format!(
+                            "expected '{{' for repeated message element, got {}",
+                            self.token_err_msg()
+                        )));
+                    }
+                    self.advance();
+                    if let Some(key_fd) = key_fd {
+                        self.keyed_elem = Some(KeyedElemState {
+                            field: fd.name().to_string(),
+                            key_fd: key_fd.clone(),
+                            entry_name: String::new(),
+                            named: false,
+                        });
+                    }
+                    return Ok(Elem::Body(sub));
+                }
+                Value::Message(sub)
+            }
+            Kind::Enum(_) => self.consume_enum(fd)?,
+            _ => self.consume_scalar(fd)?,
+        }))
+    }
+
+    /// The `close` token (`]` or `}`) of a list or map, and its depth.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn close(&mut self, close: TokenKind) -> Result<(), PxfError> {
+        if self.current.kind != close {
+            return Err(self.err(if close == TokenKind::RBracket {
+                format!("expected ']', got {}", self.current.kind)
+            } else {
+                format!("expected '}}', got {}", self.current.kind)
+            }));
         }
         self.advance();
         self.leave();
-
-        msg.set_field(fd, Value::List(elems));
         Ok(())
     }
 
@@ -1187,90 +1366,101 @@ impl<'a> Decoder<'a> {
         key_fd: &FieldDescriptor,
     ) -> Result<(), PxfError> {
         self.enter()?;
-        let elem_desc = match fd.kind() {
-            Kind::Message(m) => m,
-            _ => unreachable!("key_field only matches message-typed lists"),
-        };
         let mut elems = existing_list(msg, fd);
-        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-        loop {
-            match self.current.kind {
-                TokenKind::RBrace => {
-                    self.advance();
-                    break;
-                }
-                TokenKind::Eof => {
-                    return Err(self.err(format!(
-                        "expected '}}' to close keyed field {:?}, got EOF",
-                        fd.name()
-                    )));
-                }
-                TokenKind::Ident | TokenKind::String => {}
-                _ => {
-                    return Err(self.err(format!(
-                        "expected entry name (identifier or string) in keyed field {:?}, got {}",
-                        fd.name(),
-                        self.token_err_msg()
-                    )));
-                }
-            }
-            let name_pos = self.current.pos;
-            let name = std::mem::take(&mut self.current.value);
-            if name.is_empty() {
-                return Err(empty_name_error(name_pos, fd.name()));
-            }
-            if !seen.insert(name.clone()) {
-                return Err(duplicate_key_error(name_pos, fd.name(), &name));
-            }
-            self.advance();
-            match self.current.kind {
-                TokenKind::LBrace => self.advance(),
-                TokenKind::Equals => {
-                    self.advance();
-                    if !matches!(self.current.kind, TokenKind::LBrace) {
-                        return Err(self.err(format!(
-                            "keyed entry {:?} of field {:?} must have a block value ('{{ ... }}'): the element type is a message",
-                            name,
-                            fd.name()
-                        )));
-                    }
-                    self.advance();
-                }
-                other => {
-                    return Err(self.err(format!(
-                        "expected '{{' or '=' after entry name {:?} in keyed field {:?}, got {}",
-                        name,
-                        fd.name(),
-                        other
-                    )));
-                }
-            }
-            if elems.len() >= self.limits.max_repeated_count {
-                return Err(self.err(format!(
-                    "repeated field {:?} exceeds MaxRepeatedCount={}",
-                    fd.name(),
-                    self.limits.max_repeated_count
-                )));
-            }
-            let mut sub = DynamicMessage::new(elem_desc.clone());
-            sub.set_field(key_fd, Value::String(name.clone()));
-            self.keyed_elem = Some(KeyedElemState {
-                field: fd.name().to_string(),
-                key_fd: key_fd.clone(),
-                entry_name: name,
-                named: true,
-            });
+        let mut seen: HashSet<String> = HashSet::new();
+        while let Some(sub) = self.keyed_entry(fd, key_fd, elems.len(), &mut seen)? {
             let saved = self.enter_index(fd.name(), elems.len());
             // The entry name supplies the key field, so the document counts
             // as having set it (protowire-go#214).
             self.mark_present(key_fd);
-            self.decode_fields(&mut sub, true)?;
-            self.path_prefix = saved;
-            elems.push(Value::Message(sub));
+            let read = self.decode_element_body(sub, saved);
+            elems.push(read?);
         }
         self.leave();
         msg.set_field(fd, Value::List(elems));
         Ok(())
+    }
+
+    /// The next entry of keyed field `fd`'s block as far as its body, past
+    /// its `{`, holding its key; `None` past the block's `}`.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn keyed_entry(
+        &mut self,
+        fd: &FieldDescriptor,
+        key_fd: &FieldDescriptor,
+        n: usize,
+        seen: &mut HashSet<String>,
+    ) -> Result<Option<DynamicMessage>, PxfError> {
+        match self.current.kind {
+            TokenKind::RBrace => {
+                self.advance();
+                return Ok(None);
+            }
+            TokenKind::Eof => {
+                return Err(self.err(format!(
+                    "expected '}}' to close keyed field {:?}, got EOF",
+                    fd.name()
+                )));
+            }
+            TokenKind::Ident | TokenKind::String => {}
+            _ => {
+                return Err(self.err(format!(
+                    "expected entry name (identifier or string) in keyed field {:?}, got {}",
+                    fd.name(),
+                    self.token_err_msg()
+                )));
+            }
+        }
+        let name_pos = self.current.pos;
+        let name = std::mem::take(&mut self.current.value);
+        if name.is_empty() {
+            return Err(empty_name_error(name_pos, fd.name()));
+        }
+        if !seen.insert(name.clone()) {
+            return Err(duplicate_key_error(name_pos, fd.name(), &name));
+        }
+        self.advance();
+        match self.current.kind {
+            TokenKind::LBrace => self.advance(),
+            TokenKind::Equals => {
+                self.advance();
+                if !matches!(self.current.kind, TokenKind::LBrace) {
+                    return Err(self.err(format!(
+                        "keyed entry {:?} of field {:?} must have a block value ('{{ ... }}'): the element type is a message",
+                        name,
+                        fd.name()
+                    )));
+                }
+                self.advance();
+            }
+            other => {
+                return Err(self.err(format!(
+                    "expected '{{' or '=' after entry name {:?} in keyed field {:?}, got {}",
+                    name,
+                    fd.name(),
+                    other
+                )));
+            }
+        }
+        if n >= self.limits.max_repeated_count {
+            return Err(self.err(format!(
+                "repeated field {:?} exceeds MaxRepeatedCount={}",
+                fd.name(),
+                self.limits.max_repeated_count
+            )));
+        }
+        let Kind::Message(elem_desc) = fd.kind() else {
+            unreachable!("key_field only matches message-typed lists")
+        };
+        let mut sub = DynamicMessage::new(elem_desc);
+        sub.set_field(key_fd, Value::String(name.clone()));
+        self.keyed_elem = Some(KeyedElemState {
+            field: fd.name().to_string(),
+            key_fd: key_fd.clone(),
+            entry_name: name,
+            named: true,
+        });
+        Ok(Some(sub))
     }
 
     fn decode_map_inline(
@@ -1278,6 +1468,30 @@ impl<'a> Decoder<'a> {
         msg: &mut DynamicMessage,
         fd: &FieldDescriptor,
     ) -> Result<(), PxfError> {
+        let (key_fd, val_fd, mut map) = self.map_open(msg, fd)?;
+        while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof) {
+            let read = match self.map_entry(fd, &key_fd, &val_fd, &map) {
+                Err(e) => Err(e),
+                Ok((key, Elem::Value(v))) => Ok((key, v)),
+                Ok((key, Elem::Body(sub))) => {
+                    let saved = self.enter_key(fd.name(), &key);
+                    self.decode_element_body(sub, saved).map(|v| (key, v))
+                }
+            };
+            let (key, value) = read?;
+            map.insert(key, value);
+        }
+        self.close_map(msg, fd, map)
+    }
+
+    /// A map's `{`, consumed and counted: its entry's key and value fields,
+    /// and the entries `msg` already holds.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn map_open(
+        &mut self,
+        msg: &mut DynamicMessage,
+        fd: &FieldDescriptor,
+    ) -> Result<(FieldDescriptor, FieldDescriptor, HashMap<MapKey, Value>), PxfError> {
         if !matches!(self.current.kind, TokenKind::LBrace) {
             return Err(self.err(format!("expected '{{' for map field {:?}", fd.name())));
         }
@@ -1293,123 +1507,135 @@ impl<'a> Decoder<'a> {
                 )))
             }
         };
-        let key_fd = map_entry_desc.map_entry_key_field();
-        let val_fd = map_entry_desc.map_entry_value_field();
-
         // A map bound more than once merges, so start from what is there; a
         // key bound twice in one body is an error either way (draft -01
         // § Entries and Keys; protowire#396).
-        let mut map = match msg.take_field(fd) {
+        let map = match msg.take_field(fd) {
             Some(Value::Map(map)) => map,
             _ => HashMap::new(),
         };
+        Ok((
+            map_entry_desc.map_entry_key_field(),
+            map_entry_desc.map_entry_value_field(),
+            map,
+        ))
+    }
 
-        while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof) {
-            let pos = self.current.pos;
-            let tk = self.current.kind;
-            if map.len() >= self.limits.max_repeated_count {
-                return Err(self.err_at(
-                    pos,
-                    format!(
-                        "map field {:?} exceeds MaxRepeatedCount={}",
-                        fd.name(),
-                        self.limits.max_repeated_count
-                    ),
-                ));
-            }
-            if !matches!(
-                tk,
-                TokenKind::Ident | TokenKind::String | TokenKind::Int | TokenKind::Bool
-            ) {
-                return Err(self.err_at(
-                    pos,
-                    format!("expected map key, got {}", self.token_err_msg()),
-                ));
-            }
-            if !self.current.prec.is_empty() {
-                return Err(self.err_at(
-                    pos,
-                    format!(
-                        "map field {:?}: a key cannot carry a precision suffix (p{})",
-                        fd.name(),
-                        clip_literal(&self.current.prec)
-                    ),
-                ));
-            }
-            let key_str = std::mem::take(&mut self.current.value);
-            let key_kind = tk;
-            self.advance();
-
-            match self.current.kind {
-                TokenKind::Colon => self.advance(),
-                TokenKind::Equals => {
-                    return Err(self.err("unexpected '=' in map, use ':' for map entries"))
-                }
-                _ => {
-                    return Err(self.err(format!(
-                        "expected ':' after map key, got {}",
-                        self.current.kind
-                    )))
-                }
-            }
-
-            let key = decode_map_key(fd, &key_fd, key_str, key_kind, pos)?;
-            // Compared as values of the key type, so 1 and "1" are one key
-            // of an integer-keyed map.
-            if map.contains_key(&key) {
-                return Err(self.err_at(
-                    pos,
-                    format!(
-                        "map field {:?}: key {} is already set",
-                        fd.name(),
-                        shown_key(&key)
-                    ),
-                ));
-            }
-
-            self.illegal()?;
-            if matches!(self.current.kind, TokenKind::Null) {
-                return Err(self.err(format!(
-                    "null is not allowed as map value in field {:?}",
-                    fd.name()
-                )));
-            }
-
-            let value = if let Kind::Message(inner_desc) = val_fd.kind() {
-                let mut sub = DynamicMessage::new(inner_desc);
-                let at = self
-                    .on_secret
-                    .map(|_| format!("{}{}[{}]", self.path_prefix, fd.name(), shown_key(&key)));
-                if self.try_decode_wkt(&mut sub, at)?.is_none() {
-                    if !matches!(self.current.kind, TokenKind::LBrace) {
-                        return Err(self.err(format!(
-                            "expected '{{' for map message value, got {}",
-                            self.token_err_msg()
-                        )));
-                    }
-                    self.advance();
-                    let saved = self.enter_key(fd.name(), &key);
-                    self.decode_fields(&mut sub, true)?;
-                    self.path_prefix = saved;
-                }
-                Value::Message(sub)
-            } else if matches!(val_fd.kind(), Kind::Enum(_)) {
-                self.consume_enum(&val_fd)?
-            } else {
-                self.consume_scalar(&val_fd)?
-            };
-
-            map.insert(key, value);
-        }
-
-        if !matches!(self.current.kind, TokenKind::RBrace) {
-            return Err(self.err(format!("expected '}}', got {}", self.current.kind)));
-        }
-        self.advance();
-        self.leave();
-
+    /// A map's `}`, and the map set on `msg`.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn close_map(
+        &mut self,
+        msg: &mut DynamicMessage,
+        fd: &FieldDescriptor,
+        map: HashMap<MapKey, Value>,
+    ) -> Result<(), PxfError> {
+        self.close(TokenKind::RBrace)?;
         msg.set_field(fd, Value::Map(map));
         Ok(())
+    }
+
+    /// The next entry of map `fd`, its key and its value as far as its
+    /// body: a value read whole, or a message value's block, past its `{`.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn map_entry(
+        &mut self,
+        fd: &FieldDescriptor,
+        key_fd: &FieldDescriptor,
+        val_fd: &FieldDescriptor,
+        map: &HashMap<MapKey, Value>,
+    ) -> Result<(MapKey, Elem), PxfError> {
+        let pos = self.current.pos;
+        let tk = self.current.kind;
+        if map.len() >= self.limits.max_repeated_count {
+            return Err(self.err_at(
+                pos,
+                format!(
+                    "map field {:?} exceeds MaxRepeatedCount={}",
+                    fd.name(),
+                    self.limits.max_repeated_count
+                ),
+            ));
+        }
+        if !matches!(
+            tk,
+            TokenKind::Ident | TokenKind::String | TokenKind::Int | TokenKind::Bool
+        ) {
+            return Err(self.err_at(
+                pos,
+                format!("expected map key, got {}", self.token_err_msg()),
+            ));
+        }
+        if !self.current.prec.is_empty() {
+            return Err(self.err_at(
+                pos,
+                format!(
+                    "map field {:?}: a key cannot carry a precision suffix (p{})",
+                    fd.name(),
+                    clip_literal(&self.current.prec)
+                ),
+            ));
+        }
+        let key_str = std::mem::take(&mut self.current.value);
+        let key_kind = tk;
+        self.advance();
+
+        match self.current.kind {
+            TokenKind::Colon => self.advance(),
+            TokenKind::Equals => {
+                return Err(self.err("unexpected '=' in map, use ':' for map entries"))
+            }
+            _ => {
+                return Err(self.err(format!(
+                    "expected ':' after map key, got {}",
+                    self.current.kind
+                )))
+            }
+        }
+
+        let key = decode_map_key(fd, key_fd, key_str, key_kind, pos)?;
+        // Compared as values of the key type, so 1 and "1" are one key
+        // of an integer-keyed map.
+        if map.contains_key(&key) {
+            return Err(self.err_at(
+                pos,
+                format!(
+                    "map field {:?}: key {} is already set",
+                    fd.name(),
+                    shown_key(&key)
+                ),
+            ));
+        }
+
+        self.illegal()?;
+        if matches!(self.current.kind, TokenKind::Null) {
+            return Err(self.err(format!(
+                "null is not allowed as map value in field {:?}",
+                fd.name()
+            )));
+        }
+
+        let value = if let Kind::Message(inner_desc) = val_fd.kind() {
+            let mut sub = DynamicMessage::new(inner_desc);
+            let at = self
+                .on_secret
+                .map(|_| format!("{}{}[{}]", self.path_prefix, fd.name(), shown_key(&key)));
+            if self.try_decode_wkt(&mut sub, at)?.is_none() {
+                if !matches!(self.current.kind, TokenKind::LBrace) {
+                    return Err(self.err(format!(
+                        "expected '{{' for map message value, got {}",
+                        self.token_err_msg()
+                    )));
+                }
+                self.advance();
+                return Ok((key, Elem::Body(sub)));
+            }
+            Value::Message(sub)
+        } else if matches!(val_fd.kind(), Kind::Enum(_)) {
+            self.consume_enum(val_fd)?
+        } else {
+            self.consume_scalar(val_fd)?
+        };
+        Ok((key, Elem::Value(value)))
     }
 
     /// Decode a `google.protobuf.Any` block that opens with a type entry,
@@ -1417,6 +1643,21 @@ impl<'a> Decoder<'a> {
     /// body of the type the URL names, packed into `value`, and the URL is
     /// stored verbatim in `type_url`.
     fn decode_any_body(&mut self, target: &mut DynamicMessage) -> Result<(), PxfError> {
+        let (type_url, url_pos, mut inner) = self.any_type_entry()?;
+        // The body shares the Any's braces, which the enclosing
+        // decode_fields has already counted as one descent.
+        self.depth -= 1;
+        self.any_body = true;
+        let decoded = self.decode_fields(&mut inner, true);
+        self.depth += 1;
+        decoded?;
+        self.pack_any(target, inner, type_url, url_pos)
+    }
+
+    /// An Any block's `@type = "<type-url>"`: the URL, where it stands, and
+    /// an empty message of the type it names.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn any_type_entry(&mut self) -> Result<(String, Position, DynamicMessage), PxfError> {
         self.advance(); // consume @type
         if !matches!(self.current.kind, TokenKind::Equals) {
             return Err(self.err(format!(
@@ -1444,14 +1685,18 @@ impl<'a> Decoder<'a> {
         let inner_desc = resolver.find_message_by_url(&type_url).ok_or_else(|| {
             PxfError::new(url_pos, format!("cannot resolve Any type {:?}", type_url))
         })?;
-        let mut inner = DynamicMessage::new(inner_desc);
-        // The body shares the Any's braces, which the enclosing
-        // decode_fields has already counted as one descent.
-        self.depth -= 1;
-        self.any_body = true;
-        let decoded = self.decode_fields(&mut inner, true);
-        self.depth += 1;
-        decoded?;
+        Ok((type_url, url_pos, DynamicMessage::new(inner_desc)))
+    }
+
+    /// Packs an Any's decoded body into `target`, with its type URL.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn pack_any(
+        &mut self,
+        target: &mut DynamicMessage,
+        mut inner: DynamicMessage,
+        type_url: String,
+        url_pos: Position,
+    ) -> Result<(), PxfError> {
         // Packed to bytes below, the body is out of reach of the pass over
         // the root, so it takes that pass here, under the Any's own path.
         if let Some(presence) = self.presence.as_ref().filter(|_| self.post_decode_any) {

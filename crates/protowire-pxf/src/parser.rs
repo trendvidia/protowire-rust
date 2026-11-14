@@ -132,6 +132,66 @@ pub(crate) fn read_value(
 /// a directive. The streaming reader reports the same text.
 pub(crate) const ERR_DATASET_BESIDE_ENTRIES: &str = "@dataset directive cannot coexist with top-level field entries; the document's payload is the @dataset rows (draft §3.4.4)";
 
+/// A block's entries, the comments after the last of them, and where it
+/// ends ([`Parser::parse_body`]).
+type Body = (Vec<Entry>, Vec<Comment>, Position);
+
+/// An entry's key, read: what every entry node holds of it.
+struct EntryHead {
+    pos: Position,
+    key: String,
+    quoted: bool,
+    leading_comments: Vec<Comment>,
+}
+
+/// An entry as far as its value ([`Parser::entry_start`]).
+enum EntryStart {
+    /// Tolerant mode skipped a token that starts no entry.
+    Skipped,
+    /// An entry read whole: a block skipped past the limit, a dangling key.
+    Whole(Box<Entry>),
+    /// `key = ` (false) or `key: ` (true), at the value.
+    Value(EntryHead, bool),
+    /// `key {`, past the `{`, which stands at this position.
+    Block(EntryHead, Position),
+}
+
+/// `head { body }`, once its body is read.
+fn block_entry_read(
+    head: EntryHead,
+    body: Result<Body, PxfError>,
+) -> Result<Option<Entry>, PxfError> {
+    Ok(Some(block_entry(head, body?)))
+}
+
+/// `head { body }`.
+fn block_entry(head: EntryHead, (entries, trailing_comments, end): Body) -> Entry {
+    Entry::Block(Block {
+        pos: head.pos,
+        end,
+        name: head.key,
+        name_quoted: head.quoted,
+        entries,
+        leading_comments: head.leading_comments,
+        trailing_comments,
+    })
+}
+
+/// A block value at `pos`, once its body is read.
+fn block_val_read(pos: Position, body: Result<Body, PxfError>) -> Result<Value, PxfError> {
+    Ok(block_val(pos, body?))
+}
+
+/// A block value at `pos`.
+fn block_val(pos: Position, (entries, trailing_comments, end): Body) -> Value {
+    Value::Block(BlockVal {
+        pos,
+        end,
+        entries,
+        trailing_comments,
+    })
+}
+
 pub(crate) struct Parser<'a> {
     lex: Lexer<'a>,
     current: Token,
@@ -871,7 +931,32 @@ impl<'a> Parser<'a> {
     ///
     /// Tolerant mode gives `None` for a token that cannot start an entry,
     /// which it skips.
+    /// One entry. Its key and what follows it are read by
+    /// [`Self::entry_start`], and its node is built after its value, both
+    /// out of line: an unoptimized build gives every temporary its own stack
+    /// slot, and here each would cost every level of a nested document
+    /// (#179). Each helper split out of a recursive reader this way is
+    /// inlined back into it in an optimized build, which shares slots
+    /// between temporaries and where the call would cost time.
     fn parse_entry(&mut self, allow_map_entry: bool) -> Result<Option<Entry>, PxfError> {
+        match self.entry_start(allow_map_entry) {
+            Err(e) => Err(e),
+            Ok(EntryStart::Skipped) => Ok(None),
+            Ok(EntryStart::Whole(entry)) => Ok(Some(*entry)),
+            Ok(EntryStart::Value(head, map)) => {
+                let value = self.parse_value();
+                self.value_entry(head, map, value)
+            }
+            Ok(EntryStart::Block(head, open_pos)) => {
+                let body = self.parse_body(open_pos);
+                block_entry_read(head, body)
+            }
+        }
+    }
+
+    /// An entry as far as its value or body.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn entry_start(&mut self, allow_map_entry: bool) -> Result<EntryStart, PxfError> {
         let leading_comments = self.flush_comments();
         let pos = self.current.pos;
         let k = self.current.kind;
@@ -900,7 +985,7 @@ impl<'a> Parser<'a> {
             pending.append(&mut self.pending);
             self.pending = pending;
             self.advance();
-            return Ok(None);
+            return Ok(EntryStart::Skipped);
         }
         let key_kind = k;
         let key = std::mem::take(&mut self.current.value);
@@ -921,18 +1006,15 @@ impl<'a> Parser<'a> {
                     self.soft(non_name_assign_error(pos, key_kind, &key, &key_prec))?;
                 }
                 self.advance();
-                let value = self.parse_value()?;
-                let end = value.end();
-                let trailing_comment = self.take_trailing_comment(end);
-                Ok(Some(Entry::Assignment(Assignment {
-                    pos,
-                    end,
-                    key,
-                    key_quoted: matches!(key_kind, TokenKind::String),
-                    value,
-                    leading_comments,
-                    trailing_comment,
-                })))
+                Ok(EntryStart::Value(
+                    EntryHead {
+                        pos,
+                        key,
+                        quoted: matches!(key_kind, TokenKind::String),
+                        leading_comments,
+                    },
+                    false,
+                ))
             }
             TokenKind::Colon => {
                 // Map entry. Only allowed inside a '{ ... }' block, never at
@@ -955,18 +1037,15 @@ impl<'a> Parser<'a> {
                     ))?;
                 }
                 self.advance();
-                let value = self.parse_value()?;
-                let end = value.end();
-                let trailing_comment = self.take_trailing_comment(end);
-                Ok(Some(Entry::MapEntry(MapEntry {
-                    pos,
-                    end,
-                    key,
-                    quoted: matches!(key_kind, TokenKind::String),
-                    value,
-                    leading_comments,
-                    trailing_comment,
-                })))
+                Ok(EntryStart::Value(
+                    EntryHead {
+                        pos,
+                        key,
+                        quoted: matches!(key_kind, TokenKind::String),
+                        leading_comments,
+                    },
+                    true,
+                ))
             }
             TokenKind::LBrace => {
                 // `{ ... }` denotes a submessage field, or a named entry of a
@@ -975,32 +1054,23 @@ impl<'a> Parser<'a> {
                     self.soft(non_name_block_error(pos, key_kind, &key, &key_prec))?;
                 }
                 let open_pos = self.current.pos;
-                let name_quoted = matches!(key_kind, TokenKind::String);
+                let head = EntryHead {
+                    pos,
+                    key,
+                    quoted: matches!(key_kind, TokenKind::String),
+                    leading_comments,
+                };
                 if self.too_deep(open_pos)? {
                     // Too deep to descend: skip the whole block, keep the
                     // entry.
                     let end = self.skip_balanced(TokenKind::LBrace, TokenKind::RBrace);
-                    return Ok(Some(Entry::Block(Block {
-                        pos,
-                        end,
-                        name: key,
-                        name_quoted,
-                        entries: Vec::new(),
-                        leading_comments,
-                        trailing_comments: Vec::new(),
-                    })));
+                    return Ok(EntryStart::Whole(Box::new(block_entry(
+                        head,
+                        (Vec::new(), Vec::new(), end),
+                    ))));
                 }
                 self.advance();
-                let (entries, trailing_comments, end) = self.parse_body(open_pos)?;
-                Ok(Some(Entry::Block(Block {
-                    pos,
-                    end,
-                    name: key,
-                    name_quoted,
-                    entries,
-                    leading_comments,
-                    trailing_comments,
-                })))
+                Ok(EntryStart::Block(head, open_pos))
             }
             other => {
                 self.soft(PxfError::new(
@@ -1016,7 +1086,7 @@ impl<'a> Parser<'a> {
                 // value belongs. The current token, most likely the next
                 // entry's key, is left.
                 let at = self.prev_end;
-                Ok(Some(Entry::Assignment(Assignment {
+                Ok(EntryStart::Whole(Box::new(Entry::Assignment(Assignment {
                     pos,
                     end: at,
                     key,
@@ -1024,14 +1094,76 @@ impl<'a> Parser<'a> {
                     value: Value::Bad(BadVal { pos: at, end: at }),
                     leading_comments,
                     trailing_comment: String::new(),
-                })))
+                }))))
             }
         }
     }
 
+    /// `head = value` or `head: value`, once its value is read.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn value_entry(
+        &mut self,
+        head: EntryHead,
+        map: bool,
+        value: Result<Value, PxfError>,
+    ) -> Result<Option<Entry>, PxfError> {
+        let value = value?;
+        Ok(Some(if map {
+            self.map_entry(head, value)
+        } else {
+            self.assignment(head, value)
+        }))
+    }
+
+    /// `head = value`, with the comment that trails it.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn assignment(&mut self, head: EntryHead, value: Value) -> Entry {
+        let end = value.end();
+        let trailing_comment = self.take_trailing_comment(end);
+        Entry::Assignment(Assignment {
+            pos: head.pos,
+            end,
+            key: head.key,
+            key_quoted: head.quoted,
+            value,
+            leading_comments: head.leading_comments,
+            trailing_comment,
+        })
+    }
+
+    /// `head: value`, with the comment that trails it.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn map_entry(&mut self, head: EntryHead, value: Value) -> Entry {
+        let end = value.end();
+        let trailing_comment = self.take_trailing_comment(end);
+        Entry::MapEntry(MapEntry {
+            pos: head.pos,
+            end,
+            key: head.key,
+            quoted: head.quoted,
+            value,
+            leading_comments: head.leading_comments,
+            trailing_comment,
+        })
+    }
+
     /// Reads one value. Each value ends where its last token does, which
-    /// `advance` leaves in `prev_end`; a placeholder spans nothing.
+    /// `advance` leaves in `prev_end`; a placeholder spans nothing. A list
+    /// or block is read here and anything else out of line, so the frames
+    /// a nested value stacks stay small (#179).
     fn parse_value(&mut self) -> Result<Value, PxfError> {
+        // Neither opener starts an entry, so the tolerant check for a
+        // missing value, in parse_scalar_value, never meets one.
+        match self.current.kind {
+            TokenKind::LBracket => self.parse_list(),
+            TokenKind::LBrace => self.parse_block_val(),
+            _ => self.parse_scalar_value(),
+        }
+    }
+
+    /// A value that is not a list or block: a single token.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn parse_scalar_value(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
 
         if self.tolerant && self.current_starts_entry() {
@@ -1139,8 +1271,6 @@ impl<'a> Parser<'a> {
                     name,
                 }))
             }
-            TokenKind::LBracket => self.parse_list(),
-            TokenKind::LBrace => self.parse_block_val(),
             // An illegal token is reported as the lexer's own diagnostic, as
             // the decoder reports it at every value position and as
             // protowire-go's parseValue does: "expected value" adds nothing
@@ -1170,35 +1300,63 @@ impl<'a> Parser<'a> {
 
     fn parse_list(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
-        if self.too_deep(pos)? {
-            let end = self.skip_balanced(TokenKind::LBracket, TokenKind::RBracket);
-            return Ok(Value::List(ListVal {
-                pos,
-                end,
-                elements: Vec::new(),
-            }));
+        if self.depth >= self.limits.max_nesting_depth {
+            return self.list_past_limit(pos);
         }
         self.enter(pos)?;
         self.advance(); // consume [
-
         let mut elements = Vec::new();
         while !matches!(self.current.kind, TokenKind::RBracket | TokenKind::Eof)
             && !self.tolerant_row_close()
         {
             let before = self.current.pos.offset;
-            let elem = self.parse_value()?;
-            if self.tolerant && self.current.pos.offset == before && matches!(elem, Value::Bad(_)) {
-                // The value recovered without consuming anything (a `}`
-                // that closes an enclosing block, a token that starts the
-                // next entry): leave the list, so the construct around it
-                // can recover.
+            let elem = self.parse_value();
+            if !self.push_element(&mut elements, before, elem)? {
                 break;
             }
-            elements.push(elem);
-            if matches!(self.current.kind, TokenKind::Comma) {
-                self.advance();
-            }
         }
+        self.list_close(pos, elements)
+    }
+
+    /// A list at `pos` past the limit: refused, or in tolerant mode skipped
+    /// whole.
+    fn list_past_limit(&mut self, pos: Position) -> Result<Value, PxfError> {
+        self.too_deep(pos)?;
+        let end = self.skip_balanced(TokenKind::LBracket, TokenKind::RBracket);
+        Ok(Value::List(ListVal {
+            pos,
+            end,
+            elements: Vec::new(),
+        }))
+    }
+
+    /// Adds a list element read from `before`, and its comma; false if the
+    /// list ends at it.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn push_element(
+        &mut self,
+        elements: &mut Vec<Value>,
+        before: usize,
+        elem: Result<Value, PxfError>,
+    ) -> Result<bool, PxfError> {
+        let elem = elem?;
+        if self.tolerant && self.current.pos.offset == before && matches!(elem, Value::Bad(_)) {
+            // The value recovered without consuming anything (a `}`
+            // that closes an enclosing block, a token that starts the
+            // next entry): leave the list, so the construct around it
+            // can recover.
+            return Ok(false);
+        }
+        elements.push(elem);
+        if matches!(self.current.kind, TokenKind::Comma) {
+            self.advance();
+        }
+        Ok(true)
+    }
+
+    /// A list's `]`, and the list opened at `pos`.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn list_close(&mut self, pos: Position, elements: Vec<Value>) -> Result<Value, PxfError> {
         if !matches!(self.current.kind, TokenKind::RBracket) {
             // Tolerant mode closes the list here, with what it holds.
             self.soft(PxfError::new(
@@ -1223,53 +1381,60 @@ impl<'a> Parser<'a> {
 
     fn parse_block_val(&mut self) -> Result<Value, PxfError> {
         let pos = self.current.pos;
-        if self.too_deep(pos)? {
-            let end = self.skip_balanced(TokenKind::LBrace, TokenKind::RBrace);
-            return Ok(Value::Block(BlockVal {
-                pos,
-                end,
-                entries: Vec::new(),
-                trailing_comments: Vec::new(),
-            }));
+        if self.depth >= self.limits.max_nesting_depth {
+            return self.block_past_limit(pos);
         }
         self.advance(); // consume {
-        let (entries, trailing_comments, end) = self.parse_body(pos)?;
-        Ok(Value::Block(BlockVal {
-            pos,
-            end,
-            entries,
-            trailing_comments,
-        }))
+        let body = self.parse_body(pos);
+        block_val_read(pos, body)
+    }
+
+    /// A block value at `pos` past the limit: refused, or in tolerant mode
+    /// skipped whole.
+    fn block_past_limit(&mut self, pos: Position) -> Result<Value, PxfError> {
+        self.too_deep(pos)?;
+        let end = self.skip_balanced(TokenKind::LBrace, TokenKind::RBrace);
+        Ok(block_val(pos, (Vec::new(), Vec::new(), end)))
     }
 
     /// Reads a block's entries up to and through its `}`. Returns them, the
     /// comments after the last of them, before the `}`, and where the block
     /// ends: past its `}`, or where tolerant mode closed it.
-    fn parse_body(
-        &mut self,
-        open_pos: Position,
-    ) -> Result<(Vec<Entry>, Vec<Comment>, Position), PxfError> {
+    fn parse_body(&mut self, open_pos: Position) -> Result<Body, PxfError> {
         self.enter(open_pos)?;
         let mut entries = Vec::new();
         while !matches!(self.current.kind, TokenKind::RBrace | TokenKind::Eof)
             && !self.tolerant_row_close()
         {
-            // Tolerant mode gives no entry for what it skipped.
-            if matches!(self.current.kind, TokenKind::AtType) {
-                if let Some(entry) = self.parse_type_entry(entries.is_empty())? {
-                    entries.push(entry);
-                }
-                continue;
-            }
-            // Inside a '{ ... }' block both forms are accepted; the schema
-            // layer disambiguates submessage vs map<K,V>.
-            if let Some(entry) = self.parse_entry(true)? {
+            // Tolerant mode gives no entry for what it skipped. Inside a
+            // '{ ... }' block both forms are accepted; the schema layer
+            // disambiguates submessage vs map<K,V>.
+            let entry = if matches!(self.current.kind, TokenKind::AtType) {
+                self.parse_type_entry(entries.is_empty())
+            } else {
+                self.parse_entry(true)
+            };
+            if let Some(entry) = entry? {
                 entries.push(entry);
             }
         }
+        self.body_close(entries)
+    }
+
+    /// A block's `}`: its entries, the comments before the `}`, and where
+    /// the block ends.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn body_close(&mut self, entries: Vec<Entry>) -> Result<Body, PxfError> {
         // Taken before the '}' is consumed: advance would add the comments
         // after it, which belong to what follows the block.
         let trailing = self.flush_comments();
+        let end = self.block_end()?;
+        Ok((entries, trailing, end))
+    }
+
+    /// A block's `}`, and where the block ends.
+    #[cfg_attr(not(debug_assertions), inline(always))]
+    fn block_end(&mut self) -> Result<Position, PxfError> {
         if !matches!(self.current.kind, TokenKind::RBrace) {
             if !self.tolerant {
                 return Err(PxfError::new(
@@ -1286,11 +1451,11 @@ impl<'a> Parser<'a> {
             };
             self.errs.push(PxfError::new(self.current.pos, msg));
             self.leave();
-            return Ok((entries, trailing, self.current.pos));
+            return Ok(self.current.pos);
         }
         self.advance();
         self.leave();
-        Ok((entries, trailing, self.prev_end))
+        Ok(self.prev_end)
     }
 
     /// Reads `@type = "<type-url>"`, the type entry of a

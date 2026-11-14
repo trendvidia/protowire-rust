@@ -17,6 +17,11 @@
 /// depth 0 and every `{` or `[` is one descent, so a document exactly
 /// this deep decodes and one level more is rejected — before the
 /// recursive descent can overflow the native stack.
+///
+/// At this depth every reader and writer fits in 1 MiB of stack, half of
+/// what Rust gives a spawned thread, in a debug build too
+/// (`tests/stack_margin.rs`). A caller that raises the limit, or reads on
+/// a smaller stack, needs to size that stack to match.
 pub const MAX_NESTING_DEPTH: usize = 100;
 
 /// Caps the total input to one decode or parse call: peak memory is a
