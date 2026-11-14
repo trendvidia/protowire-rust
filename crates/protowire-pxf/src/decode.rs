@@ -551,8 +551,10 @@ impl<'a> Decoder<'a> {
                         );
                     }
                     saw_type = true;
+                    // `type-directive = %s"@type" 1*WSP identifier` (draft
+                    // -01 § The "@type" Directive), as `parse` reads it (#193).
                     self.advance(); // consume @type
-                    if !matches!(self.current.kind, TokenKind::Ident | TokenKind::String) {
+                    if !matches!(self.current.kind, TokenKind::Ident) {
                         return Err(self.err(format!(
                             "expected type name after @type, got {}",
                             self.token_err_msg()
