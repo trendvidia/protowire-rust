@@ -1,4 +1,4 @@
-# What protowire-go at f2baa11 does with each case of bounds-cases.tsv.
+# What protowire-go at ca79f5c does with each case of bounds-cases.tsv.
 # Produced by scripts/gen-sbe-oracle.sh. Do not edit.
 # Columns: the case's, then its result (see scripts/sbe-oracle/main.go).
 bind	bounds/composite-block-past.proto	ERR	sbe: composite bounds.composite_block_past.M.d: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
