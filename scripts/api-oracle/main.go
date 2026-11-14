@@ -53,10 +53,14 @@ import (
 
 type resolver struct{ files *protoregistry.Files }
 
+// FindMessageByURL fails with a fixed "not found". protowire-go appends the
+// resolver's error, and protoregistry's is "proto: not found", where
+// protobuf-go picks the space after "proto:" (U+0020 or U+00A0) from a hash
+// of the binary, so the oracle would change with the build (#192).
 func (r resolver) FindMessageByURL(url string) (protoreflect.MessageDescriptor, error) {
 	d, err := r.files.FindDescriptorByName(protoreflect.FullName(url[strings.LastIndex(url, "/")+1:]))
 	if err != nil {
-		return nil, err
+		return nil, errors.New("not found")
 	}
 	return d.(protoreflect.MessageDescriptor), nil
 }

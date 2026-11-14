@@ -78,6 +78,16 @@ fn unescape(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// protowire-go's text with the option it names spelled as this port spells
+/// it, as protowire-cpp and protowire-java each name their own: an Any read
+/// with no resolver.
+fn in_rust_terms(go: &str) -> String {
+    go.replace(
+        "no TypeResolver (UnmarshalOptions.TypeResolver)",
+        "no TypeResolver (UnmarshalOptions::type_resolver)",
+    )
+}
+
 fn unhex(s: &str) -> Vec<u8> {
     (0..s.len())
         .step_by(2)
@@ -103,21 +113,16 @@ const WAITS_ON_98: &[(&str, &str)] = &[("f32", "-0")];
 
 /// Documents whose row differs for a reason tracked in an issue of its own,
 /// by op and document. Each fails the day it matches, so its pin is removed.
+/// A pin to a closed issue is a difference decided there to stay.
 const PINNED: &[(&str, &str, u32)] = &[
     // A `@dataset` cell is kept as a parsed value, which cannot hold bytes
-    // that are not UTF-8; protowire-go's keeps them.
+    // that are not UTF-8; protowire-go's keeps them. Permanent, as decided on
+    // #191. The decision rests on protowire-go refusing a quoted string on a
+    // bytes field, which the `bytes_field = "\xff\xfe"` row holds it to.
     (
         "full",
         r#"@dataset test.v1.AllTypes (string_field) ("\xff")"#,
         191,
-    ),
-    // protowire-go quotes its resolver's error; this port's resolver gives
-    // none.
-    ("marshal-any", r#"payload { @type = "\xff" }"#, 192),
-    (
-        "marshal-any",
-        r#"payload { @type = "nope.v1.Missing" }"#,
-        192,
     ),
 ];
 
@@ -186,7 +191,7 @@ fn run() -> (Vec<String>, HashMap<String, usize>) {
                     Ok(text) => format!("OK\t{text}"),
                     Err(e) => format!("ERR\t{e}"),
                 };
-                let want = format!("{}\t{}", c[4], unescape(c[5]));
+                let want = format!("{}\t{}", c[4], in_rust_terms(&unescape(c[5])));
                 (got != want).then(|| format!("marshal\n   got: {got:?}\n  want: {want:?}"))
             }
             "format" => {
@@ -315,7 +320,7 @@ fn every_case_meets_the_reference() {
             "default"
         ]
         .map(count),
-        [95, 13, 5, 5, 6, 10, 37, 37, 6, 130, 3, 9]
+        [95, 13, 5, 6, 7, 10, 37, 37, 6, 130, 3, 9]
     );
     assert_eq!(count("pinned"), WAITS_ON_98.len() + PINNED.len());
     assert!(
