@@ -333,7 +333,7 @@ keyed-entry-name-test.binpb	keyedname.v1.P	full	kn { "\xff" = { } }	ERR	1:6: inv
 keyed-entry-name-test.binpb	keyedname.v1.P	full	kn { a { inner { "\xff" { } } } }	ERR	1:18: invalid UTF-8 in entry name for keyed field "inner"		
 keyed-entry-name-test.binpb	keyedname.v1.P	full	kn = [{ name = "\xff" }]	ERR	1:16: invalid UTF-8 in string field "name" (use b"…" for raw bytes)		
 keyed-entry-name-test.binpb	keyedname.v1.P	full	kn { a { name = "\xff" } }	ERR	1:17: key field "name" = "\\xff" conflicts with entry name "a" in keyed field "kn"		
-keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "\xff" }	ERR	1:19: cannot resolve Any type "\\xff": proto: not found
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "\xff" }	ERR	1:19: cannot resolve Any type "\\xff": not found
 keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "keyedname.v1.Element" name = "\xff" }	ERR	1:49: invalid UTF-8 in string field "name" (use b"…" for raw bytes)
 keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "keyedname.v1.Element" label = "ok" }	OK	payload {\n  @type = "keyedname.v1.Element"\n  label = "ok"\n}\n
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { fingerprint = "\xff" }	ERR	1:29: invalid UTF-8 in pxf.Secret fingerprint		
@@ -359,5 +359,7 @@ test.binpb	test.v1.AllTypes	full	@proto "\xff" string_field = "x"	OK	0a0178	stri
 test.binpb	test.v1.AllTypes	full	@meta { a = "\xff" } string_field = "x"	OK	0a0178	string_field	
 test.binpb	test.v1.AllTypes	full	@meta { a = "ok" } string_field = "x"	OK	0a0178	string_field	
 test.binpb	test.v1.AllTypes	full	@dataset test.v1.AllTypes (string_field) ("\xff")	OK			
-keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "nope.v1.Missing" }	ERR	1:19: cannot resolve Any type "nope.v1.Missing": proto: not found
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "nope.v1.Missing" }	ERR	1:19: cannot resolve Any type "nope.v1.Missing": not found
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal	payload { @type = "nope.v1.Missing" }	ERR	1:19: cannot resolve Any type "nope.v1.Missing": no TypeResolver (UnmarshalOptions.TypeResolver)
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "nope.v1.Bell\u0007" }	ERR	1:19: cannot resolve Any type "nope.v1.Bell\\a": not found
 test.binpb	test.v1.AllTypes	full	@type "test.v1.AllTypes" string_field = "x"	ERR	1:7: expected type name after @type, got string ("test.v1.AllTypes")		

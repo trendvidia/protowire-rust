@@ -353,4 +353,6 @@ test.binpb	test.v1.AllTypes	full	@meta { a = "\xff" } string_field = "x"
 test.binpb	test.v1.AllTypes	full	@meta { a = "ok" } string_field = "x"
 test.binpb	test.v1.AllTypes	full	@dataset test.v1.AllTypes (string_field) ("\xff")
 keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "nope.v1.Missing" }
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal	payload { @type = "nope.v1.Missing" }
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "nope.v1.Bell\u0007" }
 test.binpb	test.v1.AllTypes	full	@type "test.v1.AllTypes" string_field = "x"
