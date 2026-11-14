@@ -109,6 +109,18 @@ pub fn write_big_float(w: &mut Writer, field_number: u32, v: &BigFloat) {
     }
 }
 
+/// A big-number field that cannot be read, in protowire-go's words: the
+/// field's name, or its number for one the message does not have
+/// (`corrupt abs in BigInt`, `corrupt field 9 in BigInt`).
+fn corrupt(message: &str, num: u32, fields: &[&str]) -> Error {
+    Error::BigNumber(
+        match num.checked_sub(1).and_then(|i| fields.get(i as usize)) {
+            Some(field) => format!("corrupt {field} in {message}"),
+            None => format!("corrupt field {num} in {message}"),
+        },
+    )
+}
+
 impl Message for BigInt {
     fn encode_to(&self, w: &mut Writer) {
         let abs = trimmed(&self.abs);
@@ -123,12 +135,16 @@ impl Message for BigInt {
     }
 
     fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
-        match num {
-            1 => self.abs = r.bytes()?,
-            2 => self.negative = r.varint()? != 0,
-            _ => r.skip(wt)?,
-        }
-        Ok(())
+        let read = match num {
+            1 => r.bytes().map(|v| self.abs = v),
+            2 => r.varint().map(|v| self.negative = v != 0),
+            _ => r.skip(wt),
+        };
+        read.map_err(|_| corrupt("BigInt", num, &["abs", "negative"]))
+    }
+
+    fn corrupt_tag() -> Error {
+        Error::BigNumber("corrupt tag in BigInt".into())
     }
 
     /// A value, as protowire-go reads it: no leading zeros, and no `-0`.
@@ -177,14 +193,18 @@ impl Message for Decimal {
     }
 
     fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
-        match num {
-            1 => self.unscaled = r.bytes()?,
+        let read = match num {
+            1 => r.bytes().map(|v| self.unscaled = v),
             // Plain varint: the low 32 bits, read as signed.
-            2 => self.scale = r.varint()? as i32,
-            3 => self.negative = r.varint()? != 0,
-            _ => r.skip(wt)?,
-        }
-        Ok(())
+            2 => r.varint().map(|v| self.scale = v as i32),
+            3 => r.varint().map(|v| self.negative = v != 0),
+            _ => r.skip(wt),
+        };
+        read.map_err(|_| corrupt("Decimal", num, &["unscaled", "scale", "negative"]))
+    }
+
+    fn corrupt_tag() -> Error {
+        Error::BigNumber("corrupt tag in Decimal".into())
     }
 
     /// The scale is a digit count, and a consumer that materialises the
@@ -289,17 +309,27 @@ impl Message for BigFloat {
     }
 
     fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
-        match num {
-            1 => self.mantissa = r.bytes()?,
+        let read = match num {
+            1 => r.bytes().map(|v| self.mantissa = v),
             // Plain varint, as for Decimal.scale.
-            2 => self.exponent = r.varint()? as i32,
+            2 => r.varint().map(|v| self.exponent = v as i32),
             // uint32: the low 32 bits, as a protobuf reader keeps them
             // (protowire-go#230).
-            3 => self.prec = r.varint()? as u32,
-            4 => self.negative = r.varint()? != 0,
-            _ => r.skip(wt)?,
-        }
-        Ok(())
+            3 => r.varint().map(|v| self.prec = v as u32),
+            4 => r.varint().map(|v| self.negative = v != 0),
+            _ => r.skip(wt),
+        };
+        read.map_err(|_| {
+            corrupt(
+                "BigFloat",
+                num,
+                &["mantissa", "exponent", "prec", "negative"],
+            )
+        })
+    }
+
+    fn corrupt_tag() -> Error {
+        Error::BigNumber("corrupt tag in BigFloat".into())
     }
 
     /// The bounds, then the value as protowire-go reads it: a prec of 0 is a

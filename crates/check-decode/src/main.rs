@@ -50,7 +50,8 @@ use std::process::ExitCode;
 use prost_reflect::{DescriptorPool, DynamicMessage, MessageDescriptor};
 use protowire_pb::wire::{Reader, Result as PbResult, WireType, Writer};
 use protowire_pb::{
-    read_message, unmarshal_with as pb_unmarshal, write_map_entry, write_message, Message,
+    read_map_entry, read_message, unmarshal_with as pb_unmarshal, write_map_entry, write_message,
+    Message,
 };
 use protowire_pxf::{unmarshal as pxf_unmarshal, UnmarshalOptions};
 
@@ -89,69 +90,34 @@ impl Message for Tree {
         match num {
             1 => self.child = Some(Box::new(read_message(r)?)),
             2 => self.label = r.string()?,
+            // Each map entry is one descent (protowire#449).
             4 => {
-                let e: BranchEntry = read_message(r)?;
-                if !self.branches.contains_key(&e.key) {
-                    r.check_repeated(self.branches.len())?;
+                let (k, v) = read_map_entry(r, |r| r.string(), read_message)?;
+                if !self.branches.contains_key(&k) {
+                    r.check_map(self.branches.len())?;
                 }
-                self.branches.insert(e.key, e.value);
+                self.branches.insert(k, v);
             }
             5 => {
-                let e: TagEntry = read_message(r)?;
-                if !self.tags.contains_key(&e.key) {
-                    r.check_repeated(self.tags.len())?;
+                let (k, v) = read_map_entry(r, |r| r.string(), |r| r.string())?;
+                if !self.tags.contains_key(&k) {
+                    r.check_map(self.tags.len())?;
                 }
-                self.tags.insert(e.key, e.value);
+                self.tags.insert(k, v);
             }
             _ => r.skip(wt)?,
         }
         Ok(())
     }
-}
-
-/// An entry of `Tree.branches`. Map entries go through `read_message`, the
-/// way `AppError.metadata` does, so each is one descent (protowire#449).
-#[derive(Default, Debug)]
-struct BranchEntry {
-    key: String,
-    value: Tree,
-}
-impl Message for BranchEntry {
-    fn encode_to(&self, w: &mut Writer) {
-        w.tag(1, WireType::LengthDelimited);
-        w.string(&self.key);
-        write_message(w, 2, &self.value);
-    }
-    fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> PbResult<()> {
+    // The field names of protowire-go's scripts/check_decode, here and below.
+    fn field_name(num: u32) -> Option<&'static str> {
         match num {
-            1 => self.key = r.string()?,
-            2 => self.value = read_message(r)?,
-            _ => r.skip(wt)?,
+            1 => Some("Child"),
+            2 => Some("Label"),
+            4 => Some("Branches"),
+            5 => Some("Tags"),
+            _ => None,
         }
-        Ok(())
-    }
-}
-
-/// An entry of `Tree.tags`: a descent though no message sits under it.
-#[derive(Default, Debug)]
-struct TagEntry {
-    key: String,
-    value: String,
-}
-impl Message for TagEntry {
-    fn encode_to(&self, w: &mut Writer) {
-        w.tag(1, WireType::LengthDelimited);
-        w.string(&self.key);
-        w.tag(2, WireType::LengthDelimited);
-        w.string(&self.value);
-    }
-    fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> PbResult<()> {
-        match num {
-            1 => self.key = r.string()?,
-            2 => self.value = r.string()?,
-            _ => r.skip(wt)?,
-        }
-        Ok(())
     }
 }
 
@@ -173,6 +139,9 @@ impl Message for StringHolder {
         }
         Ok(())
     }
+    fn field_name(num: u32) -> Option<&'static str> {
+        (num == 1).then_some("Value")
+    }
 }
 
 #[derive(Default, Debug)]
@@ -192,6 +161,9 @@ impl Message for BytesHolder {
             _ => r.skip(wt)?,
         }
         Ok(())
+    }
+    fn field_name(num: u32) -> Option<&'static str> {
+        (num == 1).then_some("Value")
     }
 }
 
@@ -220,17 +192,20 @@ impl Message for ListHolder {
             (1, WireType::LengthDelimited) => {
                 let mut packed = r.packed()?;
                 while !packed.eof() {
-                    let v = packed.varint()? as i32;
+                    let v = packed.int32()?;
                     r.push_element(&mut self.values, v)?;
                 }
             }
             (1, _) => {
-                let v = r.varint()? as i32;
+                let v = r.int32()?;
                 r.push_element(&mut self.values, v)?;
             }
             _ => r.skip(wt)?,
         }
         Ok(())
+    }
+    fn field_name(num: u32) -> Option<&'static str> {
+        (num == 1).then_some("Values")
     }
 }
 
@@ -247,10 +222,13 @@ impl Message for BigIntHolder {
     }
     fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> PbResult<()> {
         match num {
-            1 => self.value = r.varint()? as i64,
+            1 => self.value = r.int64()?,
             _ => r.skip(wt)?,
         }
         Ok(())
+    }
+    fn field_name(num: u32) -> Option<&'static str> {
+        (num == 1).then_some("Value")
     }
 }
 
@@ -285,6 +263,11 @@ impl Message for BigNumHolder {
             _ => r.skip(wt)?,
         }
         Ok(())
+    }
+    fn field_name(num: u32) -> Option<&'static str> {
+        ["BigInt", "Decimal", "BigFloat"]
+            .get(num.checked_sub(1)? as usize)
+            .copied()
     }
 }
 

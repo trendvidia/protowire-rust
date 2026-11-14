@@ -160,6 +160,13 @@ numbers retired in v1.12.0. The umbrella crate hosts it because it needs
 both. Each case's descriptor set, imports compiled from `proto/`, is in the
 oracle; regenerate with `scripts/gen-retired-oracle.sh`.
 
+`crates/protowire/tests/pb_error_oracle.rs` holds pb decode errors to
+protowire-go's `pb.Unmarshal`, word for word (#144). The Go runner,
+`scripts/pb-error-oracle/main.go`, encodes a full value of each message and
+records protowire-go's verdict on every prefix and on hand-made damage; the
+Rust structs mirror its Go structs, field names included. Regenerate with
+`scripts/gen-pb-error-oracle.sh`.
+
 `tests/rewrite_oracle.rs` holds the `Rewriter` to protowire-go's.
 `testdata/conformance/rewrite-cases.txt` is protowire-go's rewriter tests as
 data, vendored from protowire-java (which replays the same rows), plus a few

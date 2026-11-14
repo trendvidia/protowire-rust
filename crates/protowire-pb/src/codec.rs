@@ -24,10 +24,10 @@
 //!   proto3 zero-skip applies to singular fields of a message, never to
 //!   the key or value of an entry; [`write_map_entry`] is the helper that
 //!   gets this right so impls stop hand-rolling the entry. Read an entry
-//!   with [`read_message`], whatever its value's type: the entry is one
+//!   with [`read_map_entry`], whatever its value's type: the entry is one
 //!   nesting descent (HARDENING.md § Recursion; protowire#449).
 
-use crate::wire::{Error, Limits, Reader, Result, WireType, Writer};
+use crate::wire::{Error, Kind, Limits, Reader, Result, WireType, Writer};
 
 /// A message with self-contained encode/decode. Mirrors the role of
 /// `prost::Message` for our trait-based codec.
@@ -38,6 +38,13 @@ pub trait Message: Sized + Default {
 
     /// Merge a single field (already-decoded tag) into `self`.
     /// Implementations should call `r.skip(wire_type)` for unknown numbers.
+    ///
+    /// Read each field with the [`Reader`] method of its type
+    /// ([`Reader::int32`], [`Reader::bool`], [`Reader::string`],
+    /// [`read_message`], [`read_map_entry`], …), so a field that cannot be
+    /// read is reported as protowire-go reports it: `corrupt int`,
+    /// `corrupt bool`, and so on. Name the fields with [`Message::field_name`]
+    /// to have the error say which one.
     fn merge_field(
         &mut self,
         field_number: u32,
@@ -54,6 +61,46 @@ pub trait Message: Sized + Default {
         let _ = limits;
         Ok(())
     }
+
+    /// The name of field `field_number`, for decode errors. An error inside
+    /// a named field reads `field <name>: …`, as protowire-go's struct codec
+    /// words it with the Go struct field's name (#144). A field without a
+    /// name that cannot be read reads `corrupt field <number>`, protowire-go's
+    /// text for a field it does not know. The default names none.
+    fn field_name(field_number: u32) -> Option<&'static str> {
+        let _ = field_number;
+        None
+    }
+
+    /// The error for a tag that cannot be read in this message. The big
+    /// numbers ([`crate::big`]) name themselves, as protowire-go does
+    /// (`corrupt tag in BigInt`).
+    #[doc(hidden)]
+    fn corrupt_tag() -> Error {
+        Error::Corrupt(Kind::Tag)
+    }
+}
+
+/// Reads fields into `msg` until `r` ends, putting each field's error in
+/// protowire-go's words: wrapped in its name, or `corrupt field N` for a
+/// field with none.
+fn merge_fields<M: Message>(msg: &mut M, r: &mut Reader<'_>) -> Result<()> {
+    while !r.eof() {
+        let (num, wt) = r.tag().map_err(|e| match e {
+            Error::Corrupt(Kind::Tag) => M::corrupt_tag(),
+            e => e,
+        })?;
+        msg.merge_field(num, wt, r)
+            .map_err(|e| match (M::field_name(num), e) {
+                (Some(name), e) => Error::Field {
+                    name,
+                    inner: Box::new(e),
+                },
+                (None, Error::Corrupt(_)) => Error::CorruptField(num),
+                (None, e) => e,
+            })?;
+    }
+    Ok(())
 }
 
 /// The options of one encode.
@@ -107,10 +154,7 @@ pub fn unmarshal_with<M: Message>(data: &[u8], limits: Limits) -> Result<M> {
     }
     let mut r = Reader::with_limits(data, limits);
     let mut msg = M::default();
-    while !r.eof() {
-        let (num, wt) = r.tag()?;
-        msg.merge_field(num, wt, &mut r)?;
-    }
+    merge_fields(&mut msg, &mut r)?;
     msg.finish(&limits)?;
     Ok(msg)
 }
@@ -278,41 +322,69 @@ pub fn write_map_entry<K: MapEntryField + ?Sized, V: MapEntryField + ?Sized>(
 
 /// Read a length-delimited nested message. The reader's tag is already consumed.
 ///
+/// The message is read over its own bytes, so a field cut off at its end
+/// is that field's error, as in protowire-go. A length past the buffer is
+/// `corrupt embedded message`.
+///
 /// Increments `r.depth` for the duration of the inner decode and rejects with
 /// [`Error::DepthExceeded`] before recursing past the reader's
 /// `max_nesting_depth` (the default is [`crate::wire::MAX_NESTING_DEPTH`]).
 /// Per HARDENING.md §Recursion, the counter must persist across
 /// `merge_field` → `read_message` re-entry; that's why it lives on the
 /// `Reader`, not as a thread-local or function argument.
-///
-/// The length-prefix bounds check uses `checked_add` so that a maximum-value
-/// varint length (2^64 - 1) cannot wrap `pos + len` past a naive comparison
-/// and trip a slice-indexing panic — HARDENING.md §API contract item 3.
 pub fn read_message<M: Message>(r: &mut Reader<'_>) -> Result<M> {
-    let len = r.varint()?;
-    let len = usize::try_from(len).map_err(|_| Error::NestedExceedsBuffer)?;
-    let end = r.pos.checked_add(len).ok_or(Error::NestedExceedsBuffer)?;
-    if end > r.data().len() {
-        return Err(Error::NestedExceedsBuffer);
-    }
+    let body = r.len_view(Kind::EmbeddedMessage)?;
+    let mut inner = descend(r, body)?;
+    let mut msg = M::default();
+    merge_fields(&mut msg, &mut inner)?;
+    msg.finish(&inner.limits)?;
+    Ok(msg)
+}
+
+/// A reader over `body` one level deeper than `r`, or the depth error when
+/// that is past the limit.
+fn descend<'a>(r: &Reader<'a>, body: &'a [u8]) -> Result<Reader<'a>> {
     if r.depth >= r.limits.max_nesting_depth {
         return Err(Error::DepthExceeded(r.limits.max_nesting_depth));
     }
-    r.depth += 1;
-    let result = (|| -> Result<M> {
-        let mut msg = M::default();
-        while r.pos < end {
-            let (num, wt) = r.tag()?;
-            msg.merge_field(num, wt, r)?;
+    let mut inner = r.over(body);
+    inner.depth += 1;
+    Ok(inner)
+}
+
+/// Read one entry of a `map<K, V>` field, the entry's tag already consumed:
+/// a length-delimited `MapEntry { key = 1; value = 2 }`, with `key` and
+/// `value` reading each field. A field the entry lacks keeps its default,
+/// and a field other than those two is skipped. The entry is one descent,
+/// whatever its value's type (HARDENING.md § Recursion; protowire#449).
+/// Check the map's length with [`Reader::check_map`] before inserting.
+///
+/// Errors are protowire-go's: `corrupt map entry`, `corrupt tag in map
+/// entry`, `map key: …`, `map value: …` and `corrupt unknown field N in map
+/// entry`.
+pub fn read_map_entry<K: Default, V: Default>(
+    r: &mut Reader<'_>,
+    mut key: impl FnMut(&mut Reader<'_>) -> Result<K>,
+    mut value: impl FnMut(&mut Reader<'_>) -> Result<V>,
+) -> Result<(K, V)> {
+    let body = r.len_view(Kind::MapEntry)?;
+    let mut entry = descend(r, body)?;
+    let (mut k, mut v) = (K::default(), V::default());
+    while !entry.eof() {
+        let (num, wt) = entry.tag().map_err(|e| match e {
+            Error::Corrupt(Kind::Tag) => Error::Corrupt(Kind::TagInMapEntry),
+            Error::CorruptField(num) => Error::CorruptMapEntryField(num),
+            e => e,
+        })?;
+        match num {
+            1 => k = key(&mut entry).map_err(|e| Error::MapKey(Box::new(e)))?,
+            2 => v = value(&mut entry).map_err(|e| Error::MapValue(Box::new(e)))?,
+            _ => entry
+                .skip(wt)
+                .map_err(|_| Error::CorruptMapEntryField(num))?,
         }
-        if r.pos != end {
-            return Err(Error::Overrun { pos: r.pos, end });
-        }
-        msg.finish(&r.limits)?;
-        Ok(msg)
-    })();
-    r.depth -= 1;
-    result
+    }
+    Ok((k, v))
 }
 
 #[cfg(test)]
