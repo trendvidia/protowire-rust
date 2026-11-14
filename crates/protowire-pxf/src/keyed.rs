@@ -787,7 +787,7 @@ fn canon_anonymous_keyed(
 /// The value of the single explicit string assignment to `key_name` among
 /// `entries`. `None` when there is no such assignment, more than one, a
 /// quoted-key spelling, or a non-string value.
-fn explicit_key_of(entries: &[Entry], key_name: &str) -> Option<String> {
+pub(crate) fn explicit_key_of(entries: &[Entry], key_name: &str) -> Option<String> {
     let mut found: Option<String> = None;
     for e in entries {
         let Entry::Assignment(a) = e else { continue };
