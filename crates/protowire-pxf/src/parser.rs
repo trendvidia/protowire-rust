@@ -29,6 +29,23 @@ use crate::token::{Position, Token, TokenKind};
 pub use crate::limits::MAX_NESTING_DEPTH;
 
 /// Parse a PXF document into its AST under the default [`Limits`].
+///
+/// # Strings that are not UTF-8
+///
+/// A quoted string whose escapes give bytes that are not UTF-8, such as
+/// `"\xff"`, is refused here: `string contains invalid UTF-8`. protowire-go's
+/// `Parse` keeps the bytes and leaves its decoder to refuse them. The AST
+/// holds a Rust `String`, which cannot carry them. This difference is
+/// permanent, as decided on protowire-rust#191.
+///
+/// A decode sees no difference. Wherever a decoder reads a quoted string,
+/// as a string field, a map key, a keyed entry name or an Any type URL, the
+/// string must be text; a `bytes` field takes a `b"…"` literal instead.
+/// There [`crate::unmarshal`] refuses such a string with protowire-go's
+/// error, and where the decoder drops a value unread, as an unknown field
+/// under `discard_unknown`, both accept it. Only a document that is parsed
+/// or formatted without being decoded, or a `@dataset` row kept as parsed
+/// values, is refused here where protowire-go accepts it.
 pub fn parse(input: &str) -> Result<Document, PxfError> {
     parse_with_limits(input, Limits::default())
 }
@@ -62,6 +79,9 @@ pub fn parse_with_limits(input: &str, limits: Limits) -> Result<Document, PxfErr
 /// - An unterminated triple-quoted string, block comment or bytes literal
 ///   ends at the end of input (a bytes literal at its newline).
 /// - A malformed directive is skipped to the next directive or entry.
+///
+/// A quoted string that is not UTF-8 is an error and a placeholder here,
+/// where protowire-go keeps the string. See [`parse`] for why.
 ///
 /// A document [`parse`] reads gives the same tree and no error. The tree
 /// may hold placeholders and is meant for tooling (completion, hover,
