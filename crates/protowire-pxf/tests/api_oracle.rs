@@ -113,9 +113,12 @@ const WAITS_ON_98: &[(&str, &str)] = &[("f32", "-0")];
 
 /// Documents whose row differs for a reason tracked in an issue of its own,
 /// by op and document. Each fails the day it matches, so its pin is removed.
+/// A pin to a closed issue is a difference decided there to stay.
 const PINNED: &[(&str, &str, u32)] = &[
     // A `@dataset` cell is kept as a parsed value, which cannot hold bytes
-    // that are not UTF-8; protowire-go's keeps them.
+    // that are not UTF-8; protowire-go's keeps them. Permanent, as decided on
+    // #191. The decision rests on protowire-go refusing a quoted string on a
+    // bytes field, which the `bytes_field = "\xff\xfe"` row holds it to.
     (
         "full",
         r#"@dataset test.v1.AllTypes (string_field) ("\xff")"#,
