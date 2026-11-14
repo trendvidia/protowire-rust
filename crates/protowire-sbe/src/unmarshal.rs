@@ -69,8 +69,8 @@ fn unmarshal_message(
     // valid (a newer schema with trailing fields).
     if block_length < tmpl.block_length {
         return Err(SbeError::new(format!(
-            "sbe: wire block_length {} is below template block_length {}",
-            block_length, tmpl.block_length
+            "sbe: wire blockLength {} < schema blockLength {} for template {}",
+            block_length, tmpl.block_length, tmpl.template_id
         )));
     }
     let end = HEADER_SIZE + block_length;
@@ -160,8 +160,10 @@ fn read_field(
                 while n > 0 && slice[n - 1] == 0 {
                     n -= 1;
                 }
-                Value::String(String::from_utf8(slice[..n].to_vec()).map_err(|e| {
-                    SbeError::new(format!("sbe: invalid utf-8 in {}: {}", fd.name(), e))
+                // HARDENING.md § UTF-8: a string field is valid UTF-8,
+                // whatever the source encoding.
+                Value::String(String::from_utf8(slice[..n].to_vec()).map_err(|_| {
+                    SbeError::new(format!("sbe: invalid UTF-8 in string field {}", fd.name()))
                 })?)
             }
         }

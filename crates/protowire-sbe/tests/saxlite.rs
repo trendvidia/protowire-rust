@@ -130,7 +130,7 @@ fn preserves_whitespace_text_events_between_tags() {
 fn rejects_unterminated_comment() {
     let err = try_collect("<!-- oops").expect_err("unterminated comment");
     assert!(
-        err.message.contains("unterminated comment"),
+        err.message == "XML syntax error on line 1: unexpected EOF",
         "{}",
         err.message
     );
@@ -139,14 +139,17 @@ fn rejects_unterminated_comment() {
 #[test]
 fn rejects_attribute_without_equals_sign() {
     let err = try_collect(r#"<x foo "1"/>"#).expect_err("expected '='");
-    assert!(err.message.contains("expected '='"), "{}", err.message);
+    assert_eq!(
+        err.message,
+        "XML syntax error on line 1: attribute name without = in element"
+    );
 }
 
 #[test]
 fn rejects_attribute_without_quoted_value() {
     let err = try_collect("<x foo=1/>").expect_err("quoted value");
     assert!(
-        err.message.contains("expected quoted value"),
+        err.message == "XML syntax error on line 1: unquoted or missing attribute value in element",
         "{}",
         err.message
     );

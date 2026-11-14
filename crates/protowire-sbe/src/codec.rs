@@ -237,18 +237,20 @@ impl Codec {
 /// Validate a repeating group's header against HARDENING.md § SBE before
 /// any entry is allocated or read, returning `(block_length, count,
 /// total)` with `total` the bytes the group occupies including its
-/// header:
+/// header. The checks, in protowire-go's order and with its texts:
 ///
 /// 1. the header fits (`pos + GROUP_HEADER_SIZE <= data.len()`);
-/// 2. a wire `block_length` of zero with a non-zero count is rejected
+/// 2. the wire `block_length` is not below the template's, whatever the
+///    count (step 2 — some field's `offset + size` would exceed the entry);
+/// 3. `count × block_length` fits the bytes after the header (step 3),
+///    compared as `count > remaining / block_length`, which cannot
+///    overflow;
+/// 4. a wire `block_length` of zero with a non-zero count is rejected
 ///    (step 4 — otherwise `count` entries would be allocated for zero
-///    further bytes);
-/// 3. a wire `block_length` below the template's is rejected (step 2 —
-///    some field's `offset + size` would exceed the entry);
-/// 4. `count` is at most `max_repeated_count` (step 3, and § Mandatory
-///    limits `MaxRepeatedCount`), checked before allocating for it;
-/// 5. `pos + GROUP_HEADER_SIZE + count × block_length <= data.len()`, in
-///    64-bit arithmetic before any narrowing (step 3).
+///    further bytes). Step 2 already refuses it unless the template's
+///    entry is empty too, which protowire-go then accepts;
+/// 5. `count` is at most `max_repeated_count` (§ Mandatory limits
+///    `MaxRepeatedCount`), checked before allocating for it.
 pub(crate) fn check_group_header(
     data: &[u8],
     pos: usize,
@@ -256,47 +258,36 @@ pub(crate) fn check_group_header(
     template_block_length: usize,
     max_repeated_count: usize,
 ) -> Result<(usize, usize, usize), SbeError> {
-    let header_end = pos
-        .checked_add(GROUP_HEADER_SIZE)
-        .ok_or_else(|| SbeError::new("sbe: group header offset overflows"))?;
-    if data.len() < header_end {
+    if data.len().saturating_sub(pos) < GROUP_HEADER_SIZE {
         return Err(SbeError::new("sbe: data too short for group header"));
     }
     let block_length = u16::from_le_bytes([data[pos], data[pos + 1]]) as usize;
     let count = u16::from_le_bytes([data[pos + 2], data[pos + 3]]) as usize;
-    if block_length == 0 && count > 0 {
+    if block_length < template_block_length {
         return Err(SbeError::new(format!(
-            "sbe: group {} declares {} entries of block_length 0",
-            group_name, count
+            "sbe: group {} wire blockLength {} < schema blockLength {}",
+            group_name, block_length, template_block_length
         )));
     }
-    if count > 0 && block_length < template_block_length {
+    let remaining = data.len() - pos - GROUP_HEADER_SIZE;
+    if block_length > 0 && count > remaining / block_length {
         return Err(SbeError::new(format!(
-            "sbe: group {} wire block_length {} is below template block_length {}",
-            group_name, block_length, template_block_length
+            "sbe: group {} declares {} entries × {} bytes, {} bytes remaining",
+            group_name, count, block_length, remaining
+        )));
+    }
+    if block_length == 0 && count > 0 {
+        return Err(SbeError::new(format!(
+            "sbe: group {} declares {} entries of blockLength 0",
+            group_name, count
         )));
     }
     if count > max_repeated_count {
         return Err(SbeError::new(format!(
-            "sbe: group {} declares {} entries, exceeds MaxRepeatedCount={}",
+            "sbe: group {} declares {} entries, MaxRepeatedCount={}",
             group_name, count, max_repeated_count
         )));
     }
-    let entries = (count as u64)
-        .checked_mul(block_length as u64)
-        .ok_or_else(|| SbeError::new("sbe: group size overflows"))?;
-    let total = (GROUP_HEADER_SIZE as u64)
-        .checked_add(entries)
-        .ok_or_else(|| SbeError::new("sbe: group size overflows"))?;
-    let end = (pos as u64)
-        .checked_add(total)
-        .ok_or_else(|| SbeError::new("sbe: group size overflows"))?;
-    if end > data.len() as u64 {
-        return Err(SbeError::new(format!(
-            "sbe: data too short for group entries: need {}, have {}",
-            end,
-            data.len()
-        )));
-    }
-    Ok((block_length, count, total as usize))
+    let total = GROUP_HEADER_SIZE + count * block_length;
+    Ok((block_length, count, total))
 }

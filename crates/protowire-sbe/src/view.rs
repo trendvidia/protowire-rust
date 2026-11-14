@@ -44,8 +44,8 @@ impl Codec {
         let tmpl = self.template_by_id(schema_id, template_id)?;
         if block_length < tmpl.block_length {
             return Err(SbeError::new(format!(
-                "sbe: wire block_length {} is below template block_length {}",
-                block_length, tmpl.block_length
+                "sbe: wire blockLength {} < schema blockLength {} for template {}",
+                block_length, tmpl.block_length, template_id
             )));
         }
         let end = HEADER_SIZE + block_length;
@@ -80,23 +80,21 @@ impl<'a> View<'a> {
         let ft = self.field(name)?;
         let off = ft.offset;
         let block = self.block();
-        Ok(match ft.encoding.expect("scalar field has encoding") {
-            SbeEncoding::Int8 => (block[off] as i8) as i64,
-            SbeEncoding::Int16 => i16::from_le_bytes([block[off], block[off + 1]]) as i64,
-            SbeEncoding::Int32 => {
+        Ok(match ft.encoding {
+            Some(SbeEncoding::Int8) => (block[off] as i8) as i64,
+            Some(SbeEncoding::Int16) => i16::from_le_bytes([block[off], block[off + 1]]) as i64,
+            Some(SbeEncoding::Int32) => {
                 i32::from_le_bytes([block[off], block[off + 1], block[off + 2], block[off + 3]])
                     as i64
             }
-            SbeEncoding::Int64 => {
+            Some(SbeEncoding::Int64) => {
                 let mut b = [0u8; 8];
                 b.copy_from_slice(&block[off..off + 8]);
                 i64::from_le_bytes(b)
             }
-            other => {
+            _ => {
                 return Err(SbeError::new(format!(
-                    "sbe: field {} is not a signed integer (encoding {})",
-                    name,
-                    other.name()
+                    "sbe: field {name} is not a signed integer"
                 )));
             }
         })
@@ -106,23 +104,21 @@ impl<'a> View<'a> {
         let ft = self.field(name)?;
         let off = ft.offset;
         let block = self.block();
-        Ok(match ft.encoding.expect("scalar field has encoding") {
-            SbeEncoding::Uint8 => block[off] as u64,
-            SbeEncoding::Uint16 => u16::from_le_bytes([block[off], block[off + 1]]) as u64,
-            SbeEncoding::Uint32 => {
+        Ok(match ft.encoding {
+            Some(SbeEncoding::Uint8) => block[off] as u64,
+            Some(SbeEncoding::Uint16) => u16::from_le_bytes([block[off], block[off + 1]]) as u64,
+            Some(SbeEncoding::Uint32) => {
                 u32::from_le_bytes([block[off], block[off + 1], block[off + 2], block[off + 3]])
                     as u64
             }
-            SbeEncoding::Uint64 => {
+            Some(SbeEncoding::Uint64) => {
                 let mut b = [0u8; 8];
                 b.copy_from_slice(&block[off..off + 8]);
                 u64::from_le_bytes(b)
             }
-            other => {
+            _ => {
                 return Err(SbeError::new(format!(
-                    "sbe: field {} is not an unsigned integer (encoding {})",
-                    name,
-                    other.name()
+                    "sbe: field {name} is not an unsigned integer"
                 )));
             }
         })
@@ -132,22 +128,18 @@ impl<'a> View<'a> {
         let ft = self.field(name)?;
         let off = ft.offset;
         let block = self.block();
-        Ok(match ft.encoding.expect("scalar field has encoding") {
-            SbeEncoding::Float => {
+        Ok(match ft.encoding {
+            Some(SbeEncoding::Float) => {
                 f32::from_le_bytes([block[off], block[off + 1], block[off + 2], block[off + 3]])
                     as f64
             }
-            SbeEncoding::Double => {
+            Some(SbeEncoding::Double) => {
                 let mut b = [0u8; 8];
                 b.copy_from_slice(&block[off..off + 8]);
                 f64::from_le_bytes(b)
             }
-            other => {
-                return Err(SbeError::new(format!(
-                    "sbe: field {} is not a float (encoding {})",
-                    name,
-                    other.name()
-                )));
+            _ => {
+                return Err(SbeError::new(format!("sbe: field {name} is not a float")));
             }
         })
     }
@@ -161,14 +153,12 @@ impl<'a> View<'a> {
         let ft = self.field(name)?;
         let off = ft.offset;
         let block = self.block();
-        Ok(match ft.encoding.expect("scalar field has encoding") {
-            SbeEncoding::Uint8 => block[off] as i32,
-            SbeEncoding::Uint16 => u16::from_le_bytes([block[off], block[off + 1]]) as i32,
-            other => {
+        Ok(match ft.encoding {
+            Some(SbeEncoding::Uint8) => block[off] as i32,
+            Some(SbeEncoding::Uint16) => u16::from_le_bytes([block[off], block[off + 1]]) as i32,
+            _ => {
                 return Err(SbeError::new(format!(
-                    "sbe: field {} has unsupported enum encoding ({})",
-                    name,
-                    other.name()
+                    "sbe: field {name} has unsupported enum encoding"
                 )));
             }
         })
@@ -183,7 +173,7 @@ impl<'a> View<'a> {
             n -= 1;
         }
         String::from_utf8(slice[..n].to_vec())
-            .map_err(|e| SbeError::new(format!("sbe: invalid utf-8 in {}: {}", name, e)))
+            .map_err(|_| SbeError::new(format!("sbe: invalid UTF-8 in string field {name}")))
     }
 
     /// Borrowed slice over the field's bytes (no copy).
