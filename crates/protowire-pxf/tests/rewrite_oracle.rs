@@ -230,6 +230,16 @@ fn apply(r: &mut Rewriter, o: &[&str]) -> Result<Result<(), String>, Skip> {
                 Found::Value(_) => panic!("append to a value"),
             }
         }
+        "keyedby" => {
+            r.keyed_by_field(o[1], o[2]);
+            Ok(())
+        }
+        "setkeyed" => r.set_keyed(o[1], o[2], o[3], &value(o[4])?),
+        "rmkeyed" => r.remove_keyed(o[1], o[2], o[3]),
+        "rmel" => r.remove_keyed_element(o[1], o[2]),
+        "insel" => r.insert_keyed_element(o[1], o[2], o[3], &entries(o[4])),
+        "rename" => r.rename_keyed_element(o[1], o[2], o[3]),
+        "move" => r.move_keyed_element(o[1], o[2], o[3]),
         other => panic!("unknown operation {other:?}"),
     };
     Ok(res.map_err(|e| e.to_string()))
@@ -258,15 +268,9 @@ fn run(doc: &str, ops: &[Vec<&str>]) -> Vec<Option<String>> {
     res
 }
 
-/// The keyed editors' operations, which a later change ports.
-const KEYED: &[&str] = &[
-    "keyedby", "setkeyed", "rmkeyed", "rmel", "insel", "rename", "move",
-];
-
 #[test]
 fn every_case_meets_the_reference() {
     let mut ran = 0;
-    let mut keyed = 0;
     let mut skipped = std::collections::BTreeMap::new();
     let mut failures = Vec::new();
     for line in ORACLE.lines().filter(|l| !l.starts_with('#')) {
@@ -280,10 +284,6 @@ fn every_case_meets_the_reference() {
                 .map(|o| o.split('\x1f').collect())
                 .collect()
         };
-        if ops.iter().any(|o| KEYED.contains(&o[0])) {
-            keyed += 1;
-            continue;
-        }
         // An operation this port cannot express stages nothing in
         // protowire-go (it is refused), so the others' results and the
         // document stand without it.
@@ -316,8 +316,8 @@ fn every_case_meets_the_reference() {
     // A positive marker that every row was read and run, so a change to the
     // oracle or to the skip rules shows here.
     assert_eq!(
-        (ran, keyed, skipped.into_iter().collect::<Vec<_>>()),
-        (89, 322, vec![(Skip::Nil, 5), (Skip::Negative, 1)]),
-        "cases run, keyed cases left for the keyed editors, operations skipped"
+        (ran, skipped.into_iter().collect::<Vec<_>>()),
+        (412, vec![(Skip::Nil, 5), (Skip::Negative, 1)]),
+        "cases run, operations skipped"
     );
 }

@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 TrendVidia, LLC.
 //! Format-preserving edits to a PXF document, ported line for line from
-//! protowire-go's `encoding/pxf/rewrite.go` (#131).
+//! protowire-go's `encoding/pxf/rewrite.go` (#131). The keyed-collection
+//! editors, from `rewrite_keyed.go`, are in the `keyed` submodule.
 
+mod keyed;
+
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::ast::{Block, Document, Entry, Value};
@@ -40,6 +44,16 @@ use crate::token::Position;
 /// by later calls, and two `set`s that both create the same missing block
 /// create it twice (stage one `set` with a [`crate::BlockVal`] value instead).
 ///
+/// A keyed collection (draft -01 §3.13) has its own editors, which take the
+/// element's key as one atom, since an entry name may hold dots and need not
+/// be identifier-shaped: [`Rewriter::set_keyed`], [`Rewriter::remove_keyed`],
+/// [`Rewriter::insert_keyed_element`], [`Rewriter::remove_keyed_element`],
+/// [`Rewriter::rename_keyed_element`] and [`Rewriter::move_keyed_element`].
+/// They search every binding of a field bound more than once (§3.13
+/// concatenation). They cover the anonymous list form (`f = [ { k = "x" } ]`)
+/// once its key field is named with [`Rewriter::keyed_by_field`]; the
+/// keyed-block form needs no declaration.
+///
 /// [`Rewriter::document`] gives the parsed document as an `Arc`, so a
 /// caller can hold one of its nodes while passing it to
 /// [`Rewriter::replace_value`] or [`Rewriter::append_entry`].
@@ -52,6 +66,11 @@ pub struct Rewriter {
     /// appends into one block accumulate, where `set`s of one path replace
     /// each other.
     insert_seq: usize,
+    /// The `(pxf.key)` field declared for the keyed collection at a dotted
+    /// path by [`Rewriter::keyed_by_field`]. It lets the keyed editors
+    /// address a collection in the anonymous list form, where the key is
+    /// the key field's value rather than an entry name.
+    key_fields: HashMap<String, String>,
 }
 
 /// Replaces `src[start..end]` with `text`. `start == end` is a pure
@@ -81,6 +100,7 @@ impl Rewriter {
             doc: Arc::new(doc),
             edits: Vec::new(),
             insert_seq: 0,
+            key_fields: HashMap::new(),
         })
     }
 
@@ -450,10 +470,7 @@ impl Rewriter {
         // the end of the document at the top level.
         let (close_off, scope_start) = match t.container {
             None => (self.src.len() as isize, None),
-            Some(Entry::Block(c)) => (c.end.offset as isize - 1, Some(c.pos.offset)),
-            Some(Entry::Assignment(c)) => (block_val_end(&c.value) - 1, Some(c.pos.offset)),
-            Some(Entry::MapEntry(c)) => (block_val_end(&c.value) - 1, Some(c.pos.offset)),
-            Some(Entry::TypeEntry(c)) => (-1, Some(c.pos.offset)),
+            Some(c) => (c.close_off, Some(c.pos)),
         };
         if scope_start.is_some()
             && (close_off < 0
@@ -522,7 +539,7 @@ impl Rewriter {
     /// the container's first entry when it starts its line, else the
     /// container's own indent plus one level (none at the top level).
     fn sibling_indent(&self, t: &Target<'_>) -> String {
-        self.child_indent(t.container_entries, t.container.map(|c| c.pos().offset))
+        self.child_indent(t.container_entries, t.container.map(|c| c.pos))
     }
 
     /// The indent for a new child of a block: that of the first child that
@@ -632,6 +649,33 @@ pub(crate) fn span_path(start: usize, end: usize) -> String {
     format!("\x00span:{start}:{end}")
 }
 
+/// The scope a path resolved into, as the two offsets an insertion needs:
+/// where the entry owning it starts, and where its `}` is (negative when it
+/// has none). protowire-go keeps the entry, and builds a synthetic one over
+/// an anonymous list element's block value; this port keeps the offsets.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Container {
+    pub(crate) pos: usize,
+    pub(crate) close_off: isize,
+}
+
+impl Container {
+    /// The scope of a block, or of an assignment or map entry holding a
+    /// block value.
+    pub(crate) fn of(e: &Entry) -> Self {
+        let close = match e {
+            Entry::Block(b) => b.end.offset as isize - 1,
+            Entry::Assignment(a) => block_val_end(&a.value) - 1,
+            Entry::MapEntry(m) => block_val_end(&m.value) - 1,
+            Entry::TypeEntry(_) => -1,
+        };
+        Self {
+            pos: e.pos().offset,
+            close_off: close,
+        }
+    }
+}
+
 /// What a dotted path resolves to: an entry, or the deepest existing scope
 /// and the segments missing below it.
 pub(crate) struct Target<'d> {
@@ -639,7 +683,7 @@ pub(crate) struct Target<'d> {
     pub(crate) entry: Option<&'d Entry>,
     /// The innermost resolved ancestor: a [`Block`], or an assignment or
     /// map entry holding a [`crate::BlockVal`]. `None` is the top level.
-    pub(crate) container: Option<&'d Entry>,
+    pub(crate) container: Option<Container>,
     /// The entries the last lookup ran in.
     pub(crate) container_entries: &'d [Entry],
     /// The segments that did not resolve; empty when `entry` is set.
@@ -651,7 +695,7 @@ pub(crate) struct Target<'d> {
 /// owns the scope (`None` at the top level).
 pub(crate) fn resolve_in<'d>(
     mut entries: &'d [Entry],
-    mut container: Option<&'d Entry>,
+    mut container: Option<Container>,
     path: &str,
 ) -> Result<Target<'d>, PxfError> {
     let segs: Vec<&str> = path.split('.').collect();
@@ -691,7 +735,7 @@ pub(crate) fn resolve_in<'d>(
                 }
             },
         };
-        container = Some(e);
+        container = Some(Container::of(e));
     }
     unreachable!("a path has at least one segment")
 }

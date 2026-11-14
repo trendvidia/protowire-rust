@@ -73,3 +73,17 @@ fn an_invalid_rewrite_keeps_the_parse_error_as_its_source() {
         Some("1:5: expected value, got } (\"}\")")
     );
 }
+
+/// protowire-go's `TestKeyedByFieldChains`: `keyed_by_field` returns the
+/// Rewriter, so declarations chain, and each one takes effect.
+#[test]
+fn keyed_by_field_chains() {
+    let mut r = Rewriter::new("a = [ { id = \"x\" } ]\nb = [ { id = \"y\" } ]\n").unwrap();
+    r.keyed_by_field("a", "id").keyed_by_field("b", "id");
+    r.rename_keyed_element("a", "x", "x2").unwrap();
+    r.rename_keyed_element("b", "y", "y2").unwrap();
+    assert_eq!(
+        String::from_utf8(r.bytes().unwrap()).unwrap(),
+        "a = [ { id = \"x2\" } ]\nb = [ { id = \"y2\" } ]\n"
+    );
+}

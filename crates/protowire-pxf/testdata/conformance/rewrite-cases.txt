@@ -409,8 +409,9 @@ replace "value:a#0" "{ b { c { x = } } }"
 doc "a = 1\n"
 set "a" "[{ m: { b { x = } } }]"
 replace "value:a#0" "[{ m: { b { x = } } }]"
-# Added by protowire-rust (not in protowire-java's copy): the overlap check at its one-byte
-# boundary, and the reparse safety net, which no protowire-go test reaches.
+# Added by protowire-rust (not in protowire-java's copy), for what no protowire-go test reaches:
+# the overlap check at its one-byte boundary, the reparse safety net, and SetKeyed creating an
+# element in the last of two bindings.
 === overlap-by-one-byte
 doc "a = 123\n"
 setspan "4" "6" "9"
@@ -422,3 +423,6 @@ setspan "5" "6" "8"
 === reparse-refuses
 doc "a = 1\n"
 setspan "4" "5" "}"
+=== setkeyed-creates-in-last-binding
+doc "children {\n  a {\n    x = 1\n  }\n}\nchildren {\n  b {\n    x = 2\n  }\n}\n"
+setkeyed "children" "c" "x" "3"
