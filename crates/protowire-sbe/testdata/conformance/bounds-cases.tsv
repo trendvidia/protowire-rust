@@ -3,10 +3,18 @@
 #   bind:      nothing; the codec is built from the file alone
 #   marshal:   message, assignments path=value;... (grp+.e appends an entry, e*N appends N)
 #   wire:      message, primitive bits in hex, written little-endian over an empty message's block
+#   xml:       nothing; proto_to_xml of the file
+bind	bounds/bytes-no-length.proto
 bind	bounds/composite-block-past.proto
 bind	bounds/composite-in-group-past.proto
+bind	bounds/composite-list.proto
+bind	bounds/composite-map.proto
 bind	bounds/composite-past.proto
+bind	bounds/empty-group.proto
+bind	bounds/group-map.proto
+bind	bounds/group-oneof.proto
 bind	bounds/group-past.proto
+bind	bounds/group-repeated.proto
 bind	bounds/kb-bool-float.proto
 bind	bounds/kb-bytes-int32.proto
 bind	bounds/kb-double-char.proto
@@ -16,6 +24,7 @@ bind	bounds/kb-float-uint8.proto
 bind	bounds/kb-int32-float.proto
 bind	bounds/kb-string-uint8.proto
 bind	bounds/len-past.proto
+bind	bounds/map-root.proto
 bind	bounds/mx-bool-double.proto
 bind	bounds/mx-bool-float.proto
 bind	bounds/mx-double-int16.proto
@@ -49,13 +58,17 @@ bind	bounds/mx-uint32-float.proto
 bind	bounds/mx-uint64-double.proto
 bind	bounds/mx-uint64-float.proto
 bind	bounds/nested-composite-past.proto
+bind	bounds/no-schema-id.proto
 bind	bounds/ok.proto
 bind	bounds/oneof-composite.proto
 bind	bounds/oneof-root.proto
+bind	bounds/proto2-group.proto
+bind	bounds/repeated-scalar.proto
 bind	bounds/root-one-past.proto
 bind	bounds/root-past.proto
 bind	bounds/schema-max.proto
 bind	bounds/schema-past.proto
+bind	bounds/string-no-length.proto
 bind	bounds/strlen-past.proto
 bind	bounds/template-past.proto
 bind	bounds/version-max.proto
@@ -211,3 +224,8 @@ marshal	bounds/ok.proto	bounds.ok.GCount	e*65535
 marshal	bounds/ok.proto	bounds.ok.GCount	e*65536
 marshal	bounds/ok.proto	bounds.ok.Opt	x=5;comp.c=7
 marshal	bounds/ok.proto	bounds.ok.Opt	
+marshal	bounds/empty-group.proto	bounds.empty_group.M	e*3
+marshal	bounds/empty-group.proto	bounds.empty_group.M	
+marshal	bounds/empty-group.proto	bounds.empty_group.E	
+marshal	bounds/group-oneof.proto	bounds.group_oneof.M	e+.a=5;e+.b=6
+xml	bounds/no-schema-id.proto

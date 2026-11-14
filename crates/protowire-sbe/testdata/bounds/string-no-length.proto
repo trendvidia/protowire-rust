@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// What the SBE codec refuses to bind, or reads (#144); bounds-oracle.tsv
+// holds what protowire-go does with it.
+syntax = "proto3";
+package bounds.string_no_length;
+
+import "sbe/annotations.proto";
+
+option (sbe.schema_id) = 1;
+option (sbe.version) = 0;
+
+message M {
+  option (sbe.template_id) = 1;
+  string s = 1;
+}

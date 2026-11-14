@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 TrendVidia, LLC.
+// What the SBE codec refuses to bind, or reads (#144); bounds-oracle.tsv
+// holds what protowire-go does with it.
+syntax = "proto3";
+package bounds.empty_group;
+
+import "sbe/annotations.proto";
+
+option (sbe.schema_id) = 1;
+option (sbe.version) = 0;
+
+// A group whose entry has no fields: its block length is 0, so HARDENING.md
+// § SBE step 4 refuses a group of entries of it, and protowire-go reads them.
+message E {}
+
+message M {
+  option (sbe.template_id) = 1;
+  repeated E e = 1;
+}
