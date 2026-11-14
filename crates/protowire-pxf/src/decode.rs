@@ -214,14 +214,15 @@ fn unmarshal_inner(
         if let Some(null_mask_fd) = null_mask_fd {
             // A FieldMask path names fields, not list elements or map
             // entries, so a null inside one stays in Presence only
-            // (protowire-go#170). `[` is in no field name.
-            let mut paths: Vec<String> = presence
+            // (protowire-go#170). `[` is in no field name. The paths keep
+            // document order, as protowire-go appends each as it binds the
+            // null (#174).
+            let paths: Vec<String> = presence
                 .null_paths()
                 .filter(|p| !p.contains('['))
                 .map(|s| s.to_string())
                 .collect();
             if !paths.is_empty() {
-                paths.sort();
                 let inner_desc = match null_mask_fd.kind() {
                     Kind::Message(m) => m,
                     _ => unreachable!("null mask field is FieldMask"),

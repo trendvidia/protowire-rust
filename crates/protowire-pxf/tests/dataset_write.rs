@@ -119,21 +119,6 @@ fn same_value(a: &Value, b: &Value) -> bool {
     }
 }
 
-/// `m` with the paths of its root `_null` mask sorted.
-fn mask_sorted(m: &DynamicMessage) -> DynamicMessage {
-    let mut m = m.clone();
-    if let Some(Value::Message(mut mask)) = m.get_field_by_name("_null").map(|v| v.into_owned()) {
-        if let Some(Value::List(mut paths)) =
-            mask.get_field_by_name("paths").map(|v| v.into_owned())
-        {
-            paths.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
-            mask.set_field_by_name("paths", Value::List(paths));
-            m.set_field_by_name("_null", Value::Message(mask));
-        }
-    }
-    m
-}
-
 /// The one row of `table`, read through `scan_one` and through `parse` +
 /// `bind_row`, which must agree.
 fn read_back(md: &MessageDescriptor, table: &str) -> Result<DynamicMessage, String> {
@@ -214,8 +199,6 @@ fn cases() -> Vec<Case<'static>> {
 fn every_case_meets_the_reference() {
     let pools = pools();
     let (mut rows, mut refused, mut read) = (0, 0, 0);
-    // Rows read back with the `_null` paths in another order: #174.
-    let mut mask_order = Vec::new();
     for case in cases() {
         let pool = &pools[case.set];
         let md = pool.get_message_by_name(case.message).expect(case.message);
@@ -276,12 +259,8 @@ fn every_case_meets_the_reference() {
                     DynamicMessage::decode(md.clone(), unhex(hex).as_slice()).expect("read back")
                 };
                 let got = got.unwrap_or_else(|e| panic!("read back: {what}: {e}\n{table}"));
-                if !same_message(&got, &expected)
-                    && same_message(&mask_sorted(&got), &mask_sorted(&expected))
-                {
-                    mask_order.push(what.clone());
-                    continue;
-                }
+                // The `_null` mask included: its paths are in document
+                // order, as protowire-go's (#174).
                 assert!(
                     same_message(&got, &expected),
                     "read back: {what}\n{table}\n got: {got}\nwant: {expected}"
@@ -293,15 +272,7 @@ fn every_case_meets_the_reference() {
     }
     // A positive marker: the rows ran, refused ones and read-back ones
     // among them.
-    assert_eq!((rows, refused, read), (304, 15, 288));
-    // Pinned divergence, #174: this port's reader sorts the `_null` paths,
-    // where protowire-go keeps document order. The writer's row is
-    // protowire-go's; only the mask the reader builds from it differs. This
-    // fails once the reader keeps document order: drop the allowance then.
-    assert_eq!(
-        mask_order,
-        ["dswnull.v1.N (w,dw,rw,n,o) full w = null dw = null rw = 4 o = null ;; unmarshal w = \"set anyway\" n = 3 ;; mask n ;; mask rw"]
-    );
+    assert_eq!((rows, refused, read), (304, 15, 289));
 }
 
 /// The random rows of protowire-go's round trip, as protowire-go wrote them.
