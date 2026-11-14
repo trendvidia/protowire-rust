@@ -160,6 +160,12 @@ numbers retired in v1.12.0. The umbrella crate hosts it because it needs
 both. Each case's descriptor set, imports compiled from `proto/`, is in the
 oracle; regenerate with `scripts/gen-retired-oracle.sh`.
 
+`tests/rewrite_oracle.rs` holds the `Rewriter` to protowire-go's.
+`testdata/conformance/rewrite-cases.txt` is protowire-go's rewriter tests as
+data, vendored from protowire-java (which replays the same rows), plus a few
+cases of this port's own at its end. `scripts/rewrite-oracle/main.go` is
+protowire-java's runner; regenerate with `scripts/gen-rewrite-oracle.sh`.
+
 ## TS pitfalls that may transfer
 
 - The shared `test.proto` is intentionally NOT modified for port-specific
