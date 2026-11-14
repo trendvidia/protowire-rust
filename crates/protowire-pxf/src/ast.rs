@@ -197,12 +197,26 @@ impl Entry {
             Entry::TypeEntry(t) => t.pos,
         }
     }
+
+    /// Where the entry ends: just past its value, or past the `}` of a
+    /// [`Block`].
+    pub fn end(&self) -> Position {
+        match self {
+            Entry::Assignment(a) => a.end,
+            Entry::MapEntry(m) => m.end,
+            Entry::Block(b) => b.end,
+            Entry::TypeEntry(t) => t.end,
+        }
+    }
 }
 
 /// `key = value` — a field assignment in a message context.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Assignment {
     pub pos: Position,
+    /// Where the node ends, just past the value's last byte. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     /// The key as the document spelled it, without quotes.
     pub key: String,
     /// Whether the key was written as a string literal. A quoted entry name
@@ -220,6 +234,9 @@ pub struct Assignment {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapEntry {
     pub pos: Position,
+    /// Where the node ends, just past the value's last byte. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     /// The key as the document spelled it, without quotes.
     pub key: String,
     /// Whether the document wrote the key quoted. The quotes on a key are
@@ -238,6 +255,9 @@ pub struct MapEntry {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Block {
     pub pos: Position,
+    /// Where the node ends, just past the closing `}`. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     /// The name as the document spelled it, without quotes.
     pub name: String,
     /// Whether the name was written as a string literal (an entry name
@@ -289,11 +309,49 @@ impl Value {
             Value::Bad(v) => v.pos,
         }
     }
+
+    /// Where the value ends, just past its last byte.
+    pub fn end(&self) -> Position {
+        match self {
+            Value::String(v) => v.end,
+            Value::Int(v) => v.end,
+            Value::Float(v) => v.end,
+            Value::Bool(v) => v.end,
+            Value::Bytes(v) => v.end,
+            Value::Null(v) => v.end,
+            Value::Ident(v) => v.end,
+            Value::Timestamp(v) => v.end,
+            Value::Duration(v) => v.end,
+            Value::List(v) => v.end,
+            Value::Block(v) => v.end,
+            Value::Bad(v) => v.end,
+        }
+    }
+}
+
+/// The source byte span `[start, end)` of an entry from [`crate::parse`] or
+/// [`crate::parse_tolerant`], as protowire-go's `EntrySpan`: `start` is the
+/// entry's key, `end` is just past its value (past the `}` of a [`Block`]).
+/// Leading comments and the whitespace around the entry are not in it. An
+/// entry built by hand ends at [`Position::default()`].
+pub fn entry_span(e: &Entry) -> (Position, Position) {
+    (e.pos(), e.end())
+}
+
+/// The source byte span `[start, end)` of a value from [`crate::parse`] or
+/// [`crate::parse_tolerant`], as protowire-go's `ValueSpan`. A [`BadVal`]
+/// spans no bytes (`start == end`). A value built by hand ends at
+/// [`Position::default()`].
+pub fn value_span(v: &Value) -> (Position, Position) {
+    (v.pos(), v.end())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StringVal {
     pub pos: Position,
+    /// Where the node ends, just past the closing quote. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     pub value: String,
 }
 
@@ -302,6 +360,9 @@ pub struct StringVal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IntVal {
     pub pos: Position,
+    /// Where the node ends, just past the literal's last byte, its suffix included. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     pub raw: String,
     /// The digits of a precision suffix, as written (`53` for `0.1p53`), or
     /// empty. Only a `pxf.BigFloat` admits one.
@@ -312,6 +373,9 @@ pub struct IntVal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FloatVal {
     pub pos: Position,
+    /// Where the node ends, just past the literal's last byte, its suffix included. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     pub raw: String,
     /// The digits of a precision suffix, as written (`53` for `0.1p53`), or
     /// empty. Only a `pxf.BigFloat` admits one.
@@ -321,6 +385,9 @@ pub struct FloatVal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoolVal {
     pub pos: Position,
+    /// Where the node ends, just past the literal's last byte. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     pub value: bool,
 }
 
@@ -328,12 +395,18 @@ pub struct BoolVal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BytesVal {
     pub pos: Position,
+    /// Where the node ends, just past the closing quote. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     pub value: Vec<u8>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NullVal {
     pub pos: Position,
+    /// Where the node ends, just past the literal's last byte. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
 }
 
 /// A placeholder for a value that was required but missing or malformed,
@@ -347,12 +420,18 @@ pub struct NullVal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BadVal {
     pub pos: Position,
+    /// Where the node ends, the same as `pos`: a placeholder spans no source bytes. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
 }
 
 /// Unquoted identifier used as a value — typically an enum name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IdentVal {
     pub pos: Position,
+    /// Where the node ends, just past the identifier's last byte. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     pub name: String,
 }
 
@@ -360,6 +439,9 @@ pub struct IdentVal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TimestampVal {
     pub pos: Position,
+    /// Where the node ends, just past the literal's last byte. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     pub raw: String,
 }
 
@@ -367,6 +449,9 @@ pub struct TimestampVal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DurationVal {
     pub pos: Position,
+    /// Where the node ends, just past the literal's last byte. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     pub raw: String,
 }
 
@@ -374,6 +459,9 @@ pub struct DurationVal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListVal {
     pub pos: Position,
+    /// Where the node ends, just past the closing `]`. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     pub elements: Vec<Value>,
 }
 
@@ -381,6 +469,9 @@ pub struct ListVal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockVal {
     pub pos: Position,
+    /// Where the node ends, just past the closing `}`. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     pub entries: Vec<Entry>,
     /// Comments after the block's last entry, before its `}`
     /// (protowire-go#279).
@@ -394,6 +485,9 @@ pub struct BlockVal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypeEntry {
     pub pos: Position,
+    /// Where the node ends, just past the URL string. [`Position::default()`] on a node
+    /// built by hand, as protowire-go's zero `End`.
+    pub end: Position,
     pub url: String,
     pub leading_comments: Vec<Comment>,
     /// Inline comment after the URL on the same source line, if any.

@@ -11,13 +11,17 @@
 //! path of its parser and lexer, every prefix of three documents, and every
 //! vendored `.pxf` fixture. A tree is compared as text, in the dump format
 //! of `scripts/tolerant-oracle/main.go`, which `dump` below writes the same
-//! way.
+//! way. Every entry and value is dumped with its span (#131), so the oracle
+//! also holds `entry_span` and `value_span` to protowire-go's.
 
 use std::fmt::Write as _;
 use std::path::Path;
 
 use protowire_pxf::ast::ProtoShape;
-use protowire_pxf::{parse, parse_tolerant, Comment, DatasetRow, Document, Entry, PxfError, Value};
+use protowire_pxf::{
+    entry_span, parse, parse_tolerant, value_span, Comment, DatasetRow, Document, Entry, PxfError,
+    Value,
+};
 
 const ORACLE: &str = include_str!("../testdata/conformance/tolerant-oracle.tsv");
 
@@ -59,6 +63,11 @@ fn qs(s: &str) -> String {
     q(s.as_bytes())
 }
 
+/// An entry's or a value's span, its start and its end (#131).
+fn span((start, end): (protowire_pxf::Position, protowire_pxf::Position)) -> String {
+    format!("{}-{}", pos(start), pos(end))
+}
+
 fn pos(p: protowire_pxf::Position) -> String {
     format!("{}:{}:{}", p.line, p.column, p.offset)
 }
@@ -83,37 +92,39 @@ fn value(v: Option<&Value>) -> String {
     let Some(v) = v else {
         return "_".to_string();
     };
+    let s = span(value_span(v));
     match v {
-        Value::String(v) => format!("s({},{})", pos(v.pos), qs(&v.value)),
-        Value::Int(v) => format!("i({},{},{})", pos(v.pos), qs(&v.raw), qs(&v.prec)),
-        Value::Float(v) => format!("f({},{},{})", pos(v.pos), qs(&v.raw), qs(&v.prec)),
-        Value::Bool(v) => format!("bo({},{})", pos(v.pos), bit(v.value)),
-        Value::Bytes(v) => format!("by({},{})", pos(v.pos), q(&v.value)),
-        Value::Null(v) => format!("n({})", pos(v.pos)),
-        Value::Ident(v) => format!("id({},{})", pos(v.pos), qs(&v.name)),
-        Value::Timestamp(v) => format!("ts({},{})", pos(v.pos), qs(&v.raw)),
-        Value::Duration(v) => format!("du({},{})", pos(v.pos), qs(&v.raw)),
+        Value::String(v) => format!("s({},{})", s, qs(&v.value)),
+        Value::Int(v) => format!("i({},{},{})", s, qs(&v.raw), qs(&v.prec)),
+        Value::Float(v) => format!("f({},{},{})", s, qs(&v.raw), qs(&v.prec)),
+        Value::Bool(v) => format!("bo({},{})", s, bit(v.value)),
+        Value::Bytes(v) => format!("by({},{})", s, q(&v.value)),
+        Value::Null(_) => format!("n({})", s),
+        Value::Ident(v) => format!("id({},{})", s, qs(&v.name)),
+        Value::Timestamp(v) => format!("ts({},{})", s, qs(&v.raw)),
+        Value::Duration(v) => format!("du({},{})", s, qs(&v.raw)),
         Value::List(v) => {
             let els: Vec<String> = v.elements.iter().map(|e| value(Some(e))).collect();
-            format!("l({},[{}])", pos(v.pos), els.join(","))
+            format!("l({},[{}])", s, els.join(","))
         }
         Value::Block(v) => format!(
             "bl({},{},{})",
-            pos(v.pos),
+            s,
             entries(&v.entries),
             comments(&v.trailing_comments)
         ),
-        Value::Bad(v) => format!("bad({})", pos(v.pos)),
+        Value::Bad(_) => format!("bad({})", s),
     }
 }
 
 fn entries(es: &[Entry]) -> String {
     let parts: Vec<String> = es
         .iter()
-        .map(|e| match e {
+        .map(|e| (span(entry_span(e)), e))
+        .map(|(s, e)| match e {
             Entry::Assignment(a) => format!(
                 "a({},{},{},{},{},{})",
-                pos(a.pos),
+                s,
                 qs(&a.key),
                 bit(a.key_quoted),
                 value(Some(&a.value)),
@@ -122,7 +133,7 @@ fn entries(es: &[Entry]) -> String {
             ),
             Entry::MapEntry(m) => format!(
                 "m({},{},{},{},{},{})",
-                pos(m.pos),
+                s,
                 qs(&m.key),
                 bit(m.quoted),
                 value(Some(&m.value)),
@@ -131,7 +142,7 @@ fn entries(es: &[Entry]) -> String {
             ),
             Entry::Block(b) => format!(
                 "b({},{},{},{},{},{})",
-                pos(b.pos),
+                s,
                 qs(&b.name),
                 bit(b.name_quoted),
                 entries(&b.entries),
@@ -140,7 +151,7 @@ fn entries(es: &[Entry]) -> String {
             ),
             Entry::TypeEntry(t) => format!(
                 "ty({},{},{},{})",
-                pos(t.pos),
+                s,
                 qs(&t.url),
                 comments(&t.leading_comments),
                 qs(&t.trailing_comment)
