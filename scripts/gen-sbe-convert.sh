@@ -47,4 +47,4 @@ for f in "$dir"/wide-*.xml; do
 done
 "$conv" proto2xml "$testdata/sbe-test.binpb" sbe-test.proto > "$dir/sbe-test.export.xml"
 "$conv" proto2xml "$testdata/char-encoding.binpb" char-encoding.proto > "$dir/char-encoding.export.xml"
-echo "wrote $dir from protowire-go at $(git -C "$go_repo" rev-parse --short "$ref")"
+echo "wrote $dir from protowire-go at $(git -C "$go_repo" rev-parse --short "$ref^{commit}")"

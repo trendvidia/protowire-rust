@@ -1,4 +1,4 @@
-# What protowire-go at f2baa11's pxf API does with each case of keyed-cases.tsv.
+# What protowire-go at ca79f5c's pxf API does with each case of keyed-cases.tsv.
 # Produced by scripts/gen-keyed-oracle.sh. Do not edit.
 # Columns: descriptor set, message, op, document, then three verdicts.
 # doc: Unmarshal, UnmarshalFull, KeyedDiagnostics of Parse (NONE, or PARSE and its error).
