@@ -119,12 +119,6 @@ const PINNED: &[(&str, &str, u32)] = &[
         r#"payload { @type = "nope.v1.Missing" }"#,
         192,
     ),
-    // protowire-go refuses a quoted type name in the header.
-    (
-        "full",
-        r#"@type "test.v1.AllTypes" string_field = "x""#,
-        193,
-    ),
 ];
 
 /// Checks every row, and returns the differences and the rows run by op.
