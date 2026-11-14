@@ -1,4 +1,4 @@
-# What protowire-go at d562768 does with each document of message-forms-cases.tsv.
+# What protowire-go at ca79f5c does with each document of message-forms-cases.tsv.
 # Produced by scripts/gen-presence-oracle.sh. Do not edit.
 # Columns: descriptor set, message, document, then for UnmarshalFull and for
 # Unmarshal in turn: OK, pb hex, sorted null paths; or ERR, the error, empty.
