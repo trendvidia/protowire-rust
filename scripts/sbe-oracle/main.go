@@ -14,6 +14,8 @@
 //	         ERR: and the error); or ERR and the error
 //	wire:    OK, what Unmarshal reads, and the bytes Marshal writes for it
 //	         again; or ERR and the error
+//	xml:     OK and the bytes ProtoToXML writes for the file; or ERR and
+//	         the error
 //
 // Bytes are hex, or past 64 bytes their first 16 in hex, their length and
 // their FNV-1a 64 hash. A rendering lists every field in number order.
@@ -220,6 +222,13 @@ func main() {
 		codec, err := sbe.NewCodec(fd)
 		var result string
 		switch cols[0] {
+		case "xml":
+			out, err := sbe.ProtoToXML(fd)
+			if err != nil {
+				result = "ERR\t" + errText(err)
+			} else {
+				result = "OK\t" + bytesText(out)
+			}
 		case "bind":
 			if err != nil {
 				result = "ERR\t" + errText(err)

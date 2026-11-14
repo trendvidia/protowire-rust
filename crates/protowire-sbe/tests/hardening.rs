@@ -113,7 +113,7 @@ fn max_repeated_count_before_any_entry_is_allocated() {
     let err = decode(&four, &data).unwrap_err();
     assert_eq!(
         err.msg,
-        "sbe: group fills declares 5 entries, exceeds MaxRepeatedCount=4"
+        "sbe: group fills declares 5 entries, MaxRepeatedCount=4"
     );
     let v = four.view(&data).expect("the root view is fine");
     let err = v.group("fills").unwrap_err();
@@ -144,13 +144,12 @@ fn wire_block_shorter_than_template_is_rejected() {
     let err = decode(&codec, &data).unwrap_err();
     assert_eq!(
         err.msg,
-        "sbe: wire block_length 2 is below template block_length 42"
+        "sbe: wire blockLength 2 < schema blockLength 42 for template 1"
     );
     let err = codec.view(&data).unwrap_err();
-    assert!(
-        err.msg.contains("below template block_length"),
-        "view: {}",
-        err.msg
+    assert_eq!(
+        err.msg, "sbe: wire blockLength 2 < schema blockLength 42 for template 1",
+        "view"
     );
 
     // A group's entry block below the template's 20.
@@ -161,13 +160,15 @@ fn wire_block_shorter_than_template_is_rejected() {
     let err = decode(&codec, &data).unwrap_err();
     assert_eq!(
         err.msg,
-        "sbe: group fills wire block_length 4 is below template block_length 20"
+        "sbe: group fills wire blockLength 4 < schema blockLength 20"
     );
 }
 
 /// § SBE step 4: a zero entry block length with a non-zero count invites
-/// allocating `count` entries for zero further bytes; rejected outright,
-/// on decode and on the view's group walk.
+/// allocating `count` entries for zero further bytes; rejected on decode and
+/// on the view's group walk. Below an entry template of 20 bytes, step 2
+/// refuses it first, with protowire-go's text; `bounds_oracle.rs` holds the
+/// case where the entry template is empty too.
 #[test]
 fn zero_block_length_with_entries_is_rejected() {
     let codec = codec_with(Limits::default());
@@ -180,10 +181,13 @@ fn zero_block_length_with_entries_is_rejected() {
     let err = decode(&codec, &data).unwrap_err();
     assert_eq!(
         err.msg,
-        "sbe: group fills declares 10000 entries of block_length 0"
+        "sbe: group fills wire blockLength 0 < schema blockLength 20"
     );
     let err = codec.view(&data).unwrap().group("fills").unwrap_err();
-    assert!(err.msg.contains("block_length 0"), "view walk: {}", err.msg);
+    assert_eq!(
+        err.msg, "sbe: group fills wire blockLength 0 < schema blockLength 20",
+        "view walk"
+    );
 }
 
 /// § SBE step 3: `count × block_length` is checked against the buffer in
@@ -196,16 +200,12 @@ fn group_count_overflow_is_a_clean_error() {
     let mut data = five_fills();
     let g = 8 + 42;
     data[g..g + 4].copy_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+    let want = format!(
+        "sbe: group fills declares 65535 entries × 65535 bytes, {} bytes remaining",
+        data.len() - g - 4
+    );
     let err = decode(&codec, &data).unwrap_err();
-    assert!(
-        err.msg.contains("data too short for group entries"),
-        "{}",
-        err.msg
-    );
+    assert_eq!(err.msg, want);
     let err = codec.view(&data).unwrap().group("fills").unwrap_err();
-    assert!(
-        err.msg.contains("data too short for group entries"),
-        "view walk: {}",
-        err.msg
-    );
+    assert_eq!(err.msg, want, "view walk");
 }

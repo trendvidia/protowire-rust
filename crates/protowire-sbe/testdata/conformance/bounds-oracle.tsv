@@ -1,10 +1,17 @@
 # What protowire-go at ca79f5c does with each case of bounds-cases.tsv.
 # Produced by scripts/gen-sbe-oracle.sh. Do not edit.
 # Columns: the case's, then its result (see scripts/sbe-oracle/main.go).
+bind	bounds/bytes-no-length.proto	ERR	sbe: field bounds.bytes_no_length.M.b: bytes field requires (sbe.length) annotation
 bind	bounds/composite-block-past.proto	ERR	sbe: composite bounds.composite_block_past.M.d: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
 bind	bounds/composite-in-group-past.proto	ERR	sbe: composite in group bounds.composite_in_group_past.E.d: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
+bind	bounds/composite-list.proto	ERR	sbe: composite bounds.composite_list.M.c: composite bounds.composite_list.C contains list/map field v
+bind	bounds/composite-map.proto	ERR	sbe: composite bounds.composite_map.M.c: composite bounds.composite_map.C contains list/map field m
 bind	bounds/composite-past.proto	ERR	sbe: composite bounds.composite_past.M.c: composite field bounds.composite_past.C.b: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
+bind	bounds/empty-group.proto	OK
+bind	bounds/group-map.proto	ERR	sbe: map field in group bounds.group_map.E not supported
+bind	bounds/group-oneof.proto	OK
 bind	bounds/group-past.proto	ERR	sbe: group field bounds.group_past.E.b: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
+bind	bounds/group-repeated.proto	ERR	sbe: nested repeated field in group bounds.group_repeated.E not supported
 bind	bounds/kb-bool-float.proto	ERR	sbe: field bounds.kb_bool_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is bool
 bind	bounds/kb-bytes-int32.proto	ERR	sbe: field bounds.kb_bytes_int32.M.v: (sbe.encoding) = "int32" on a bytes field; it narrows a numeric field, and a bytes field takes (sbe.length)
 bind	bounds/kb-double-char.proto	ERR	sbe: field bounds.kb_double_char.M.v: unknown encoding "char"
@@ -14,6 +21,7 @@ bind	bounds/kb-float-uint8.proto	ERR	sbe: field bounds.kb_float_uint8.M.v: (sbe.
 bind	bounds/kb-int32-float.proto	ERR	sbe: field bounds.kb_int32_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is int32
 bind	bounds/kb-string-uint8.proto	ERR	sbe: field bounds.kb_string_uint8.M.v: (sbe.encoding) = "uint8" on a string field; it narrows a numeric field, and a string field takes (sbe.length)
 bind	bounds/len-past.proto	ERR	sbe: field bounds.len_past.M.b: (sbe.length) = 65537 is past 65535, the largest blockLength SBE can state
+bind	bounds/map-root.proto	ERR	sbe: map field bounds.map_root.M.m not supported
 bind	bounds/mx-bool-double.proto	ERR	sbe: field bounds.mx_bool_double.M.v: (sbe.encoding) = "double" is a floating-point primitive and the field is bool
 bind	bounds/mx-bool-float.proto	ERR	sbe: field bounds.mx_bool_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is bool
 bind	bounds/mx-double-int16.proto	ERR	sbe: field bounds.mx_double_int16.M.v: (sbe.encoding) = "int16" is an integer primitive and the field is double
@@ -47,13 +55,17 @@ bind	bounds/mx-uint32-float.proto	ERR	sbe: field bounds.mx_uint32_float.M.v: (sb
 bind	bounds/mx-uint64-double.proto	ERR	sbe: field bounds.mx_uint64_double.M.v: (sbe.encoding) = "double" is a floating-point primitive and the field is uint64
 bind	bounds/mx-uint64-float.proto	ERR	sbe: field bounds.mx_uint64_float.M.v: (sbe.encoding) = "float" is a floating-point primitive and the field is uint64
 bind	bounds/nested-composite-past.proto	ERR	sbe: composite bounds.nested_composite_past.M.c: composite field bounds.nested_composite_past.C.y: ends at byte 80000 of its block, past 65535, the largest blockLength SBE can state
+bind	bounds/no-schema-id.proto	ERR	sbe: file bounds/no-schema-id.proto missing (sbe.schema_id) option
 bind	bounds/ok.proto	OK
 bind	bounds/oneof-composite.proto	ERR	sbe: composite bounds.oneof_composite.M.c: composite bounds.oneof_composite.C contains oneof field a
 bind	bounds/oneof-root.proto	ERR	sbe: oneof field bounds.oneof_root.M.a not supported
+bind	bounds/proto2-group.proto	ERR	sbe: field bounds.proto2_group.M.g: unsupported proto kind group
+bind	bounds/repeated-scalar.proto	ERR	sbe: repeated scalar field bounds.repeated_scalar.M.v not supported; wrap in a message
 bind	bounds/root-one-past.proto	ERR	sbe: field bounds.root_one_past.M.t: ends at byte 65536 of its block, past 65535, the largest blockLength SBE can state
 bind	bounds/root-past.proto	ERR	sbe: field bounds.root_past.M.c: ends at byte 90000 of its block, past 65535, the largest blockLength SBE can state
 bind	bounds/schema-max.proto	OK
 bind	bounds/schema-past.proto	ERR	sbe: file bounds/schema-past.proto: (sbe.schema_id) = 65536 is past 65535, the largest schemaId SBE can state
+bind	bounds/string-no-length.proto	ERR	sbe: field bounds.string_no_length.M.s: string field requires (sbe.length) annotation
 bind	bounds/strlen-past.proto	ERR	sbe: field bounds.strlen_past.M.s: (sbe.length) = 70000 is past 65535, the largest blockLength SBE can state
 bind	bounds/template-past.proto	ERR	sbe: message bounds.template_past.M: (sbe.template_id) = 65537 is past 65535, the largest templateId SBE can state
 bind	bounds/version-max.proto	OK
@@ -209,3 +221,8 @@ marshal	bounds/ok.proto	bounds.ok.GCount	e*65535	OK	00005e00010000000400ffff0000
 marshal	bounds/ok.proto	bounds.ok.GCount	e*65536	ERR	sbe: field bounds.ok.GCount.e has 65536 entries, past 65535, the largest numInGroup SBE can state
 marshal	bounds/ok.proto	bounds.ok.Opt	x=5;comp.c=7	OK	08005f00010000000500000007000000	{x=5 comp={c=7}}
 marshal	bounds/ok.proto	bounds.ok.Opt		OK	08005f00010000000000000000000000	{x=0 comp={c=0}}
+marshal	bounds/empty-group.proto	bounds.empty_group.M	e*3	OK	000001000100000000000300	{e=[3]{},{},{}}
+marshal	bounds/empty-group.proto	bounds.empty_group.M		OK	000001000100000000000000	{e=[0]}
+marshal	bounds/empty-group.proto	bounds.empty_group.E		ERR	sbe: no template registered for bounds.empty_group.E
+marshal	bounds/group-oneof.proto	bounds.group_oneof.M	e+.a=5;e+.b=6	OK	00000100010000000800020005000000000000000000000006000000	{e=[2]{a=0 b=0},{a=0 b=6}}
+xml	bounds/no-schema-id.proto	ERR	sbe: file bounds/no-schema-id.proto missing (sbe.schema_id)

@@ -13,11 +13,17 @@
 //! encoding that crosses integers and floating point when the codec is built,
 //! and every header field or block past 65535; each beside the value at the
 //! bound, which must round-trip.
+//!
+//! It also holds the shapes the codec refuses to bind, with protowire-go's
+//! texts (#144): maps, repeated scalars, nested repeats, a composite holding
+//! a list, a string without `(sbe.length)`, a file without
+//! `(sbe.schema_id)`, a proto2 group; a marshal of a message with no
+//! template; and `proto_to_xml` of a file without a schema id.
 
 use prost_reflect::{
     DescriptorPool, DynamicMessage, FieldDescriptor, Kind, MessageDescriptor, ReflectMessage, Value,
 };
-use protowire_sbe::{marshal, unmarshal, Codec};
+use protowire_sbe::{marshal, proto_to_xml, unmarshal, Codec};
 
 const FDS: &[u8] = include_bytes!("../testdata/bounds.binpb");
 const ORACLE: &str = include_str!("../testdata/conformance/bounds-oracle.tsv");
@@ -150,7 +156,7 @@ fn run(pool: &DescriptorPool, case: &[&str]) -> String {
     let file = pool
         .get_file_by_name(case[1])
         .unwrap_or_else(|| panic!("missing {}", case[1]));
-    let codec = Codec::from_files(&[file]);
+    let codec = Codec::from_files(std::slice::from_ref(&file));
     match case[0] {
         "bind" => match codec {
             Ok(_) => "OK".to_string(),
@@ -190,39 +196,69 @@ fn run(pool: &DescriptorPool, case: &[&str]) -> String {
             };
             format!("OK\t{}\t{written}", render(&back))
         }
+        "xml" => match proto_to_xml(&file) {
+            Ok(out) => format!("OK\t{}", bytes_text(out.as_bytes())),
+            Err(e) => format!("ERR\t{e}"),
+        },
         op => panic!("unknown op {op}"),
     }
 }
+
+/// Cases whose result differs, by their columns. Each fails the day it
+/// matches, so its pin is removed.
+///
+/// A group of three entries of an empty message: their block length is 0.
+/// Draft -01 § SBE says a decoder MUST reject a wire blockLength of 0 with a
+/// count above 0, and this port does. protowire-go reads the three entries
+/// (trendvidia/protowire-go#291).
+const PINNED: &[&str] = &["marshal\tbounds/empty-group.proto\tbounds.empty_group.M\te*3"];
 
 #[test]
 fn bounds_as_protowire_go() {
     let pool = DescriptorPool::decode(FDS).expect("decode bounds.binpb");
     let mut checked = 0;
+    let mut pinned = 0;
     let mut diffs = Vec::new();
     for line in ORACLE.lines() {
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
         let cols: Vec<&str> = line.split('\t').collect();
-        let n = if cols[0] == "bind" { 2 } else { 4 };
+        let n = if matches!(cols[0], "bind" | "xml") {
+            2
+        } else {
+            4
+        };
         let want = cols[n..].join("\t");
         // A panic is a difference too, so one case cannot hide the rest.
         let got = std::panic::catch_unwind(|| run(&pool, &cols[..n]))
             .unwrap_or_else(|_| "PANIC".to_string());
+        checked += 1;
+        if PINNED.contains(&cols[..n].join("\t").as_str()) {
+            pinned += 1;
+            if got == want {
+                diffs.push(format!(
+                    "{}: matches now; remove its pin",
+                    cols[..n].join(" ")
+                ));
+            }
+            continue;
+        }
         if got != want {
             diffs.push(format!(
                 "{}\n   go: {want}\n rust: {got}",
                 cols[..n].join(" ")
             ));
         }
-        checked += 1;
     }
+    assert_eq!(pinned, PINNED.len());
     assert!(
         diffs.is_empty(),
         "{} of {checked} differ:\n{}",
         diffs.len(),
         diffs.join("\n")
     );
-    // 57 files bound, 128 marshals, 23 wire reads: bounds-cases.tsv.
-    assert_eq!(checked, 208);
+    // 69 files bound, 132 marshals, 23 wire reads, 1 XML export:
+    // bounds-cases.tsv.
+    assert_eq!(checked, 225);
 }

@@ -6,9 +6,7 @@
 //! Also exports the name-conversion helpers shared between
 //! [`crate::xml_to_proto`] and [`crate::proto_to_xml`].
 
-use std::collections::HashMap;
-
-use crate::saxlite::{parse_xml, SaxError, SaxHandler};
+use crate::saxlite::{go_quote, Attr, SaxError, Token, Tokenizer};
 
 #[derive(Debug, Default, Clone)]
 pub struct XmlSchema {
@@ -90,195 +88,330 @@ pub struct XmlGroup {
     pub fields: Vec<XmlField>,
 }
 
-/// Parse an SBE XML schema document into an [`XmlSchema`]. Element namespace
-/// prefixes (e.g. `sbe:message`) are stripped by the SAX layer, so the
-/// builder below keys off plain names.
+/// Parse an SBE XML schema document into an [`XmlSchema`], as
+/// protowire-go's `ParseXMLSchema` reads one with `xml.Unmarshal`:
+///
+/// - `sbe:message` is replaced by `message` everywhere in the text first, as
+///   protowire-go does, and other prefixes are stripped from names;
+/// - the document's first element must be `messageSchema`; what follows it
+///   is not read, and a document with no element is refused as `EOF`;
+/// - an element is read only where the schema has a place for it
+///   (`messageSchema > types > composite > type`, and so on); any other is
+///   skipped, its attributes unread;
+/// - attributes are read in document order. A number is parsed as Go's
+///   `strconv.ParseUint` parses it, after trimming spaces, and an empty one
+///   is 0.
+///
+/// Errors carry protowire-go's texts; see [`SaxError`].
 pub fn parse_xml_schema(xml: &str) -> Result<XmlSchema, SaxError> {
-    let mut handler = SchemaBuilder::default();
-    parse_xml(xml, &mut handler)?;
-    if !handler.stack.is_empty() {
+    let input = xml.replace("sbe:message", "message");
+    let mut t = Tokenizer::new(&input);
+    let root = loop {
+        match t.token()? {
+            None => return Err(SaxError::new("EOF", input.len())),
+            Some(Token::Start(name, attrs)) => break (name, attrs),
+            Some(_) => {}
+        }
+    };
+    if root.0.local != "messageSchema" {
         return Err(SaxError::new(
-            format!("sbe-xml: unclosed elements: {}", handler.stack.join(" > ")),
+            format!(
+                "expected element type <messageSchema> but have <{}>",
+                root.0.local
+            ),
             0,
         ));
     }
-    Ok(handler.schema)
+    let mut b = SchemaBuilder::default();
+    let mut stack = vec![Place::Schema];
+    b.open(Place::Schema, &root.1)?;
+    while !stack.is_empty() {
+        match t.token()?.expect("open elements end in an error") {
+            Token::Start(name, attrs) => {
+                let place = stack.last().expect("open").child(&name.local);
+                b.open(place, &attrs)?;
+                stack.push(place);
+            }
+            Token::End(_) => {
+                let place = stack.pop().expect("open");
+                b.close(place);
+            }
+            Token::Text(s) => {
+                if stack.last() == Some(&Place::ValidValue) {
+                    b.text_buf.push_str(&s);
+                }
+            }
+            Token::Other => {}
+        }
+    }
+    Ok(b.schema)
+}
+
+/// Where an element sits in the schema: the field of protowire-go's
+/// `XMLSchema` structs it is read into, or `Skip`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Place {
+    Schema,
+    Types,
+    Type,
+    Composite,
+    CompositeType,
+    Ref,
+    Enum,
+    ValidValue,
+    Message,
+    Field,
+    Group,
+    GroupField,
+    Skip,
+}
+
+impl Place {
+    fn child(self, local: &str) -> Place {
+        match (self, local) {
+            (Place::Schema, "types") => Place::Types,
+            (Place::Schema, "message") => Place::Message,
+            (Place::Types, "type") => Place::Type,
+            (Place::Types, "composite") => Place::Composite,
+            (Place::Types, "enum") => Place::Enum,
+            (Place::Composite, "type") => Place::CompositeType,
+            (Place::Composite, "ref") => Place::Ref,
+            (Place::Enum, "validValue") => Place::ValidValue,
+            (Place::Message, "field") => Place::Field,
+            (Place::Message, "group") => Place::Group,
+            (Place::Group, "field") => Place::GroupField,
+            _ => Place::Skip,
+        }
+    }
 }
 
 #[derive(Default)]
 struct SchemaBuilder {
     schema: XmlSchema,
-    stack: Vec<String>,
     text_buf: String,
-    // Indices into the schema rather than mutable references — keeps the
-    // borrow checker happy across the SAX callbacks.
-    current_composite: Option<usize>,
-    current_enum: Option<usize>,
-    current_valid_value: bool,
-    current_message: Option<usize>,
-    current_group: Option<usize>,
 }
 
-impl SaxHandler for SchemaBuilder {
-    fn open(&mut self, name: &str, attrs: &HashMap<String, String>) -> Result<(), SaxError> {
-        let parent = self.stack.last().cloned();
-        self.stack.push(name.to_string());
+/// The attributes, as `name=value` by local name, in document order;
+/// namespace declarations left out.
+fn attrs_of(attrs: &[Attr]) -> impl Iterator<Item = (&str, &str)> {
+    attrs
+        .iter()
+        .filter(|a| !a.is_xmlns())
+        .map(|a| (a.name.local.as_str(), a.value.as_str()))
+}
 
-        match name {
-            "messageSchema" => {
-                self.schema.package = attrs.get("package").cloned().unwrap_or_default();
-                self.schema.id = parse_uint(attrs.get("id"))?;
-                self.schema.version = parse_uint(attrs.get("version"))?;
-                self.schema.byte_order = attrs.get("byteOrder").cloned().unwrap_or_default();
-                self.schema.description = attrs.get("description").cloned().unwrap_or_default();
-            }
-            "types" => {}
-            "type" => {
-                let length = match attrs.get("length") {
-                    Some(s) => Some(parse_uint(Some(s))?),
-                    None => None,
-                };
-                let t = XmlType {
-                    name: attrs.get("name").cloned().unwrap_or_default(),
-                    primitive_type: attrs.get("primitiveType").cloned().unwrap_or_default(),
-                    length,
-                    description: attrs.get("description").cloned(),
-                    character_encoding: attrs.get("characterEncoding").cloned(),
-                };
-                if parent.as_deref() == Some("composite") {
-                    if let Some(idx) = self.current_composite {
-                        self.schema.types.composites[idx].types.push(t);
+impl SchemaBuilder {
+    fn open(&mut self, place: Place, attrs: &[Attr]) -> Result<(), SaxError> {
+        let s = &mut self.schema;
+        match place {
+            Place::Schema => {
+                for (k, v) in attrs_of(attrs) {
+                    match k {
+                        "package" => s.package = v.to_string(),
+                        "id" => s.id = parse_uint(v)?,
+                        "version" => s.version = parse_uint(v)?,
+                        "byteOrder" => s.byte_order = v.to_string(),
+                        "description" => s.description = v.to_string(),
+                        _ => {}
                     }
+                }
+            }
+            Place::Type | Place::CompositeType => {
+                let mut t = XmlType {
+                    name: String::new(),
+                    primitive_type: String::new(),
+                    length: None,
+                    description: None,
+                    character_encoding: None,
+                };
+                for (k, v) in attrs_of(attrs) {
+                    match k {
+                        "name" => t.name = v.to_string(),
+                        "primitiveType" => t.primitive_type = v.to_string(),
+                        "length" => t.length = Some(parse_uint(v)?),
+                        "description" => t.description = Some(v.to_string()),
+                        "characterEncoding" => t.character_encoding = Some(v.to_string()),
+                        _ => {}
+                    }
+                }
+                if place == Place::Type {
+                    s.types.types.push(t);
                 } else {
-                    self.schema.types.types.push(t);
+                    s.types
+                        .composites
+                        .last_mut()
+                        .expect("composite")
+                        .types
+                        .push(t);
                 }
             }
-            "ref" => {
-                if let Some(idx) = self.current_composite {
-                    self.schema.types.composites[idx].refs.push(XmlRef {
-                        name: attrs.get("name").cloned().unwrap_or_default(),
-                        r#type: attrs.get("type").cloned().unwrap_or_default(),
-                    });
+            Place::Ref => {
+                let mut r = XmlRef {
+                    name: String::new(),
+                    r#type: String::new(),
+                };
+                for (k, v) in attrs_of(attrs) {
+                    match k {
+                        "name" => r.name = v.to_string(),
+                        "type" => r.r#type = v.to_string(),
+                        _ => {}
+                    }
                 }
+                s.types
+                    .composites
+                    .last_mut()
+                    .expect("composite")
+                    .refs
+                    .push(r);
             }
-            "composite" => {
-                let comp = XmlComposite {
-                    name: attrs.get("name").cloned().unwrap_or_default(),
-                    description: attrs.get("description").cloned(),
+            Place::Composite => {
+                let mut c = XmlComposite {
+                    name: String::new(),
+                    description: None,
                     types: Vec::new(),
                     refs: Vec::new(),
                 };
-                self.schema.types.composites.push(comp);
-                self.current_composite = Some(self.schema.types.composites.len() - 1);
+                for (k, v) in attrs_of(attrs) {
+                    match k {
+                        "name" => c.name = v.to_string(),
+                        "description" => c.description = Some(v.to_string()),
+                        _ => {}
+                    }
+                }
+                s.types.composites.push(c);
             }
-            "enum" => {
-                let e = XmlEnum {
-                    name: attrs.get("name").cloned().unwrap_or_default(),
-                    encoding_type: attrs.get("encodingType").cloned().unwrap_or_default(),
-                    description: attrs.get("description").cloned(),
+            Place::Enum => {
+                let mut e = XmlEnum {
+                    name: String::new(),
+                    encoding_type: String::new(),
+                    description: None,
                     valid_values: Vec::new(),
                 };
-                self.schema.types.enums.push(e);
-                self.current_enum = Some(self.schema.types.enums.len() - 1);
-            }
-            "validValue" => {
-                self.text_buf.clear();
-                if let Some(idx) = self.current_enum {
-                    self.schema.types.enums[idx]
-                        .valid_values
-                        .push(XmlValidValue {
-                            name: attrs.get("name").cloned().unwrap_or_default(),
-                            value: String::new(),
-                        });
-                    self.current_valid_value = true;
+                for (k, v) in attrs_of(attrs) {
+                    match k {
+                        "name" => e.name = v.to_string(),
+                        "encodingType" => e.encoding_type = v.to_string(),
+                        "description" => e.description = Some(v.to_string()),
+                        _ => {}
+                    }
                 }
+                s.types.enums.push(e);
             }
-            "message" => {
-                let m = XmlMessage {
-                    name: attrs.get("name").cloned().unwrap_or_default(),
-                    id: parse_uint(attrs.get("id"))?,
-                    description: attrs.get("description").cloned(),
+            Place::ValidValue => {
+                self.text_buf.clear();
+                let mut name = String::new();
+                for (k, v) in attrs_of(attrs) {
+                    if k == "name" {
+                        name = v.to_string();
+                    }
+                }
+                s.types
+                    .enums
+                    .last_mut()
+                    .expect("enum")
+                    .valid_values
+                    .push(XmlValidValue {
+                        name,
+                        value: String::new(),
+                    });
+            }
+            Place::Message => {
+                let mut m = XmlMessage {
+                    name: String::new(),
+                    id: 0,
+                    description: None,
                     fields: Vec::new(),
                     groups: Vec::new(),
                 };
-                self.schema.messages.push(m);
-                self.current_message = Some(self.schema.messages.len() - 1);
+                for (k, v) in attrs_of(attrs) {
+                    match k {
+                        "name" => m.name = v.to_string(),
+                        "id" => m.id = parse_uint(v)?,
+                        "description" => m.description = Some(v.to_string()),
+                        _ => {}
+                    }
+                }
+                s.messages.push(m);
             }
-            "group" => {
-                let g = XmlGroup {
-                    name: attrs.get("name").cloned().unwrap_or_default(),
-                    id: parse_uint(attrs.get("id"))?,
+            Place::Group => {
+                let mut g = XmlGroup {
+                    name: String::new(),
+                    id: 0,
                     fields: Vec::new(),
                 };
-                if let Some(idx) = self.current_message {
-                    self.schema.messages[idx].groups.push(g);
-                    self.current_group = Some(self.schema.messages[idx].groups.len() - 1);
+                for (k, v) in attrs_of(attrs) {
+                    match k {
+                        "name" => g.name = v.to_string(),
+                        "id" => g.id = parse_uint(v)?,
+                        _ => {}
+                    }
                 }
+                s.messages.last_mut().expect("message").groups.push(g);
             }
-            "field" => {
-                let f = XmlField {
-                    name: attrs.get("name").cloned().unwrap_or_default(),
-                    id: parse_uint(attrs.get("id"))?,
-                    r#type: attrs.get("type").cloned().unwrap_or_default(),
+            Place::Field | Place::GroupField => {
+                let mut f = XmlField {
+                    name: String::new(),
+                    id: 0,
+                    r#type: String::new(),
                 };
-                if let (Some(mi), Some(gi)) = (self.current_message, self.current_group) {
-                    self.schema.messages[mi].groups[gi].fields.push(f);
-                } else if let Some(mi) = self.current_message {
-                    self.schema.messages[mi].fields.push(f);
+                for (k, v) in attrs_of(attrs) {
+                    match k {
+                        "name" => f.name = v.to_string(),
+                        "id" => f.id = parse_uint(v)?,
+                        "type" => f.r#type = v.to_string(),
+                        _ => {}
+                    }
+                }
+                let m = s.messages.last_mut().expect("message");
+                if place == Place::Field {
+                    m.fields.push(f);
+                } else {
+                    m.groups.last_mut().expect("group").fields.push(f);
                 }
             }
-            _ => {}
+            Place::Types | Place::Skip => {}
         }
         Ok(())
     }
 
-    fn text(&mut self, value: &str) -> Result<(), SaxError> {
-        if self.current_valid_value {
-            self.text_buf.push_str(value);
+    fn close(&mut self, place: Place) {
+        if place == Place::ValidValue {
+            // protowire-go keeps the character data as it is, spaces and all.
+            let v = std::mem::take(&mut self.text_buf);
+            let e = self.schema.types.enums.last_mut().expect("enum");
+            e.valid_values.last_mut().expect("validValue").value = v;
         }
-        Ok(())
-    }
-
-    fn close(&mut self, name: &str) -> Result<(), SaxError> {
-        let popped = self.stack.pop().unwrap_or_default();
-        if popped != name {
-            return Err(SaxError::new(
-                format!(
-                    "sbe-xml: close mismatch: got </{}>, expected </{}>",
-                    name, popped
-                ),
-                0,
-            ));
-        }
-        match name {
-            "validValue" => {
-                if let Some(ei) = self.current_enum {
-                    let last = self.schema.types.enums[ei]
-                        .valid_values
-                        .last_mut()
-                        .expect("validValue tracking");
-                    last.value = self.text_buf.trim().to_string();
-                }
-                self.current_valid_value = false;
-                self.text_buf.clear();
-            }
-            "enum" => self.current_enum = None,
-            "composite" => self.current_composite = None,
-            "group" => self.current_group = None,
-            "message" => self.current_message = None,
-            _ => {}
-        }
-        Ok(())
     }
 }
 
-fn parse_uint(v: Option<&String>) -> Result<u32, SaxError> {
-    let Some(s) = v else { return Ok(0) };
-    if s.is_empty() {
+/// An attribute read into a `uint32`, as `encoding/xml` reads one: empty is
+/// 0, and anything else is trimmed of spaces and parsed by Go's
+/// `strconv.ParseUint(s, 10, 32)`, with its error text.
+fn parse_uint(v: &str) -> Result<u32, SaxError> {
+    if v.is_empty() {
         return Ok(0);
     }
-    s.parse::<u32>()
-        .map_err(|_| SaxError::new(format!("sbe-xml: invalid uint value {:?}", s), 0))
+    let s = v.trim();
+    let err = |what: &str| {
+        SaxError::new(
+            format!("strconv.ParseUint: parsing {}: {what}", go_quote(s)),
+            0,
+        )
+    };
+    if s.is_empty() {
+        return Err(err("invalid syntax"));
+    }
+    let mut n: u64 = 0;
+    for c in s.bytes() {
+        if !c.is_ascii_digit() {
+            return Err(err("invalid syntax"));
+        }
+        n = n * 10 + u64::from(c - b'0');
+        if n > u64::from(u32::MAX) {
+            return Err(err("value out of range"));
+        }
+    }
+    Ok(n as u32)
 }
 
 // ---------- name conversion helpers (shared with proto↔xml converters) ----------

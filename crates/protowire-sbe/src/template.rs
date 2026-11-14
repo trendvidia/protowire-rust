@@ -193,7 +193,7 @@ pub fn build_template(
             )));
         }
         if fd.is_list() {
-            if matches!(fd.kind(), Kind::Message(_)) {
+            if message_of(&fd).is_some() {
                 tmpl.groups.push(build_group_template(&fd)?);
                 continue;
             }
@@ -211,7 +211,7 @@ pub fn build_template(
                 e
             ))
         };
-        if let Kind::Message(inner) = fd.kind() {
+        if let Some(inner) = message_of(&fd) {
             let (size, sub) = build_composite_fields(&inner).map_err(wrap)?;
             let end = end_of_field(offset, size).map_err(wrap)?;
             tmpl.fields.push(FieldTemplate {
@@ -278,7 +278,7 @@ fn build_group_template(fd: &FieldDescriptor) -> Result<GroupTemplate, SbeError>
                 md.full_name()
             )));
         }
-        if let Kind::Message(inner) = f.kind() {
+        if let Some(inner) = message_of(&f) {
             let wrap = |e: String| {
                 SbeError::new(format!(
                     "sbe: composite in group {}.{}: {}",
@@ -343,7 +343,7 @@ fn build_composite_fields(md: &MessageDescriptor) -> Result<(usize, Vec<FieldTem
             ));
         }
         let wrap = |e: String| format!("composite field {}.{}: {}", md.full_name(), fd.name(), e);
-        if let Kind::Message(inner) = fd.kind() {
+        if let Some(inner) = message_of(&fd) {
             let (size, sub) = build_composite_fields(&inner)?;
             let end = end_of_field(offset, size).map_err(wrap)?;
             out.push(FieldTemplate {
@@ -386,7 +386,7 @@ fn encoding_size(fd: &FieldDescriptor) -> Result<(SbeEncoding, usize), String> {
         let parsed = SbeEncoding::from_str(&enc);
         match kind {
             Kind::String | Kind::Bytes => {
-                let k = kind_name(&kind);
+                let k = field_kind_name(fd);
                 return Err(format!(
                     "(sbe.encoding) = {} on a {k} field; it narrows a numeric field, and a {k} field takes (sbe.length)",
                     go_quote(&enc)
@@ -397,7 +397,7 @@ fn encoding_size(fd: &FieldDescriptor) -> Result<(SbeEncoding, usize), String> {
                     return Err(format!(
                         "(sbe.encoding) = {} is an integer primitive and the field is {}",
                         go_quote(&enc),
-                        kind_name(&kind)
+                        field_kind_name(fd)
                     ));
                 }
             }
@@ -406,7 +406,7 @@ fn encoding_size(fd: &FieldDescriptor) -> Result<(SbeEncoding, usize), String> {
                     return Err(format!(
                         "(sbe.encoding) = {} is a floating-point primitive and the field is {}",
                         go_quote(&enc),
-                        kind_name(&kind)
+                        field_kind_name(fd)
                     ));
                 }
             }
@@ -423,11 +423,11 @@ fn encoding_size(fd: &FieldDescriptor) -> Result<(SbeEncoding, usize), String> {
         Kind::Float => (SbeEncoding::Float, 4),
         Kind::Double => (SbeEncoding::Double, 8),
         Kind::Enum(_) => (SbeEncoding::Uint8, 1),
-        kind @ (Kind::String | Kind::Bytes) => {
+        Kind::String | Kind::Bytes => {
             let len = field_uint32(fd, EXT_LENGTH).ok_or_else(|| {
                 format!(
                     "{} field requires (sbe.length) annotation",
-                    kind_name(&kind)
+                    field_kind_name(fd)
                 )
             })?;
             if len as usize > MAX_UINT16 {
@@ -437,12 +437,31 @@ fn encoding_size(fd: &FieldDescriptor) -> Result<(SbeEncoding, usize), String> {
             }
             (SbeEncoding::Char, len as usize)
         }
-        other => return Err(format!("unsupported proto kind {}", kind_name(&other))),
+        _ => return Err(format!("unsupported proto kind {}", field_kind_name(fd))),
     })
 }
 
 /// A field kind as protowire-go's errors name it (`protoreflect.Kind`'s
 /// String).
+/// The message a field holds when protowire-go reads it as one, its
+/// `MessageKind`: a proto2 group, which prost-reflect reports as a message,
+/// is not one.
+fn message_of(fd: &FieldDescriptor) -> Option<MessageDescriptor> {
+    match fd.kind() {
+        Kind::Message(m) if !fd.is_group() => Some(m),
+        _ => None,
+    }
+}
+
+/// A field's kind as protowire-go names it: `group` for a proto2 group.
+pub(crate) fn field_kind_name(fd: &FieldDescriptor) -> &'static str {
+    if fd.is_group() {
+        "group"
+    } else {
+        kind_name(&fd.kind())
+    }
+}
+
 pub(crate) fn kind_name(kind: &Kind) -> &'static str {
     match kind {
         Kind::Double => "double",

@@ -172,7 +172,9 @@ impl Message for Node {
 ///
 /// A known field with wire type 6 or 7: protowire-go reads it by its kind
 /// and accepts it. Those wire types name no encoding, and [`WireType`] has
-/// no variant for them, so this port refuses the field as `corrupt field N`.
+/// no variant for them, so this port refuses the field as `corrupt field N`,
+/// as protobuf-go's own wire reader refuses them. The owner chose to keep
+/// refusing and have the spec settle it: trendvidia/protowire#614.
 const PINNED: &[(&str, &str)] = &[("All", "1e01"), ("All", "4f0161")];
 
 fn limits(spec: &str) -> Limits {

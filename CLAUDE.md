@@ -167,6 +167,17 @@ records protowire-go's verdict on every prefix and on hand-made damage; the
 Rust structs mirror its Go structs, field names included. Regenerate with
 `scripts/gen-pb-error-oracle.sh`.
 
+`crates/protowire-sbe/tests/error_oracle.rs` holds SBE errors to
+protowire-go's, word for word (#144): decode and `View` on every prefix of
+each `sbe-test.proto` message and on hand-made damage, View accessor reads,
+SOFH streams, and XML schemas, every prefix of one among them. The runner is
+`scripts/sbe-error-oracle/main.go`; regenerate with
+`scripts/gen-sbe-error-oracle.sh`. `tests/bounds_oracle.rs`
+(`scripts/gen-sbe-oracle.sh`) holds bind refusals, marshal and `proto_to_xml`
+over the fixtures in `testdata/bounds/`; adding one there means rebuilding
+`bounds.binpb` with `scripts/gen-testdata.sh`. `saxlite` is a port of Go's
+`encoding/xml` tokenizer, so an XML error is Go's text, line and all.
+
 `tests/rewrite_oracle.rs` holds the `Rewriter` to protowire-go's.
 `testdata/conformance/rewrite-cases.txt` is protowire-go's rewriter tests as
 data, vendored from protowire-java (which replays the same rows), plus a few
