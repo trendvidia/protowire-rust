@@ -272,3 +272,24 @@ null-number-test.binpb	nullnumber.v1.Root	marshal	by_key = { "k": { a = 3 data =
 null-number-test.binpb	nullnumber.v1.Root	marshal	one { a = 5 data = 6 }	OK	one {\n  a = 5\n  data = 6\n}\n
 null-number-test.binpb	nullnumber.v1.Root	marshal-any	payload { @type = "type.googleapis.com/nullnumber.v1.Elem" a = 7 data = 8 }	OK	payload {\n  @type = "type.googleapis.com/nullnumber.v1.Elem"\n  a = 7\n  data = 8\n}\n
 null-number-test.binpb	nullnumber.v1.Root	marshal-any	payload { @type = "type.googleapis.com/nullnumber.v1.Root" name = "inner" items = [{ data = 9 }] }	OK	payload {\n  @type = "type.googleapis.com/nullnumber.v1.Root"\n  items = [\n    {\n      data = 9\n    }\n  ]\n  name = "inner"\n}\n
+test.binpb	test.v1.AllTypes	full	string_field = "ÿ"	OK	0a02c3bf	string_field	
+test.binpb	test.v1.AllTypes	full	nullable_int = "x"	ERR	1:16: expected integer for field "nullable_int"		
+test.binpb	test.v1.AllTypes	full	nullable_string = 5	ERR	1:19: expected string for field "nullable_string"		
+test.binpb	test.v1.AllTypes	full	nullable_bool = 3	ERR	1:17: expected bool for field "nullable_bool"		
+test.binpb	test.v1.AllTypes	full	string_map = { "k": 5 }	ERR	1:21: expected string for field "string_map"		
+test.binpb	test.v1.AllTypes	full	int_map = { 1: 5 }	ERR	1:16: expected string for field "int_map"		
+test.binpb	test.v1.AllTypes	full	nullable_int { value = "x" }	ERR	1:24: expected integer for field "value"		
+test.binpb	test.v1.AllTypes	full	repeated_string = [5]	ERR	1:20: expected string for field "repeated_string"		
+test.binpb	test.v1.AllTypes	full	enum_field = 5.5	ERR	1:14: expected enum name or number for field "enum_field"		
+test.binpb	test.v1.AllTypes	full	int32_field = "x"	ERR	1:15: expected integer for field "int32_field"		
+layered-test.binpb	layered_test.v1.WKTMaps	full	counts = { "k": "x" }	ERR	1:17: expected integer for field "counts"		
+layered-test.binpb	layered_test.v1.WKTMaps	full	labels = { "k": 5 }	ERR	1:17: expected string for field "labels"		
+layered-test.binpb	layered_test.v1.WKTMaps	full	counts = { "k": { value = "x" } }	ERR	1:27: expected integer for field "value"		
+layered-test.binpb	layered_test.v1.WKTMaps	full	howlong = { "k": "x" }	ERR	1:18: expected a duration literal or '{' for map message value, got string ("x")		
+layered-test.binpb	layered_test.v1.WKTDefaults	full	bytv = 5	ERR	1:8: expected bytes for field "bytv"		
+layered-test.binpb	layered_test.v1.WKTDefaults	full	fv = "x"	ERR	1:6: expected number for field "fv"		
+layered-test.binpb	layered_test.v1.WKTDefaults	full	u64v = -1	ERR	1:8: invalid uint64: -1		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	db_password = 5	ERR	1:15: expected a string literal or '{' for message field "db_password", got integer ("5")		
+test.binpb	test.v1.AllTypes	full	repeated_nested = [5]	ERR	1:20: expected '{' for repeated message element, got integer ("5")		
+layered-test.binpb	layered_test.v1.WKTMaps	full	when = { "k": 5 }	ERR	1:15: expected a timestamp literal or '{' for map message value, got integer ("5")		
+test.binpb	test.v1.AllTypes	full	nested_map = { "k": 5 }	ERR	1:21: expected '{' for map message value, got integer ("5")		

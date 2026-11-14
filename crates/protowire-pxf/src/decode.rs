@@ -1163,7 +1163,7 @@ impl<'a> Decoder<'a> {
         let at = self
             .on_secret
             .map(|_| format!("{}{}", self.path_prefix, fd.name()));
-        if let Some(inner) = self.try_decode_wkt(&mut sub, at)? {
+        if let Some(inner) = self.try_decode_wkt(&mut sub, fd, at)? {
             msg.set_field(fd, Value::Message(sub));
             if let Some(p) = self.presence.as_mut() {
                 for name in inner {
@@ -1311,10 +1311,11 @@ impl<'a> Decoder<'a> {
                 let at = self
                     .on_secret
                     .map(|_| format!("{}{}[{}]", self.path_prefix, fd.name(), n));
-                if self.try_decode_wkt(&mut sub, at)?.is_none() {
+                if self.try_decode_wkt(&mut sub, fd, at)?.is_none() {
                     if !matches!(self.current.kind, TokenKind::LBrace) {
                         return Err(self.err(format!(
-                            "expected '{{' for repeated message element, got {}",
+                            "expected {} for repeated message element, got {}",
+                            msg_value_forms(&sub.descriptor()),
                             self.token_err_msg()
                         )));
                     }
@@ -1619,10 +1620,11 @@ impl<'a> Decoder<'a> {
             let at = self
                 .on_secret
                 .map(|_| format!("{}{}[{}]", self.path_prefix, fd.name(), shown_key(&key)));
-            if self.try_decode_wkt(&mut sub, at)?.is_none() {
+            if self.try_decode_wkt(&mut sub, fd, at)?.is_none() {
                 if !matches!(self.current.kind, TokenKind::LBrace) {
                     return Err(self.err(format!(
-                        "expected '{{' for map message value, got {}",
+                        "expected {} for map message value, got {}",
+                        msg_value_forms(&sub.descriptor()),
                         self.token_err_msg()
                     )));
                 }
@@ -1631,9 +1633,9 @@ impl<'a> Decoder<'a> {
             }
             Value::Message(sub)
         } else if matches!(val_fd.kind(), Kind::Enum(_)) {
-            self.consume_enum(val_fd)?
+            self.consume_enum_as(val_fd, fd)?
         } else {
-            self.consume_scalar(val_fd)?
+            self.consume_scalar_as(val_fd, fd)?
         };
         Ok((key, Elem::Value(value)))
     }
@@ -1736,6 +1738,7 @@ impl<'a> Decoder<'a> {
     fn try_decode_wkt(
         &mut self,
         target: &mut DynamicMessage,
+        named: &FieldDescriptor,
         secret_path: Option<String>,
     ) -> Result<Option<&'static [&'static str]>, PxfError> {
         let desc = target.descriptor();
@@ -1774,7 +1777,7 @@ impl<'a> Decoder<'a> {
             let value_fd = desc.get_field_by_name("value").ok_or_else(|| {
                 self.err(format!("internal: wrapper {} missing 'value' field", full))
             })?;
-            let v = self.consume_scalar(&value_fd)?;
+            let v = self.consume_scalar_as(&value_fd, named)?;
             target.set_field(&value_fd, v);
             return Ok(Some(&["value"]));
         }
@@ -1815,7 +1818,7 @@ impl<'a> Decoder<'a> {
             let value_fd = desc
                 .get_field_by_name("value")
                 .expect("checked by dispatch_name");
-            let v = self.consume_scalar(&value_fd)?;
+            let v = self.consume_scalar_as(&value_fd, named)?;
             target.set_field(&value_fd, v);
             return Ok(Some(&["value"]));
         }
@@ -1937,15 +1940,30 @@ impl<'a> Decoder<'a> {
     }
 
     fn consume_scalar(&mut self, fd: &FieldDescriptor) -> Result<Value, PxfError> {
+        self.consume_scalar_as(fd, fd)
+    }
+
+    /// One scalar typed by `fd`, with every error naming `named`, the field
+    /// the document wrote. They differ where the typing descriptor is one
+    /// no document names: a well-known wrapper's or a `pxf.Secret`'s scalar
+    /// shorthand, typed by the message's inner `value`, and a map's value,
+    /// typed by the map entry's. The block form `n { value = "x" }` does
+    /// write `value`, and is named so. protowire-go's `consumeScalarAs`
+    /// (protowire-go#85).
+    fn consume_scalar_as(
+        &mut self,
+        fd: &FieldDescriptor,
+        named: &FieldDescriptor,
+    ) -> Result<Value, PxfError> {
         self.illegal()?;
-        self.no_precision(fd.name())?;
+        self.no_precision(named.name())?;
         let pos = self.current.pos;
         let kind = fd.kind();
         match kind {
             Kind::String => {
                 if !matches!(self.current.kind, TokenKind::String) {
                     return Err(
-                        self.err_at(pos, format!("expected string for field {:?}", fd.name()))
+                        self.err_at(pos, format!("expected string for field {:?}", named.name()))
                     );
                 }
                 let v = Value::String(std::mem::take(&mut self.current.value));
@@ -1955,7 +1973,7 @@ impl<'a> Decoder<'a> {
             Kind::Bool => {
                 if !matches!(self.current.kind, TokenKind::Bool) {
                     return Err(
-                        self.err_at(pos, format!("expected bool for field {:?}", fd.name()))
+                        self.err_at(pos, format!("expected bool for field {:?}", named.name()))
                     );
                 }
                 let v = Value::Bool(self.current.value == "true");
@@ -1964,9 +1982,10 @@ impl<'a> Decoder<'a> {
             }
             Kind::Int32 | Kind::Sint32 | Kind::Sfixed32 => {
                 if !matches!(self.current.kind, TokenKind::Int) {
-                    return Err(
-                        self.err_at(pos, format!("expected integer for field {:?}", fd.name()))
-                    );
+                    return Err(self.err_at(
+                        pos,
+                        format!("expected integer for field {:?}", named.name()),
+                    ));
                 }
                 let n: i32 = self.current.value.parse().map_err(|_| {
                     self.err_at(pos, format!("invalid int32: {}", self.current.value))
@@ -1976,9 +1995,10 @@ impl<'a> Decoder<'a> {
             }
             Kind::Int64 | Kind::Sint64 | Kind::Sfixed64 => {
                 if !matches!(self.current.kind, TokenKind::Int) {
-                    return Err(
-                        self.err_at(pos, format!("expected integer for field {:?}", fd.name()))
-                    );
+                    return Err(self.err_at(
+                        pos,
+                        format!("expected integer for field {:?}", named.name()),
+                    ));
                 }
                 let n: i64 = self.current.value.parse().map_err(|_| {
                     self.err_at(pos, format!("invalid int64: {}", self.current.value))
@@ -1988,9 +2008,10 @@ impl<'a> Decoder<'a> {
             }
             Kind::Uint32 | Kind::Fixed32 => {
                 if !matches!(self.current.kind, TokenKind::Int) {
-                    return Err(
-                        self.err_at(pos, format!("expected integer for field {:?}", fd.name()))
-                    );
+                    return Err(self.err_at(
+                        pos,
+                        format!("expected integer for field {:?}", named.name()),
+                    ));
                 }
                 let n: u32 = self.current.value.parse().map_err(|_| {
                     self.err_at(pos, format!("invalid uint32: {}", self.current.value))
@@ -2000,9 +2021,10 @@ impl<'a> Decoder<'a> {
             }
             Kind::Uint64 | Kind::Fixed64 => {
                 if !matches!(self.current.kind, TokenKind::Int) {
-                    return Err(
-                        self.err_at(pos, format!("expected integer for field {:?}", fd.name()))
-                    );
+                    return Err(self.err_at(
+                        pos,
+                        format!("expected integer for field {:?}", named.name()),
+                    ));
                 }
                 let n: u64 = self.current.value.parse().map_err(|_| {
                     self.err_at(pos, format!("invalid uint64: {}", self.current.value))
@@ -2013,7 +2035,7 @@ impl<'a> Decoder<'a> {
             Kind::Float => {
                 if !self.at_float_literal() {
                     return Err(
-                        self.err_at(pos, format!("expected number for field {:?}", fd.name()))
+                        self.err_at(pos, format!("expected number for field {:?}", named.name()))
                     );
                 }
                 let f = parse_f32_literal(&self.current.value).ok_or_else(|| {
@@ -2025,7 +2047,7 @@ impl<'a> Decoder<'a> {
             Kind::Double => {
                 if !self.at_float_literal() {
                     return Err(
-                        self.err_at(pos, format!("expected number for field {:?}", fd.name()))
+                        self.err_at(pos, format!("expected number for field {:?}", named.name()))
                     );
                 }
                 let f = parse_f64_literal(&self.current.value).ok_or_else(|| {
@@ -2037,20 +2059,20 @@ impl<'a> Decoder<'a> {
             Kind::Bytes => {
                 if !matches!(self.current.kind, TokenKind::Bytes) {
                     return Err(
-                        self.err_at(pos, format!("expected bytes for field {:?}", fd.name()))
+                        self.err_at(pos, format!("expected bytes for field {:?}", named.name()))
                     );
                 }
                 let decoded = crate::go_strconv::decode_base64_lenient(&self.current.value)
                     .map_err(|e| {
                         self.err_at(
                             pos,
-                            format!("invalid base64 for field {:?}: {e}", fd.name()),
+                            format!("invalid base64 for field {:?}: {e}", named.name()),
                         )
                     })?;
                 self.advance();
                 Ok(Value::Bytes(decoded.into()))
             }
-            Kind::Enum(_) => self.consume_enum(fd),
+            Kind::Enum(_) => self.consume_enum_as(fd, named),
             Kind::Message(_) => Err(self.err_at(
                 pos,
                 format!(
@@ -2062,8 +2084,17 @@ impl<'a> Decoder<'a> {
     }
 
     fn consume_enum(&mut self, fd: &FieldDescriptor) -> Result<Value, PxfError> {
+        self.consume_enum_as(fd, fd)
+    }
+
+    /// [`Self::consume_scalar_as`] for an enum.
+    fn consume_enum_as(
+        &mut self,
+        fd: &FieldDescriptor,
+        named: &FieldDescriptor,
+    ) -> Result<Value, PxfError> {
         self.illegal()?;
-        self.no_precision(fd.name())?;
+        self.no_precision(named.name())?;
         let pos = self.current.pos;
         let enum_desc = match fd.kind() {
             Kind::Enum(e) => e,
@@ -2100,7 +2131,7 @@ impl<'a> Decoder<'a> {
             }
             _ => Err(self.err_at(
                 pos,
-                format!("expected enum name or number for field {:?}", fd.name()),
+                format!("expected enum name or number for field {:?}", named.name()),
             )),
         }
     }

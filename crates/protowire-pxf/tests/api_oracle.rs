@@ -295,7 +295,7 @@ fn every_case_meets_the_reference() {
             "default"
         ]
         .map(count),
-        [25, 13, 5, 2, 10, 32, 32, 6, 130, 3, 9]
+        [46, 13, 5, 2, 10, 32, 32, 6, 130, 3, 9]
     );
     assert_eq!(count("pinned"), WAITS_ON_98.len());
     // The invalid-UTF-8 rows held to their position only, until #170.

@@ -265,3 +265,24 @@ null-number-test.binpb	nullnumber.v1.Root	marshal	by_key = { "k": { a = 3 data =
 null-number-test.binpb	nullnumber.v1.Root	marshal	one { a = 5 data = 6 }
 null-number-test.binpb	nullnumber.v1.Root	marshal-any	payload { @type = "type.googleapis.com/nullnumber.v1.Elem" a = 7 data = 8 }
 null-number-test.binpb	nullnumber.v1.Root	marshal-any	payload { @type = "type.googleapis.com/nullnumber.v1.Root" name = "inner" items = [{ data = 9 }] }
+test.binpb	test.v1.AllTypes	full	string_field = "ÿ"
+test.binpb	test.v1.AllTypes	full	nullable_int = "x"
+test.binpb	test.v1.AllTypes	full	nullable_string = 5
+test.binpb	test.v1.AllTypes	full	nullable_bool = 3
+test.binpb	test.v1.AllTypes	full	string_map = { "k": 5 }
+test.binpb	test.v1.AllTypes	full	int_map = { 1: 5 }
+test.binpb	test.v1.AllTypes	full	nullable_int { value = "x" }
+test.binpb	test.v1.AllTypes	full	repeated_string = [5]
+test.binpb	test.v1.AllTypes	full	enum_field = 5.5
+test.binpb	test.v1.AllTypes	full	int32_field = "x"
+layered-test.binpb	layered_test.v1.WKTMaps	full	counts = { "k": "x" }
+layered-test.binpb	layered_test.v1.WKTMaps	full	labels = { "k": 5 }
+layered-test.binpb	layered_test.v1.WKTMaps	full	counts = { "k": { value = "x" } }
+layered-test.binpb	layered_test.v1.WKTMaps	full	howlong = { "k": "x" }
+layered-test.binpb	layered_test.v1.WKTDefaults	full	bytv = 5
+layered-test.binpb	layered_test.v1.WKTDefaults	full	fv = "x"
+layered-test.binpb	layered_test.v1.WKTDefaults	full	u64v = -1
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	db_password = 5
+test.binpb	test.v1.AllTypes	full	repeated_nested = [5]
+layered-test.binpb	layered_test.v1.WKTMaps	full	when = { "k": 5 }
+test.binpb	test.v1.AllTypes	full	nested_map = { "k": 5 }
