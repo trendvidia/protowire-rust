@@ -57,6 +57,15 @@ pub struct Lexer<'a> {
     /// The errors tolerant mode recovered from, in the order met; the
     /// parser takes them after each token.
     errs: Vec<crate::errors::PxfError>,
+    /// Whether a string literal that is not UTF-8 leaves its bytes in
+    /// `invalid_string` (#170). The token is still `Illegal`, so a reader
+    /// that does not look is refused as before; the decoder looks, and
+    /// gives protowire-go's text for where the string stood.
+    keep_invalid_strings: bool,
+    /// The bytes of the last token, and where it starts, when it was a
+    /// string literal that is not UTF-8 and `keep_invalid_strings` is set.
+    /// Reset by every token.
+    invalid_string: Option<(Position, Vec<u8>)>,
 }
 
 /// Snapshot of [`Lexer`] state. Used to roll back the lexer for
@@ -100,6 +109,37 @@ impl<'a> Lexer<'a> {
             saw_end: false,
             tolerant: false,
             errs: Vec::new(),
+            keep_invalid_strings: false,
+            invalid_string: None,
+        }
+    }
+
+    /// Keep the bytes of a string literal that is not UTF-8, for
+    /// [`Self::take_invalid_string`].
+    pub(crate) fn keep_invalid_strings(&mut self) {
+        self.keep_invalid_strings = true;
+    }
+
+    /// Whether the token at `at` is the token just returned, and a string
+    /// literal that is not UTF-8 whose bytes are kept.
+    pub(crate) fn at_invalid_string(&self, at: Position) -> bool {
+        matches!(&self.invalid_string, Some((pos, _)) if *pos == at)
+    }
+
+    /// Carry on from where `other`, a clone of this lexer, stands: its
+    /// position and its kept bytes.
+    pub(crate) fn resume_after(&mut self, other: &mut Lexer<'_>) {
+        self.restore(other.snapshot());
+        self.invalid_string = other.invalid_string.take();
+    }
+
+    /// The bytes of the token at `at`, when it is the token just returned
+    /// and a string literal that is not UTF-8 whose bytes are kept. A reader
+    /// that looked ahead since gets `None`, and refuses the token as before.
+    pub(crate) fn take_invalid_string(&mut self, at: Position) -> Option<Vec<u8>> {
+        match self.invalid_string.take() {
+            Some((pos, bytes)) if pos == at => Some(bytes),
+            _ => None,
         }
     }
 
@@ -163,6 +203,7 @@ impl<'a> Lexer<'a> {
 
     /// Returns the next token. Returns an EOF token at end-of-input forever.
     pub fn next_token(&mut self) -> Token {
+        self.invalid_string = None;
         self.skip_spaces();
         if self.pos >= self.input.len() {
             return Token::new(TokenKind::Eof, "", self.current_pos());
@@ -402,7 +443,7 @@ impl<'a> Lexer<'a> {
                 // newline as a literal being typed: the string ends there,
                 // and the newline is left for the next token.
                 self.report(pos, "unterminated string: ended at newline");
-                return string_token(buf, pos);
+                return self.string_token(buf, pos);
             }
             let ch = self.advance();
             if ch == b'"' {
@@ -411,7 +452,7 @@ impl<'a> Lexer<'a> {
                 // require validity, and proto3 strings are spec'd as UTF-8
                 // anyway. Note this is stricter than the Go reference, which
                 // permissively stores arbitrary bytes.
-                return string_token(buf, pos);
+                return self.string_token(buf, pos);
             }
             if ch == b'\n' {
                 // Draft -01 § String Literals (protowire#350): a simple
@@ -431,7 +472,7 @@ impl<'a> Lexer<'a> {
                 self.saw_end = true;
                 if tolerant {
                     self.report(pos, "unterminated escape sequence");
-                    return string_token(buf, pos);
+                    return self.string_token(buf, pos);
                 }
                 return Token::new(TokenKind::Illegal, "unterminated escape sequence", pos);
             }
@@ -528,7 +569,7 @@ impl<'a> Lexer<'a> {
         self.saw_end = true;
         if tolerant {
             self.report(pos, "unterminated string");
-            return string_token(buf, pos);
+            return self.string_token(buf, pos);
         }
         Token::new(TokenKind::Illegal, "unterminated string", pos)
     }
@@ -899,6 +940,22 @@ impl<'a> Lexer<'a> {
         Token::new(TokenKind::Duration, raw, pos)
     }
 
+    /// A string token for the bytes a string literal holds. A token holds
+    /// UTF-8, where protowire-go's keeps any bytes, so other bytes are an
+    /// `Illegal` token; with `keep_invalid_strings` the bytes stay in
+    /// `invalid_string` (#170).
+    fn string_token(&mut self, buf: Vec<u8>, pos: Position) -> Token {
+        match String::from_utf8(buf) {
+            Ok(s) => Token::new(TokenKind::String, s, pos),
+            Err(e) => {
+                if self.keep_invalid_strings {
+                    self.invalid_string = Some((pos, e.into_bytes()));
+                }
+                Token::new(TokenKind::Illegal, "string contains invalid UTF-8", pos)
+            }
+        }
+    }
+
     fn lex_ident(&mut self, pos: Position) -> Token {
         let start = self.pos;
         while self.pos < self.input.len() && is_ident_part(self.input[self.pos]) {
@@ -911,15 +968,6 @@ impl<'a> Lexer<'a> {
             "null" => Token::new(TokenKind::Null, val, pos),
             _ => Token::new(TokenKind::Ident, val, pos),
         }
-    }
-}
-
-/// A string token for the bytes a string literal holds. They must be UTF-8
-/// here, where protowire-go keeps any bytes (#170).
-fn string_token(buf: Vec<u8>, pos: Position) -> Token {
-    match String::from_utf8(buf) {
-        Ok(s) => Token::new(TokenKind::String, s, pos),
-        Err(_) => Token::new(TokenKind::Illegal, "string contains invalid UTF-8", pos),
     }
 }
 

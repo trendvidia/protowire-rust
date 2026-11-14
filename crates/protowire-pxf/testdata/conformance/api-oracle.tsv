@@ -1,7 +1,7 @@
 # What protowire-go at ca79f5c's pxf API does with each case of api-cases.tsv.
 # Produced by scripts/gen-api-oracle.sh. Do not edit.
 # Columns: descriptor set, message, op, its arguments, then the verdict:
-# full / full-skip: OK, pb hex, sorted present paths, sorted null paths; or ERR.
+# full / full-skip / discard: OK, pb hex, sorted present paths, sorted null paths; or ERR.
 # marshal: OK and the text, or ERR. apply: OK and the pb hex, or ERR.
 # required: the answer. default: whether there is one, and the literal.
 # Tabs, newlines and backslashes in a verdict are escaped.
@@ -272,3 +272,92 @@ null-number-test.binpb	nullnumber.v1.Root	marshal	by_key = { "k": { a = 3 data =
 null-number-test.binpb	nullnumber.v1.Root	marshal	one { a = 5 data = 6 }	OK	one {\n  a = 5\n  data = 6\n}\n
 null-number-test.binpb	nullnumber.v1.Root	marshal-any	payload { @type = "type.googleapis.com/nullnumber.v1.Elem" a = 7 data = 8 }	OK	payload {\n  @type = "type.googleapis.com/nullnumber.v1.Elem"\n  a = 7\n  data = 8\n}\n
 null-number-test.binpb	nullnumber.v1.Root	marshal-any	payload { @type = "type.googleapis.com/nullnumber.v1.Root" name = "inner" items = [{ data = 9 }] }	OK	payload {\n  @type = "type.googleapis.com/nullnumber.v1.Root"\n  items = [\n    {\n      data = 9\n    }\n  ]\n  name = "inner"\n}\n
+test.binpb	test.v1.AllTypes	full	string_field = "ÿ"	OK	0a02c3bf	string_field	
+test.binpb	test.v1.AllTypes	full	nullable_int = "x"	ERR	1:16: expected integer for field "nullable_int"		
+test.binpb	test.v1.AllTypes	full	nullable_string = 5	ERR	1:19: expected string for field "nullable_string"		
+test.binpb	test.v1.AllTypes	full	nullable_bool = 3	ERR	1:17: expected bool for field "nullable_bool"		
+test.binpb	test.v1.AllTypes	full	string_map = { "k": 5 }	ERR	1:21: expected string for field "string_map"		
+test.binpb	test.v1.AllTypes	full	int_map = { 1: 5 }	ERR	1:16: expected string for field "int_map"		
+test.binpb	test.v1.AllTypes	full	nullable_int { value = "x" }	ERR	1:24: expected integer for field "value"		
+test.binpb	test.v1.AllTypes	full	repeated_string = [5]	ERR	1:20: expected string for field "repeated_string"		
+test.binpb	test.v1.AllTypes	full	enum_field = 5.5	ERR	1:14: expected enum name or number for field "enum_field"		
+test.binpb	test.v1.AllTypes	full	int32_field = "x"	ERR	1:15: expected integer for field "int32_field"		
+layered-test.binpb	layered_test.v1.WKTMaps	full	counts = { "k": "x" }	ERR	1:17: expected integer for field "counts"		
+layered-test.binpb	layered_test.v1.WKTMaps	full	labels = { "k": 5 }	ERR	1:17: expected string for field "labels"		
+layered-test.binpb	layered_test.v1.WKTMaps	full	counts = { "k": { value = "x" } }	ERR	1:27: expected integer for field "value"		
+layered-test.binpb	layered_test.v1.WKTMaps	full	howlong = { "k": "x" }	ERR	1:18: expected a duration literal or '{' for map message value, got string ("x")		
+layered-test.binpb	layered_test.v1.WKTDefaults	full	bytv = 5	ERR	1:8: expected bytes for field "bytv"		
+layered-test.binpb	layered_test.v1.WKTDefaults	full	fv = "x"	ERR	1:6: expected number for field "fv"		
+layered-test.binpb	layered_test.v1.WKTDefaults	full	u64v = -1	ERR	1:8: invalid uint64: -1		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	db_password = 5	ERR	1:15: expected a string literal or '{' for message field "db_password", got integer ("5")		
+test.binpb	test.v1.AllTypes	full	repeated_nested = [5]	ERR	1:20: expected '{' for repeated message element, got integer ("5")		
+layered-test.binpb	layered_test.v1.WKTMaps	full	when = { "k": 5 }	ERR	1:15: expected a timestamp literal or '{' for map message value, got integer ("5")		
+test.binpb	test.v1.AllTypes	full	nested_map = { "k": 5 }	ERR	1:21: expected '{' for map message value, got integer ("5")		
+test.binpb	test.v1.AllTypes	full	string_field = "\xff"	ERR	1:16: invalid UTF-8 in string field "string_field" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	string_field = "a\xffb"	ERR	1:16: invalid UTF-8 in string field "string_field" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	string_field = "\xc0\x80"	ERR	1:16: invalid UTF-8 in string field "string_field" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	string_field = "\xed\xa0\x80"	ERR	1:16: invalid UTF-8 in string field "string_field" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	string_field = """\xff"""	OK	0a045c786666	string_field	
+test.binpb	test.v1.AllTypes	full	bytes_field = "\xff\xfe"	ERR	1:15: expected bytes for field "bytes_field"		
+test.binpb	test.v1.AllTypes	full	repeated_string = ["ok", "\xff"]	ERR	1:26: invalid UTF-8 in string field "repeated_string" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	string_map = { "\xff": "x" }	ERR	1:16: invalid UTF-8 in string map key		
+test.binpb	test.v1.AllTypes	full	string_map = { "k": "\xff" }	ERR	1:21: invalid UTF-8 in string field "string_map" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	int_map = { 1: "\xff" }	ERR	1:16: invalid UTF-8 in string field "int_map" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	int_map = { "\xff": "x" }	ERR	1:13: invalid int32 map key: \xff		
+test.binpb	test.v1.AllTypes	full	nested_map = { "\xff": { name = "x" } }	ERR	1:16: invalid UTF-8 in string map key		
+test.binpb	test.v1.AllTypes	full	nested_map = { "k": "\xff" }	ERR	1:21: expected '{' for map message value, got string ("\\xff")		
+test.binpb	test.v1.AllTypes	full	nested_field { name = "\xff" }	ERR	1:23: invalid UTF-8 in string field "name" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	nested_field = { name = "\xff" }	ERR	1:25: invalid UTF-8 in string field "name" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	repeated_nested = [{ name = "\xff" }]	ERR	1:29: invalid UTF-8 in string field "name" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	text_choice = "\xff"	ERR	1:15: invalid UTF-8 in string field "text_choice" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	nullable_string = "\xff"	ERR	1:19: invalid UTF-8 in string field "nullable_string" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	nullable_int = "\xff"	ERR	1:16: expected integer for field "nullable_int"		
+test.binpb	test.v1.AllTypes	full	int32_field = "\xff"	ERR	1:15: expected integer for field "int32_field"		
+test.binpb	test.v1.AllTypes	full	bool_field = "\xff"	ERR	1:14: expected bool for field "bool_field"		
+test.binpb	test.v1.AllTypes	full	float_field = "\xff"	ERR	1:15: expected number for field "float_field"		
+test.binpb	test.v1.AllTypes	full	enum_field = "\xff"	ERR	1:14: expected enum name or number for field "enum_field"		
+test.binpb	test.v1.AllTypes	full	ts_field = "\xff"	ERR	1:12: expected a timestamp literal or '{' for message field "ts_field", got string ("\\xff")		
+test.binpb	test.v1.AllTypes	full	dur_field = "\xff"	ERR	1:13: expected a duration literal or '{' for message field "dur_field", got string ("\\xff")		
+test.binpb	test.v1.AllTypes	full	nested_field = "\xff"	ERR	1:16: expected '{' for message field "nested_field", got string ("\\xff")		
+test.binpb	test.v1.AllTypes	full	"\xff" = 1	ERR	1:1: quoted entry name "\\xff" is only valid inside a keyed repeated field's block (draft -01 §3.13)		
+test.binpb	test.v1.AllTypes	full	"\xff" { name = "x" }	ERR	1:1: quoted entry name "\\xff" is only valid inside a keyed repeated field's block (draft -01 §3.13)		
+test.binpb	test.v1.AllTypes	full	nested_field { "\xff" = 1 }	ERR	1:16: quoted entry name "\\xff" is only valid inside a keyed repeated field's block (draft -01 §3.13)		
+test.binpb	test.v1.AllTypes	full	string_map = { "\xff": "x" } string_field = "\xfe"	ERR	1:16: invalid UTF-8 in string map key		
+test.binpb	test.v1.AllTypes	discard	unknown_field = "\xff" string_field = "ok"	OK	0a026f6b	string_field	
+test.binpb	test.v1.AllTypes	discard	unknown { a = "\xff" } string_field = "ok"	OK	0a026f6b	string_field	
+test.binpb	test.v1.AllTypes	discard	unknown = ["\xff", { b = "\xfe" }] string_field = "ok"	OK	0a026f6b	string_field	
+test.binpb	test.v1.AllTypes	discard	unknown = { "\xff": "\xfe" } string_field = "ok"	OK	0a026f6b	string_field	
+test.binpb	test.v1.AllTypes	discard	string_field = "\xff"	ERR	1:16: invalid UTF-8 in string field "string_field" (use b"…" for raw bytes)		
+keyed-entry-name-test.binpb	keyedname.v1.P	full	kn { "\xff" { } }	ERR	1:6: invalid UTF-8 in entry name for keyed field "kn"		
+keyed-entry-name-test.binpb	keyedname.v1.P	full	kn { "\xff" = { } }	ERR	1:6: invalid UTF-8 in entry name for keyed field "kn"		
+keyed-entry-name-test.binpb	keyedname.v1.P	full	kn { a { inner { "\xff" { } } } }	ERR	1:18: invalid UTF-8 in entry name for keyed field "inner"		
+keyed-entry-name-test.binpb	keyedname.v1.P	full	kn = [{ name = "\xff" }]	ERR	1:16: invalid UTF-8 in string field "name" (use b"…" for raw bytes)		
+keyed-entry-name-test.binpb	keyedname.v1.P	full	kn { a { name = "\xff" } }	ERR	1:17: key field "name" = "\\xff" conflicts with entry name "a" in keyed field "kn"		
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "\xff" }	ERR	1:19: cannot resolve Any type "\\xff": proto: not found
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "keyedname.v1.Element" name = "\xff" }	ERR	1:49: invalid UTF-8 in string field "name" (use b"…" for raw bytes)
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "keyedname.v1.Element" label = "ok" }	OK	payload {\n  @type = "keyedname.v1.Element"\n  label = "ok"\n}\n
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { fingerprint = "\xff" }	ERR	1:29: invalid UTF-8 in pxf.Secret fingerprint		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = { hint = "\xff" }	ERR	1:24: invalid UTF-8 in pxf.Secret hint		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { fingerprint = "\xff" }	ERR	1:29: invalid UTF-8 in pxf.Secret fingerprint		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = { hint = "\xff" }	ERR	1:24: invalid UTF-8 in pxf.Secret hint		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "a": "\xff" }	ERR	1:22: invalid UTF-8 in pxf.Secret value for field "tenant_keys"		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "\xff": "x" }	ERR	1:17: invalid UTF-8 in string map key		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	api_token = "ok" db_password = "\xff"	ERR	1:32: invalid UTF-8 in pxf.Secret value for field "db_password"		api_token=ok
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "a": "\xff" }	ERR	1:22: invalid UTF-8 in pxf.Secret value for field "tenant_keys"		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "\xff": "x" }	ERR	1:17: invalid UTF-8 in string map key		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	api_token = "ok" db_password = "\xff"	ERR	1:32: invalid UTF-8 in pxf.Secret value for field "db_password"		api_token=ok
+layered-test.binpb	layered_test.v1.WKTMaps	full	labels = { "k": "\xff" }	ERR	1:17: invalid UTF-8 in string field "labels" (use b"…" for raw bytes)		
+layered-test.binpb	layered_test.v1.WKTDefaults	full	sv = "\xff"	ERR	1:6: invalid UTF-8 in string field "sv" (use b"…" for raw bytes)		
+layered-test.binpb	layered_test.v1.WKTDefaults	full	bytv = "\xff"	ERR	1:8: expected bytes for field "bytv"		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	db_password = "\xff\xfe"	ERR	1:15: invalid UTF-8 in string field "db_password" (use b"…" for raw bytes)		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	backup_keys = ["\xff"]	ERR	1:16: invalid UTF-8 in string field "backup_keys" (use b"…" for raw bytes)		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	tenant_keys = { "a": "\xff" }	ERR	1:22: invalid UTF-8 in string field "tenant_keys" (use b"…" for raw bytes)		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	db_password { hint = "\xff" }	ERR	1:22: invalid UTF-8 in string field "hint" (use b"…" for raw bytes)		
+test.binpb	test.v1.AllTypes	full	@type "\xff" string_field = "x"	ERR	1:7: expected type name after @type, got string ("\\xff")		
+test.binpb	test.v1.AllTypes	full	@type test.v1.AllTypes string_field = "x"	OK	0a0178	string_field	
+test.binpb	test.v1.AllTypes	full	@proto "\xff" string_field = "x"	OK	0a0178	string_field	
+test.binpb	test.v1.AllTypes	full	@meta { a = "\xff" } string_field = "x"	OK	0a0178	string_field	
+test.binpb	test.v1.AllTypes	full	@meta { a = "ok" } string_field = "x"	OK	0a0178	string_field	
+test.binpb	test.v1.AllTypes	full	@dataset test.v1.AllTypes (string_field) ("\xff")	OK			
+keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "nope.v1.Missing" }	ERR	1:19: cannot resolve Any type "nope.v1.Missing": proto: not found
+test.binpb	test.v1.AllTypes	full	@type "test.v1.AllTypes" string_field = "x"	ERR	1:7: expected type name after @type, got string ("test.v1.AllTypes")		

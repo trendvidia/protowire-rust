@@ -42,24 +42,47 @@ pub(crate) fn quote(s: &str) -> String {
     let mut out = String::with_capacity(s.len() + 2);
     out.push('"');
     for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\x07' => out.push_str("\\a"),
-            '\x08' => out.push_str("\\b"),
-            '\x0c' => out.push_str("\\f"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            '\x0b' => out.push_str("\\v"),
-            c if is_print(c) => out.push(c),
-            c if (c as u32) < 0x80 => out.push_str(&format!("\\x{:02x}", c as u32)),
-            c if (c as u32) <= 0xFFFF => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push_str(&format!("\\U{:08x}", c as u32)),
+        quote_char(&mut out, c);
+    }
+    out.push('"');
+    out
+}
+
+/// [`quote`] over bytes that need not be UTF-8: Go's `%q` of a string
+/// holding them, which writes each byte that starts no valid sequence as
+/// `\xNN` (#170).
+pub(crate) fn quote_bytes(b: &[u8]) -> String {
+    let mut out = String::with_capacity(b.len() + 2);
+    out.push('"');
+    for chunk in b.utf8_chunks() {
+        for c in chunk.valid().chars() {
+            quote_char(&mut out, c);
+        }
+        for byte in chunk.invalid() {
+            out.push_str(&format!("\\x{byte:02x}"));
         }
     }
     out.push('"');
     out
+}
+
+/// One character as Go's `strconv.Quote` writes it.
+fn quote_char(out: &mut String, c: char) {
+    match c {
+        '"' => out.push_str("\\\""),
+        '\\' => out.push_str("\\\\"),
+        '\x07' => out.push_str("\\a"),
+        '\x08' => out.push_str("\\b"),
+        '\x0c' => out.push_str("\\f"),
+        '\n' => out.push_str("\\n"),
+        '\r' => out.push_str("\\r"),
+        '\t' => out.push_str("\\t"),
+        '\x0b' => out.push_str("\\v"),
+        c if is_print(c) => out.push(c),
+        c if (c as u32) < 0x80 => out.push_str(&format!("\\x{:02x}", c as u32)),
+        c if (c as u32) <= 0xFFFF => out.push_str(&format!("\\u{:04x}", c as u32)),
+        c => out.push_str(&format!("\\U{:08x}", c as u32)),
+    }
 }
 
 fn num_error(func: &str, s: &str, why: &str) -> String {
@@ -631,6 +654,27 @@ pub(crate) fn decode_base64_descriptor(raw: &str) -> Result<Vec<u8>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Go's `%q` of each, run on Go 1.27: a byte that starts no valid
+    /// sequence is written `\xNN`, one by one, a truncated sequence too.
+    #[test]
+    fn bytes_quote_as_go() {
+        for (b, want) in [
+            (&b"\xff"[..], r#""\xff""#),
+            (b"a\xffb", r#""a\xffb""#),
+            (b"\xc0\x80", r#""\xc0\x80""#),
+            (b"\xed\xa0\x80", r#""\xed\xa0\x80""#),
+            ("é\u{80}".as_bytes(), r#""é\u0080""#),
+            ("é".as_bytes(), r#""é""#),
+            (b"\xc3\xa9\x80", r#""é\x80""#),
+            (b"\xe2\x82", r#""\xe2\x82""#),
+            (b"ok\"\\\n", r#""ok\"\\\n""#),
+            (b"\x00\x7f", r#""\x00\x7f""#),
+        ] {
+            assert_eq!(quote_bytes(b), want, "{b:?}");
+        }
+        assert_eq!(quote_bytes(b"plain"), quote("plain"));
+    }
 
     #[test]
     fn ints_as_strconv() {
