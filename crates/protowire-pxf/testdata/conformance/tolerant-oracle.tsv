@@ -1,4 +1,4 @@
-# What protowire-go at ca79f5c's Parse and ParseTolerant do with each case of tolerant-cases.tsv.
+# What protowire-go at f129ec4's Parse and ParseTolerant do with each case of tolerant-cases.tsv.
 # Produced by scripts/gen-tolerant-oracle.sh. Do not edit.
 # Columns: the case, Parse's verdict (OK, or ERR and the error), ParseTolerant's errors
 # (line:col:offset|msg joined by ' ; ', or NONE), and its tree in the dump format of
@@ -75,6 +75,8 @@ a { @type = }\n	ERR 1:13: expected a string type URL after @type =, got } ("}")	
 @proto 5\nx = 1\n	ERR 1:8: expected '{', dotted identifier, triple-quoted string, or b"..." after @proto, got integer	1:8:7|expected '{', dotted identifier, triple-quoted string, or b"..." after @proto, got integer ; 2:1:9|expected '=', ':', or '{' after "5", got identifier	doc("",0,[],[],[],[],[a(1:8:7-1:9:8,"5",0,bad(1:9:8-1:9:8),[],""),a(2:1:9-2:6:14,"x",0,i(2:5:13-2:6:14,"1",""),[],"")],[])
 @proto a.B\nx = 1\n	ERR 2:1: expected '{' after @proto a.B, got identifier	2:1:11|expected '{' after @proto a.B, got identifier	doc("",0,[],[],[],[],[a(2:1:11-2:6:16,"x",0,i(2:5:15-2:6:16,"1",""),[],"")],[])
 @proto b"!!"\nx = 1\n	ERR 1:8: expected '{', dotted identifier, triple-quoted string, or b"..." after @proto, got ILLEGAL	1:8:7|@proto descriptor body: invalid base64: illegal base64 data at input byte 0	doc("",0,[],[],[],[],[a(2:1:13-2:6:18,"x",0,i(2:5:17-2:6:18,"1",""),[],"")],[])
+@proto """syntax = "proto3";"""\nx = 1\n	OK	NONE	doc("",31,[],[],[],[p(1:1:0,source,"","syntax = \\x22proto3\\x22;",[])],[a(2:1:32-2:6:37,"x",0,i(2:5:36-2:6:37,"1",""),[],"")],[])
+@proto\n"""\nsyntax = "proto3";\n"""\nx = 1\n	OK	NONE	doc("",33,[],[],[],[p(1:1:0,source,"","syntax = \\x22proto3\\x22;",[])],[a(5:1:34-5:6:39,"x",0,i(5:5:38-5:6:39,"1",""),[],"")],[])
 @dataset T (a, b)\n(1, 2)\n(3)\n	ERR 3:1: @dataset row has 1 cells, expected 2 (column count)	3:1:25|@dataset row has 1 cells, expected 2 (column count)	doc("",0,[],[],[],[],[],[])
 @dataset T (a)\n({ x = 1 )\n(2)\n	ERR 2:10: expected identifier, string, integer, or bool, got ) (")")	2:10:24|unclosed block: expected '}' before ')'	doc("",29,[],[],[t(1:1:0,"T",["a"],[r(2:1:15,[bl(2:2:16-2:10:24,[a(2:4:18-2:9:23,"x",0,i(2:8:22-2:9:23,"1",""),[],"")],[])],[]),r(3:1:26,[i(3:2:27-3:3:28,"2","")],[])],[])],[],[],[])
 @dataset T (a)\n([1, 2 )\n(3)\n	ERR 2:8: expected value, got ) (")")	2:8:22|expected ']', got )	doc("",27,[],[],[t(1:1:0,"T",["a"],[r(2:1:15,[l(2:2:16-2:8:22,[i(2:3:17-2:4:18,"1",""),i(2:6:20-2:7:21,"2","")])],[]),r(3:1:24,[i(3:2:25-3:3:26,"3","")],[])],[])],[],[],[])

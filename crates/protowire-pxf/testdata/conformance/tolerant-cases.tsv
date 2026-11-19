@@ -77,6 +77,8 @@ a { @type = }\n
 @proto 5\nx = 1\n
 @proto a.B\nx = 1\n
 @proto b"!!"\nx = 1\n
+@proto """syntax = "proto3";"""\nx = 1\n
+@proto\n"""\nsyntax = "proto3";\n"""\nx = 1\n
 @dataset T (a, b)\n(1, 2)\n(3)\n
 @dataset T (a)\n({ x = 1 )\n(2)\n
 @dataset T (a)\n([1, 2 )\n(3)\n

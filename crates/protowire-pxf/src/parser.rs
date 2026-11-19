@@ -897,7 +897,9 @@ impl<'a> Parser<'a> {
             }
             TokenKind::String => {
                 let body = std::mem::take(&mut self.current.value).into_bytes();
-                let end_offset = self.current.pos.offset + body.len();
+                // Past the closing `"""`, where the lexer stands: the body
+                // is shorter than the token by its delimiters and dedent.
+                let end_offset = self.lex.base() + self.lex.input_pos();
                 self.advance();
                 Ok((
                     ProtoDirective {
