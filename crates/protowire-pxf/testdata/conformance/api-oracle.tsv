@@ -1,12 +1,10 @@
-# What protowire-go at ca79f5c's pxf API does with each case of api-cases.tsv.
+# What protowire-go at a0a78c2's pxf API does with each case of api-cases.tsv.
 # Produced by scripts/gen-api-oracle.sh. Do not edit.
 # Columns: descriptor set, message, op, its arguments, then the verdict:
 # full / full-skip / discard: OK, pb hex, sorted present paths, sorted null paths; or ERR.
 # marshal: OK and the text, or ERR. apply: OK and the pb hex, or ERR.
 # required: the answer. default: whether there is one, and the literal.
 # Tabs, newlines and backslashes in a verdict are escaped.
-# One row is by hand: `@proto "\xff"` holds protowire-go at a0a78c2's verdict
-# (#205), since regenerating from there also needs #206. Regenerate once it lands.
 layered-test.binpb	layered_test.v1.AllScalars	full	i32 = 99	ERR	1:1: required field "req" is absent		
 layered-test.binpb	layered_test.v1.AllScalars	full	req = "x"	OK	0a0568656c6c6f10011820204028c0023080053d0000c03f411f85eb51b81e09404a0568656c6c6f50015802720178	req	
 layered-test.binpb	layered_test.v1.AllScalars	full	s = "explicit" i32 = 42 req = "r"	OK	0a086578706c696369741001182a204028c0023080053d0000c03f411f85eb51b81e09404a0568656c6c6f50015802720172	i32,req,s	
@@ -201,9 +199,9 @@ test.binpb	test.v1.AllTypes	marshal	string_field = "a\u0007b\u0008\u000c\u000b\u
 test.binpb	test.v1.AllTypes	format	a = "\u0007\u0008\u000c\u000b\u007f ​\u0085\U0001F600" b = { "k\u0007": 1 " ": 2 }	OK	"\\a\\b\\f\\v\\x7f\\u00a0\\u200b\\u0085\\ue000😀" | {\n  "k\\a": 1\n  "\\u00a0": 2\n}
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = "supersecret"	OK	1200	db_password,db_password.value	db_password=supersecret
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = "supersecret"	OK	1200		db_password=supersecret
-secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	backup_keys = ["a", "b", "c"]	OK	220022002200	backup_keys	backup_keys[0]=a ; backup_keys[1]=b ; backup_keys[2]=c
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	backup_keys = ["a", "b", "c"]	OK	220022002200	backup_keys,backup_keys[0].value,backup_keys[1].value,backup_keys[2].value	backup_keys[0]=a ; backup_keys[1]=b ; backup_keys[2]=c
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	backup_keys = ["a", "b", "c"]	OK	220022002200		backup_keys[0]=a ; backup_keys[1]=b ; backup_keys[2]=c
-secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "acme": "k1" "evil_corp": "k2" }	OK	2a080a0461636d6512002a0d0a096576696c5f636f72701200	tenant_keys	tenant_keys["acme"]=k1 ; tenant_keys["evil_corp"]=k2
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "acme": "k1" "evil_corp": "k2" }	OK	2a080a0461636d6512002a0d0a096576696c5f636f72701200	tenant_keys,tenant_keys["acme"].value,tenant_keys["evil_corp"].value	tenant_keys["acme"]=k1 ; tenant_keys["evil_corp"]=k2
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "acme": "k1" "evil_corp": "k2" }	OK	2a080a0461636d6512002a0d0a096576696c5f636f72701200		tenant_keys["acme"]=k1 ; tenant_keys["evil_corp"]=k2
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password { value = "x" hint = "h" }	OK	1203120168	db_password,db_password.hint,db_password.value	db_password=x
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password { value = "x" hint = "h" }	OK	1203120168		db_password=x
@@ -243,7 +241,7 @@ secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	db_password = null	
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	db_password = null	OK			
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	backup_keys = [null]	ERR	1:16: null is not allowed in repeated field "backup_keys"		
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	backup_keys = [null]	ERR	1:16: null is not allowed in repeated field "backup_keys"		
-secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "a\"b": "k" }	OK	2a070a036122621200	tenant_keys	tenant_keys["a\\"b"]=k
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	tenant_keys = { "a\"b": "k" }	OK	2a070a036122621200	tenant_keys,tenant_keys["a\"b"].value	tenant_keys["a\\"b"]=k
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	tenant_keys = { "a\"b": "k" }	OK	2a070a036122621200		tenant_keys["a\\"b"]=k
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret	base_url = "u" db_password = "s"	OK	0a01751200	base_url,db_password,db_password.value	db_password=s
 secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	secret-plain	base_url = "u" db_password = "s"	OK	0a01751200		db_password=s
@@ -255,9 +253,9 @@ secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	dbs = [{ password = "a"
 secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	dbs = [{ password = "a" }, { password = { value = "b" } }]	OK	1a020a001a020a00		dbs[0].password=a ; dbs[1].password=b
 secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	db_by_name = { "x": { password = "a" } }	OK	22070a017812020a00	db_by_name,db_by_name["x"].password,db_by_name["x"].password.value	db_by_name["x"].password=a
 secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	db_by_name = { "x": { password = "a" } }	OK	22070a017812020a00		db_by_name["x"].password=a
-secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	by_id = { 7: "s" -1: "t" }	OK	2a0d08ffffffffffffffffff0112002a0408071200	by_id	by_id[7]=s ; by_id[-1]=t
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	by_id = { 7: "s" -1: "t" }	OK	2a0d08ffffffffffffffffff0112002a0408071200	by_id,by_id[-1].value,by_id[7].value	by_id[7]=s ; by_id[-1]=t
 secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	by_id = { 7: "s" -1: "t" }	OK	2a0d08ffffffffffffffffff0112002a0408071200		by_id[7]=s ; by_id[-1]=t
-secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	by_flag = { true: "s" }	OK	320408011200	by_flag	by_flag[true]=s
+secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	by_flag = { true: "s" }	OK	320408011200	by_flag,by_flag[true].value	by_flag[true]=s
 secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	by_flag = { true: "s" }	OK	320408011200		by_flag[true]=s
 secret-hook-test.binpb	secret_hook_test.v1.Holder	secret	payload { @type = "type.googleapis.com/secret_hook_test.v1.DB" password = "z" }	OK	3a300a2a747970652e676f6f676c65617069732e636f6d2f7365637265745f686f6f6b5f746573742e76312e444212020a00	payload,payload.password,payload.password.value	payload.password=z
 secret-hook-test.binpb	secret_hook_test.v1.Holder	secret-plain	payload { @type = "type.googleapis.com/secret_hook_test.v1.DB" password = "z" }	OK	3a300a2a747970652e676f6f676c65617069732e636f6d2f7365637265745f686f6f6b5f746573742e76312e444212020a00		payload.password=z
@@ -365,3 +363,8 @@ keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "nope.v
 keyed-entry-name-test.binpb	keyedname.v1.P	marshal	payload { @type = "nope.v1.Missing" }	ERR	1:19: cannot resolve Any type "nope.v1.Missing": no TypeResolver (UnmarshalOptions.TypeResolver)
 keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "nope.v1.Bell\u0007" }	ERR	1:19: cannot resolve Any type "nope.v1.Bell\\a": not found
 test.binpb	test.v1.AllTypes	full	@type "test.v1.AllTypes" string_field = "x"	ERR	1:7: expected type name after @type, got string ("test.v1.AllTypes")		
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	backup_keys = ["a", "b", "c"]	OK	22030a016122030a016222030a0163	backup_keys,backup_keys[0].value,backup_keys[1].value,backup_keys[2].value	
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	tenant_keys = { "acme": "k1" "evil_corp": "k2" }	OK	2a0c0a0461636d6512040a026b312a110a096576696c5f636f727012040a026b32	tenant_keys,tenant_keys["acme"].value,tenant_keys["evil_corp"].value	
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	db_password = "x" backup_keys = [{ value = "a" hint = "h" }, "b"] tenant_keys = { "acme": "k" "z": { value = "v" } }	OK	12030a017822060a016112016822030a01622a0b0a0461636d6512030a016b2a080a017a12030a0176	backup_keys,backup_keys[0].hint,backup_keys[0].value,backup_keys[1].value,db_password,db_password.value,tenant_keys,tenant_keys["acme"].value,tenant_keys["z"].value	
+secret-hook-test.binpb	secret_hook_test.v1.Holder	full	by_id = { 7: "s" -1: "t" }	OK	2a1008ffffffffffffffffff0112030a01742a07080712030a0173	by_id,by_id[-1].value,by_id[7].value	
+secret-hook-test.binpb	secret_hook_test.v1.Holder	full	by_flag = { true: "s" }	OK	3207080112030a0173	by_flag,by_flag[true].value	
