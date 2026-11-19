@@ -172,6 +172,13 @@ fn read_value_with(
 
 /// The error for anything after a dataset's rows that is neither a row nor
 /// a directive. The streaming reader reports the same text.
+/// protowire-go's refusal of a `@proto` source body written as a plain
+/// quoted string (protowire-go#305): the grammar admits only a triple-quoted
+/// one (`proto_source_body = triple_string`), and a plain one's escapes could
+/// put `"""` in a body no formatter can write back.
+pub(crate) const PROTO_SOURCE_NOT_TRIPLE: &str =
+    r#"@proto source body must be a triple-quoted string ("""...""")"#;
+
 pub(crate) const ERR_DATASET_BESIDE_ENTRIES: &str = "@dataset directive cannot coexist with top-level field entries; the document's payload is the @dataset rows (draft §3.4.4)";
 
 /// A block's entries, the comments after the last of them, and where it
@@ -844,7 +851,8 @@ impl<'a> Parser<'a> {
     ///
     ///   - anonymous:  `@proto { <message-body> }`
     ///   - named:      `@proto <dotted-name> { <message-body> }`
-    ///   - source:     `@proto """<proto-source>"""`
+    ///   - source:     `@proto """<proto-source>"""`, triple-quoted only:
+    ///     a plain `"…"` is refused with protowire-go's error (#205)
     ///   - descriptor: `@proto b"<base64-FileDescriptorSet>"`
     ///
     /// For the brace-bounded shapes the body is sliced as raw bytes
@@ -894,6 +902,19 @@ impl<'a> Parser<'a> {
                     },
                     end_offset,
                 ))
+            }
+            // A plain string whose bytes are not UTF-8 is still a plain
+            // string, refused as protowire-go refuses it.
+            TokenKind::String | TokenKind::Illegal
+                if (matches!(self.current.kind, TokenKind::String)
+                    || self.current.value == crate::lexer::INVALID_UTF8_STRING)
+                    && !self.lex.triple_at(self.current.pos) =>
+            {
+                let e = PxfError::new(self.current.pos, PROTO_SOURCE_NOT_TRIPLE);
+                // Consumed, so tolerant mode does not resume at the
+                // string and read it as an entry's key.
+                self.advance();
+                Err(e)
             }
             TokenKind::String => {
                 let body = std::mem::take(&mut self.current.value).into_bytes();

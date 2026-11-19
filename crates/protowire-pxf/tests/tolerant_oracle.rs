@@ -348,17 +348,17 @@ fn every_case_meets_the_reference() {
         failures.len(),
         failures.join("\n")
     );
-    // This port's counts. The oracle file gives protowire-go's: 286 read by
-    // `parse`, 469 with errors, 878 errors and 189 placeholders. The two
+    // This port's counts. The oracle file gives protowire-go's: 287 read by
+    // `parse`, 471 with errors, 880 errors and 189 placeholders. The two
     // rows decided on #191 make the difference: the first is refused by
     // `parse`, and each holds one more error and one more placeholder here.
     assert_eq!(
         seen,
         Marker {
-            cases: 755,
-            strict_ok: 285,
-            with_errors: 470,
-            errors: 880,
+            cases: 758,
+            strict_ok: 286,
+            with_errors: 472,
+            errors: 882,
             placeholders: 191,
             not_utf8_by_decision: 5,
         }
