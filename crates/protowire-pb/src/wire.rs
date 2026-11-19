@@ -118,6 +118,51 @@ impl std::fmt::Display for Kind {
     }
 }
 
+/// Why the value of a field read as unknown could not be skipped, in
+/// protobuf-go's words (`protowire.ParseError`). The skip is protobuf-go's
+/// `ConsumeFieldValue`: wire types 6 and 7 are reserved, an end-group tag
+/// must end the group it is in, and a value must not stop short.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ParseError {
+    /// The value stops before it ends.
+    Truncated,
+    /// A tag inside a group has field number 0, or one past 2^31 - 1.
+    FieldNumber,
+    /// A varint runs past 64 bits.
+    Overflow,
+    /// Wire type 6 or 7, which name no encoding.
+    Reserved,
+    /// An end-group tag that ends no group, or another group than the one
+    /// open.
+    EndGroup,
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            ParseError::Truncated => "unexpected EOF",
+            ParseError::FieldNumber => "proto: invalid field number",
+            ParseError::Overflow => "proto: variable length integer overflow",
+            ParseError::Reserved => "proto: cannot parse reserved wire type",
+            ParseError::EndGroup => "proto: mismatching end group marker",
+        })
+    }
+}
+
+/// ` in <message>`, or nothing, after the field number of
+/// [`Error::SkipField`].
+struct Within(Option<&'static str>);
+
+impl std::fmt::Display for Within {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.0 {
+            Some(message) => write!(f, " in {message}"),
+            None => Ok(()),
+        }
+    }
+}
+
 /// A decode error, worded as protowire-go's `pb.Unmarshal` words it (#144).
 /// An error inside a field the message names ([`crate::Message::field_name`])
 /// comes wrapped in [`Error::Field`], one wrapper per message it sits in:
@@ -129,13 +174,28 @@ pub enum Error {
     /// 64 bits.
     #[error("corrupt {0}")]
     Corrupt(Kind),
-    /// A field the message does not name could not be read or skipped.
+    /// A field the message reads but does not name could not be read.
     #[error("corrupt field {0}")]
     CorruptField(u32),
-    /// A map entry field other than the key (1) and value (2) could not be
-    /// skipped.
-    #[error("corrupt unknown field {0} in map entry")]
-    CorruptMapEntryField(u32),
+    /// A field read as unknown could not be skipped: one the message does
+    /// not read, or one whose wire type does not match its type, which
+    /// protobuf reads as unknown (protowire#614). `within` names the message
+    /// it is in when protowire-go's text does: `map entry`, `BigInt`,
+    /// `Decimal` or `BigFloat`. The text is protowire-go's: `corrupt field
+    /// 3 in map entry: unexpected EOF`.
+    #[error("corrupt field {field}{}: {cause}", Within(*.within))]
+    SkipField {
+        field: u32,
+        within: Option<&'static str>,
+        cause: ParseError,
+    },
+    /// A field was read with a [`Reader`] method of another wire type than
+    /// its tag's. [`crate::unmarshal`], [`crate::read_message`] and
+    /// [`crate::read_map_entry`] catch it and skip the field as unknown, so
+    /// a `Message` impl passes it on with `?` and never sees it returned.
+    #[doc(hidden)]
+    #[error("a field read with another wire type than its tag's")]
+    WireTypeMismatch,
     #[error("invalid UTF-8 in string")]
     InvalidUtf8,
     /// An error inside the field `name`, as [`crate::Message::field_name`]
@@ -427,7 +487,13 @@ pub struct Reader<'a> {
     pub(crate) limits: Limits,
     /// The field number of the last tag read, so [`Reader::skip`] can find
     /// the end of a group that field starts.
-    last_field: u32,
+    pub(crate) last_field: u32,
+    /// The wire type of the last tag read, until the field's value is read:
+    /// a read of another wire type is [`Error::WireTypeMismatch`], and the
+    /// field is skipped as unknown, as protobuf skips it (protowire#614).
+    expect: Option<WireType>,
+    /// The message [`Error::SkipField`] names, when protowire-go's text does.
+    pub(crate) within: Option<&'static str>,
 }
 
 /// The largest field number a tag can carry (2^29 - 1).
@@ -449,6 +515,8 @@ impl<'a> Reader<'a> {
             depth: 0,
             limits,
             last_field: 0,
+            expect: None,
+            within: None,
         }
     }
 
@@ -504,6 +572,8 @@ impl<'a> Reader<'a> {
             depth: self.depth,
             limits: self.limits,
             last_field: 0,
+            expect: None,
+            within: None,
         }
     }
 
@@ -519,69 +589,86 @@ impl<'a> Reader<'a> {
         self.data.len().saturating_sub(self.pos)
     }
 
+    /// The value about to be read has wire type `wire_type`, or the tag
+    /// just read said another: [`Error::WireTypeMismatch`], before anything
+    /// is consumed. Only the first read after a tag is checked, so a value
+    /// read in parts (a length, then its bytes) is checked once.
+    fn want(&mut self, wire_type: WireType) -> Result<()> {
+        match self.expect.take() {
+            Some(got) if got != wire_type => Err(Error::WireTypeMismatch),
+            _ => Ok(()),
+        }
+    }
+
     /// A varint of at most 10 bytes whose value fits 64 bits, as
     /// protobuf-go's `ConsumeVarint` reads one: a tenth byte above 1 sets a
     /// bit past the 64th, and is refused.
-    fn raw_varint(&mut self) -> Option<u64> {
+    fn consume_varint(&mut self) -> std::result::Result<u64, ParseError> {
         let mut result: u64 = 0;
         for i in 0..10 {
-            let byte = *self.data.get(self.pos)?;
+            let byte = *self.data.get(self.pos).ok_or(ParseError::Truncated)?;
             self.pos += 1;
             if i == 9 && byte > 1 {
-                return None;
+                return Err(ParseError::Overflow);
             }
             result |= ((byte & 0x7f) as u64) << (7 * i);
             if byte & 0x80 == 0 {
-                return Some(result);
+                return Ok(result);
             }
         }
-        None
+        Err(ParseError::Overflow)
     }
 
     fn varint_as(&mut self, kind: Kind) -> Result<u64> {
-        self.raw_varint().ok_or(Error::Corrupt(kind))
+        self.consume_varint().map_err(|_| Error::Corrupt(kind))
+    }
+
+    /// A varint field's value, as `kind`.
+    fn varint_field(&mut self, kind: Kind) -> Result<u64> {
+        self.want(WireType::Varint)?;
+        self.varint_as(kind)
     }
 
     /// Read an unsigned varint (uint64 range).
     pub fn varint(&mut self) -> Result<u64> {
-        self.varint_as(Kind::Uint)
+        self.varint_field(Kind::Uint)
     }
 
     /// A `bool`: any varint other than 0 is true.
     pub fn bool(&mut self) -> Result<bool> {
-        Ok(self.varint_as(Kind::Bool)? != 0)
+        Ok(self.varint_field(Kind::Bool)? != 0)
     }
 
     /// A proto3 `int64`: the varint as signed.
     pub fn int64(&mut self) -> Result<i64> {
-        Ok(self.varint_as(Kind::Int)? as i64)
+        Ok(self.varint_field(Kind::Int)? as i64)
     }
 
     /// A proto3 `int32`: the varint's low 32 bits as signed, so a negative
     /// value written as 10 bytes reads back.
     pub fn int32(&mut self) -> Result<i32> {
-        Ok(self.varint_as(Kind::Int)? as i32)
+        Ok(self.varint_field(Kind::Int)? as i32)
     }
 
     /// A proto3 `uint64`.
     pub fn uint64(&mut self) -> Result<u64> {
-        self.varint_as(Kind::Uint)
+        self.varint_field(Kind::Uint)
     }
 
     /// A proto3 `uint32`: the varint's low 32 bits.
     pub fn uint32(&mut self) -> Result<u32> {
-        Ok(self.varint_as(Kind::Uint)? as u32)
+        Ok(self.varint_field(Kind::Uint)? as u32)
     }
 
     /// Decode a zigzag varint as a 32-bit signed integer (`sint32`).
     pub fn zigzag32(&mut self) -> Result<i32> {
-        let u = self.varint_as(Kind::Int)? as u32;
+        let u = self.varint_field(Kind::Int)? as u32;
         Ok(((u >> 1) as i32) ^ -((u & 1) as i32))
     }
 
     /// Decode a zigzag varint as a 64-bit signed integer (`sint64`).
     pub fn zigzag64(&mut self) -> Result<i64> {
-        let u = self.varint_as(Kind::Int)?;
+        let u = self.varint_field(Kind::Int)?;
         Ok(((u >> 1) as i64) ^ -((u & 1) as i64))
     }
 
@@ -594,20 +681,24 @@ impl<'a> Reader<'a> {
     }
 
     pub fn fixed32(&mut self) -> Result<u32> {
+        self.want(WireType::Fixed32)?;
         Ok(u32::from_le_bytes(self.take(Kind::Fixed32)?))
     }
 
     pub fn fixed64(&mut self) -> Result<u64> {
+        self.want(WireType::Fixed64)?;
         Ok(u64::from_le_bytes(self.take(Kind::Fixed64)?))
     }
 
     pub fn float(&mut self) -> Result<f32> {
+        self.want(WireType::Fixed32)?;
         Ok(f32::from_bits(u32::from_le_bytes(
             self.take(Kind::Float32)?,
         )))
     }
 
     pub fn double(&mut self) -> Result<f64> {
+        self.want(WireType::Fixed64)?;
         Ok(f64::from_bits(u64::from_le_bytes(
             self.take(Kind::Float64)?,
         )))
@@ -633,7 +724,11 @@ impl<'a> Reader<'a> {
     /// computed with `checked_add` and refused before slicing. Every
     /// length-delimited consumer goes through here, so the guard exists in
     /// exactly one place.
+    ///
+    /// The field's tag must be length-delimited, or the value is not read:
+    /// [`Error::WireTypeMismatch`].
     pub(crate) fn len_view(&mut self, kind: Kind) -> Result<&'a [u8]> {
+        self.want(WireType::LengthDelimited)?;
         let len = self.varint_as(kind)?;
         let end = usize::try_from(len)
             .ok()
@@ -656,9 +751,16 @@ impl<'a> Reader<'a> {
 
     /// Decode a tag varint into (field_number, wire_type), as protobuf-go's
     /// `ConsumeTag` does: a field number of 0 or past 2^29 - 1 is a corrupt
-    /// tag. Wire types 6 and 7 name no encoding, so the field cannot be
-    /// read: `corrupt field N`, protowire-go's text for an unknown field.
+    /// tag. Wire types 6 and 7 name no encoding, so no field is read from
+    /// them and no skip gets past them: [`Error::SkipField`], `corrupt field
+    /// N: proto: cannot parse reserved wire type`, protowire-go's text
+    /// (protowire#614).
+    ///
+    /// The field's value is then read with the method of its type, which
+    /// refuses a value of another wire type with
+    /// [`Error::WireTypeMismatch`], or skipped with [`Reader::skip`].
     pub fn tag(&mut self) -> Result<(u32, WireType)> {
+        self.expect = None;
         let t = self.varint_as(Kind::Tag)?;
         let field_number = t >> 3;
         if field_number == 0 || field_number > MAX_FIELD_NUMBER {
@@ -666,55 +768,107 @@ impl<'a> Reader<'a> {
         }
         let field_number = field_number as u32;
         self.last_field = field_number;
-        let wire_type =
-            WireType::from_u8((t & 0x7) as u8).map_err(|_| Error::CorruptField(field_number))?;
+        let wire_type = WireType::from_u8((t & 0x7) as u8).map_err(|_| Error::SkipField {
+            field: field_number,
+            within: self.within,
+            cause: ParseError::Reserved,
+        })?;
+        self.expect = Some(wire_type);
         Ok((field_number, wire_type))
     }
 
     /// Skip the value of a field with the given wire type, the one of the
-    /// tag just read. A group is skipped to the end-group tag of the same
-    /// field, and each group inside it is one descent (HARDENING.md §
-    /// Recursion). An end-group tag with no group open cannot be skipped.
+    /// tag just read, as protobuf-go's `ConsumeFieldValue` skips it. A group
+    /// is skipped to the end-group tag of the same field, and each group
+    /// inside it is one descent (HARDENING.md § Recursion). A value that
+    /// cannot be skipped is [`Error::SkipField`], in protowire-go's words:
+    /// `corrupt field 99: unexpected EOF`.
     pub fn skip(&mut self, wire_type: WireType) -> Result<()> {
+        self.expect = None;
+        let field = self.last_field;
+        self.skip_value(u64::from(field), wire_type as u8)
+            .map_err(|e| match e {
+                Skip::Parse(cause) => Error::SkipField {
+                    field,
+                    within: self.within,
+                    cause,
+                },
+                Skip::Depth => Error::DepthExceeded(self.limits.max_nesting_depth),
+            })
+    }
+
+    /// protobuf-go's `consumeFieldValueD`, on the raw wire type: a group's
+    /// tags are read as its `ConsumeTag` reads them, with field numbers up
+    /// to 2^31 - 1, and every reason a skip fails is kept.
+    fn skip_value(&mut self, field: u64, wire_type: u8) -> std::result::Result<(), Skip> {
         match wire_type {
-            WireType::Varint => {
-                self.raw_varint().ok_or(Error::Corrupt(Kind::Uint))?;
+            0 => {
+                self.consume_varint()?;
             }
-            WireType::Fixed64 => {
-                self.take::<8>(Kind::Fixed64)?;
+            1 => {
+                self.take::<8>(Kind::Fixed64)
+                    .map_err(|_| ParseError::Truncated)?;
             }
-            WireType::LengthDelimited => {
-                self.len_view(Kind::Bytes)?;
+            2 => {
+                let len = self.consume_varint()?;
+                let end = usize::try_from(len)
+                    .ok()
+                    .and_then(|len| self.pos.checked_add(len))
+                    .filter(|&end| end <= self.data.len())
+                    .ok_or(ParseError::Truncated)?;
+                self.pos = end;
             }
-            WireType::Fixed32 => {
-                self.take::<4>(Kind::Fixed32)?;
+            5 => {
+                self.take::<4>(Kind::Fixed32)
+                    .map_err(|_| ParseError::Truncated)?;
             }
-            WireType::StartGroup => self.skip_group(self.last_field)?,
-            WireType::EndGroup => return Err(Error::Corrupt(Kind::Tag)),
+            3 => {
+                if self.depth >= self.limits.max_nesting_depth {
+                    return Err(Skip::Depth);
+                }
+                self.depth += 1;
+                let result = self.skip_group(field);
+                self.depth -= 1;
+                result?;
+            }
+            4 => return Err(ParseError::EndGroup.into()),
+            _ => return Err(ParseError::Reserved.into()),
         }
         Ok(())
     }
 
     /// Skips the fields of the group `field` starts, through its end-group
     /// tag.
-    fn skip_group(&mut self, field: u32) -> Result<()> {
-        if self.depth >= self.limits.max_nesting_depth {
-            return Err(Error::DepthExceeded(self.limits.max_nesting_depth));
-        }
-        self.depth += 1;
-        let result = (|| loop {
-            let (num, wt) = self.tag()?;
-            if wt == WireType::EndGroup {
+    fn skip_group(&mut self, field: u64) -> std::result::Result<(), Skip> {
+        loop {
+            let t = self.consume_varint()?;
+            let num = t >> 3;
+            if num == 0 || num > i32::MAX as u64 {
+                return Err(ParseError::FieldNumber.into());
+            }
+            let wire_type = (t & 0x7) as u8;
+            if wire_type == WireType::EndGroup as u8 {
                 return if num == field {
                     Ok(())
                 } else {
-                    Err(Error::Corrupt(Kind::Tag))
+                    Err(ParseError::EndGroup.into())
                 };
             }
-            self.skip(wt)?;
-        })();
-        self.depth -= 1;
-        result
+            self.skip_value(num, wire_type)?;
+        }
+    }
+}
+
+/// Why [`Reader::skip_value`] stopped.
+enum Skip {
+    Parse(ParseError),
+    /// A group nested past `max_nesting_depth`.
+    Depth,
+}
+
+impl From<ParseError> for Skip {
+    fn from(e: ParseError) -> Self {
+        Skip::Parse(e)
     }
 }
 
@@ -920,6 +1074,9 @@ mod tests {
         bytes.extend_from_slice(&[0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]);
         let mut r = Reader::new(&bytes);
         let (_, wt) = r.tag().unwrap();
-        assert!(matches!(r.skip(wt), Err(Error::Corrupt(Kind::Bytes))));
+        assert_eq!(
+            r.skip(wt).unwrap_err().to_string(),
+            "corrupt field 1: unexpected EOF"
+        );
     }
 }

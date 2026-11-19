@@ -28,6 +28,6 @@ pub use codec::{
 };
 pub use stream::{Decoder, Encoder, StreamError, DEFAULT_MAX_FRAME_SIZE};
 pub use wire::{
-    Error, Kind, Limits, Reader, Result, WireType, Writer, MAX_BIG_FLOAT_EXPONENT,
+    Error, Kind, Limits, ParseError, Reader, Result, WireType, Writer, MAX_BIG_FLOAT_EXPONENT,
     MAX_MESSAGE_SIZE, MAX_NESTING_DEPTH, MAX_NUMERIC_LITERAL_DIGITS, MAX_REPEATED_COUNT,
 };
