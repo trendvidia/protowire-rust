@@ -16,6 +16,14 @@
 //! a keyed repeated field counts as setting the key field: `kd { alpha {} }`
 //! reports `kd[0].name` as set.
 //!
+//! A well-known-type literal records its inner fields as a field's value,
+//! but not as a list element or map value: `d = 2s` records `d`,
+//! `d.seconds` and `d.nanos`, while `ds = [2s]` records `ds` alone. The
+//! block form records what it writes in every position, so
+//! `ds = [{ seconds = 2 }]` records `ds` and `ds[0].seconds`. `pxf.Secret`
+//! is the exception: its literal records `value` in every position, so
+//! `keys = ["k"]` records `keys` and `keys[0].value` (protowire-go#299).
+//!
 //! Renamed from the upstream `Result` to avoid collision with `std::result::Result`.
 //!
 //! Also surfaces the document-root directives the decoder saw (PXF v0.72+):
