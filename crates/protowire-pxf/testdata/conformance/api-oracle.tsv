@@ -5,6 +5,8 @@
 # marshal: OK and the text, or ERR. apply: OK and the pb hex, or ERR.
 # required: the answer. default: whether there is one, and the literal.
 # Tabs, newlines and backslashes in a verdict are escaped.
+# One row is by hand: `@proto "\xff"` holds protowire-go at a0a78c2's verdict
+# (#205), since regenerating from there also needs #206. Regenerate once it lands.
 layered-test.binpb	layered_test.v1.AllScalars	full	i32 = 99	ERR	1:1: required field "req" is absent		
 layered-test.binpb	layered_test.v1.AllScalars	full	req = "x"	OK	0a0568656c6c6f10011820204028c0023080053d0000c03f411f85eb51b81e09404a0568656c6c6f50015802720178	req	
 layered-test.binpb	layered_test.v1.AllScalars	full	s = "explicit" i32 = 42 req = "r"	OK	0a086578706c696369741001182a204028c0023080053d0000c03f411f85eb51b81e09404a0568656c6c6f50015802720172	i32,req,s	
