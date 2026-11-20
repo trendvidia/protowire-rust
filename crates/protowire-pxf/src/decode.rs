@@ -37,7 +37,7 @@ use crate::lexer::Lexer;
 use crate::limits::{Limits, MAX_NUMERIC_LITERAL_DIGITS};
 use crate::parser::{
     find_matching_brace, non_name_assign_error, non_name_block_error, read_dropped_value,
-    read_value, top_level_map_entry_error,
+    read_value, top_level_map_entry_error, PROTO_SOURCE_NOT_TRIPLE,
 };
 use crate::post_decode_plan::post_decode_plan;
 use crate::result::Presence;
@@ -502,7 +502,7 @@ impl<'a> Decoder<'a> {
             // A parser reading a dropped value turns it into a string; the
             // decoder sees it as its own lexer gives it.
             self.current.kind = TokenKind::Illegal;
-            self.current.value = "string contains invalid UTF-8".into();
+            self.current.value = crate::lexer::INVALID_UTF8_STRING.into();
         }
     }
 
@@ -742,6 +742,14 @@ impl<'a> Decoder<'a> {
                                 &format!("@proto {}", type_name),
                             )?;
                             (ProtoShape::Named, type_name, body)
+                        }
+                        // Triple-quoted only, as `parse` reads it (#205).
+                        TokenKind::String | TokenKind::Illegal
+                            if (matches!(self.current.kind, TokenKind::String)
+                                || self.bad_string.is_some())
+                                && !self.lex.triple_at(self.current.pos) =>
+                        {
+                            return Err(self.err(PROTO_SOURCE_NOT_TRIPLE));
                         }
                         TokenKind::String => {
                             let body = std::mem::take(&mut self.current.value).into_bytes();
