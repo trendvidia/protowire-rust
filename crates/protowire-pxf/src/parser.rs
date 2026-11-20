@@ -362,20 +362,44 @@ impl<'a> Parser<'a> {
 
     /// Advance to the next construct that can start a document's part: a
     /// directive, a token that can start an entry, or the end. Tolerant
-    /// recovery after a malformed directive.
-    fn sync_top_level(&mut self) {
-        while !matches!(
-            self.current.kind,
-            TokenKind::Eof
+    /// recovery after a malformed directive that began on `line`, as
+    /// protowire-go's `syncTopLevel` (protowire-go#312).
+    ///
+    /// What is left of that line belongs to the directive, unless it starts
+    /// an entry (a key followed by `=`, `:` or `{`), and a parenthesized
+    /// group is a row of a `@dataset` whose header failed, since an entry
+    /// never opens with `(`. Neither is read as an entry: `@proto 5` and
+    /// `@dataset T 5` followed by rows each gave one error per stray token,
+    /// and lost the directives after them (#207).
+    fn sync_top_level(&mut self, line: usize) {
+        while self.current.pos.line == line && !self.current_starts_entry() {
+            if matches!(
+                self.current.kind,
+                TokenKind::Eof
+                    | TokenKind::AtType
+                    | TokenKind::AtDirective
+                    | TokenKind::AtDataset
+                    | TokenKind::AtProto
+            ) {
+                return;
+            }
+            self.advance();
+        }
+        loop {
+            match self.current.kind {
+                TokenKind::Eof
                 | TokenKind::AtType
                 | TokenKind::AtDirective
                 | TokenKind::AtDataset
                 | TokenKind::AtProto
                 | TokenKind::Ident
                 | TokenKind::String
-                | TokenKind::Int
-        ) {
-            self.advance();
+                | TokenKind::Int => return,
+                TokenKind::LParen => {
+                    self.skip_balanced(TokenKind::LParen, TokenKind::RParen);
+                }
+                _ => self.advance(),
+            }
         }
     }
 
@@ -486,6 +510,7 @@ impl<'a> Parser<'a> {
         loop {
             match self.current.kind {
                 TokenKind::AtType => {
+                    let line = self.current.pos.line;
                     self.advance(); // consume @type
                     let mut missing = !matches!(self.current.kind, TokenKind::Ident);
                     if !missing && self.tolerant && self.current_starts_entry() {
@@ -503,7 +528,7 @@ impl<'a> Parser<'a> {
                             ),
                         );
                         self.soft(e)?;
-                        self.sync_top_level();
+                        self.sync_top_level(line);
                         continue;
                     }
                     body_offset = self.current.pos.offset + self.current.value.len();
@@ -512,39 +537,48 @@ impl<'a> Parser<'a> {
                 }
                 // A malformed directive is skipped in tolerant mode, to the
                 // next directive or entry.
-                TokenKind::AtDirective => match self.parse_directive() {
-                    Ok((d, end)) => {
-                        directives.push(d);
-                        body_offset = end;
-                    }
-                    Err(e) => {
-                        self.soft(e)?;
-                        self.sync_top_level();
-                    }
-                },
-                TokenKind::AtDataset => match self.parse_dataset_directive() {
-                    Ok((t, end)) => {
-                        if first_dataset_pos.is_none() {
-                            first_dataset_pos = Some(t.pos);
+                TokenKind::AtDirective => {
+                    let line = self.current.pos.line;
+                    match self.parse_directive() {
+                        Ok((d, end)) => {
+                            directives.push(d);
+                            body_offset = end;
                         }
-                        datasets.push(t);
-                        body_offset = end;
+                        Err(e) => {
+                            self.soft(e)?;
+                            self.sync_top_level(line);
+                        }
                     }
-                    Err(e) => {
-                        self.soft(e)?;
-                        self.sync_top_level();
+                }
+                TokenKind::AtDataset => {
+                    let line = self.current.pos.line;
+                    match self.parse_dataset_directive() {
+                        Ok((t, end)) => {
+                            if first_dataset_pos.is_none() {
+                                first_dataset_pos = Some(t.pos);
+                            }
+                            datasets.push(t);
+                            body_offset = end;
+                        }
+                        Err(e) => {
+                            self.soft(e)?;
+                            self.sync_top_level(line);
+                        }
                     }
-                },
-                TokenKind::AtProto => match self.parse_proto_directive() {
-                    Ok((p, end)) => {
-                        protos.push(p);
-                        body_offset = end;
+                }
+                TokenKind::AtProto => {
+                    let line = self.current.pos.line;
+                    match self.parse_proto_directive() {
+                        Ok((p, end)) => {
+                            protos.push(p);
+                            body_offset = end;
+                        }
+                        Err(e) => {
+                            self.soft(e)?;
+                            self.sync_top_level(line);
+                        }
                     }
-                    Err(e) => {
-                        self.soft(e)?;
-                        self.sync_top_level();
-                    }
-                },
+                }
                 _ => break,
             }
         }
