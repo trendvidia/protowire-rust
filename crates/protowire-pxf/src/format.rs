@@ -250,9 +250,16 @@ impl<'a> Formatter<'a> {
                 self.out.push('}');
             }
             ProtoShape::Source => {
-                self.out.push_str(" \"\"\"");
+                // The delimiters go on lines of their own. Reading strips the
+                // line break after the opening """ and drops the last line
+                // when it holds only whitespace, so the body reads back byte
+                // for byte; written on the delimiters' lines instead, a body
+                // ending in '"' would close the string early and a
+                // whitespace-only last line would be dropped
+                // (protowire-go#303).
+                self.out.push_str(" \"\"\"\n");
                 self.out.push_str(&String::from_utf8_lossy(&d.body));
-                self.out.push_str("\"\"\"");
+                self.out.push_str("\n\"\"\"");
             }
             ProtoShape::Descriptor => {
                 self.out.push_str(" b\"");
@@ -809,9 +816,10 @@ mod tests {
                 "@proto a.v1.R { string id = 1; }\n@dataset a.v1.R (id)\n(\"a\")\n",
                 None,
             ),
+            // The triple quotes go on lines of their own (protowire-go#303).
             (
                 "@proto \"\"\"syntax = \"proto3\"; message R { string id = 1; }\"\"\"\n@dataset R (id)\n(\"a\")\n",
-                None,
+                Some("@proto \"\"\"\nsyntax = \"proto3\"; message R { string id = 1; }\n\"\"\"\n@dataset R (id)\n(\"a\")\n"),
             ),
             // @type moves to the front: it binds no @proto, so this changes nothing.
             (
@@ -833,8 +841,59 @@ mod tests {
         );
         assert_eq!(
             out,
-            "@proto \"\"\"    message R {\n      repeated string tags = 1;\n    }\"\"\"\n@dataset R (tags)\n([\n  \"a\",\n  \"b\"\n])\n"
+            "@proto \"\"\"\n    message R {\n      repeated string tags = 1;\n    }\n\"\"\"\n@dataset R (tags)\n([\n  \"a\",\n  \"b\"\n])\n"
         );
+    }
+
+    #[test]
+    fn directives_proto_source_layout() {
+        // A triple-quoted @proto is written with its delimiters on lines of
+        // their own, and its body reads back byte for byte
+        // (protowire-go#303). The issue's document: the line breaks around
+        // the body stay.
+        assert_eq!(
+            format_round_trip(
+                "@proto \"\"\"\n  syntax = \"proto3\";\n  package fmt.v1;\n  message Doc { string name = 1; }\n\"\"\"\n@type fmt.v1.Doc\n"
+            ),
+            "@type fmt.v1.Doc\n@proto \"\"\"\n  syntax = \"proto3\";\n  package fmt.v1;\n  message Doc { string name = 1; }\n\"\"\"\n"
+        );
+
+        for (name, src, body) in [
+            // Written on the closing delimiter's line, the last quote would
+            // open the closing """ early, and the output would not parse.
+            (
+                "body ends in a quote",
+                "@proto \"\"\"\n  syntax = \"proto3\";\n  import \"google/protobuf/empty.proto\"\n  \"\"\"\n",
+                "syntax = \"proto3\";\nimport \"google/protobuf/empty.proto\"",
+            ),
+            // Written on the closing delimiter's line, a last line of only
+            // whitespace would be taken for the delimiter's indent and dropped.
+            (
+                "whitespace-only last line",
+                "@proto \"\"\"syntax = \"proto3\";\n  \n\"\"\"\n",
+                "syntax = \"proto3\";\n  ",
+            ),
+            (
+                "leading line break",
+                "@proto \"\"\"\n\nsyntax = \"proto3\";\"\"\"\n",
+                "\nsyntax = \"proto3\";",
+            ),
+            (
+                "trailing line break",
+                "@proto \"\"\"syntax = \"proto3\";\n\n\"\"\"\n",
+                "syntax = \"proto3\";\n",
+            ),
+            ("empty body", "@proto \"\"\"\"\"\"\n", ""),
+        ] {
+            let doc = parse(src).unwrap();
+            assert_eq!(doc.protos.len(), 1, "{name}");
+            assert_eq!(doc.protos[0].body, body.as_bytes(), "{name}: body as read");
+            assert_eq!(
+                format_round_trip(src),
+                format!("@proto \"\"\"\n{body}\n\"\"\"\n"),
+                "{name}"
+            );
+        }
     }
 
     #[test]
