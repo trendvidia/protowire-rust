@@ -21,6 +21,10 @@
 
 use crate::token::{Position, Token, TokenKind};
 
+/// The diagnostic of an `Illegal` token that is a string literal whose
+/// bytes are not UTF-8.
+pub(crate) const INVALID_UTF8_STRING: &str = "string contains invalid UTF-8";
+
 #[derive(Clone)]
 pub struct Lexer<'a> {
     input: &'a [u8],
@@ -171,6 +175,15 @@ impl<'a> Lexer<'a> {
     /// The document offset of `input[0]`.
     pub(crate) fn base(&self) -> usize {
         self.base
+    }
+
+    /// Whether the token at `pos`, a string, was written triple-quoted. The
+    /// token's value cannot tell: both forms lex to `TokenKind::String`.
+    pub(crate) fn triple_at(&self, pos: Position) -> bool {
+        pos.offset
+            .checked_sub(self.base)
+            .and_then(|i| self.input.get(i..i + 3))
+            == Some(&b"\"\"\""[..])
     }
 
     /// Reposition the lexer to byte offset `target`, recomputing
@@ -951,7 +964,7 @@ impl<'a> Lexer<'a> {
                 if self.keep_invalid_strings {
                     self.invalid_string = Some((pos, e.into_bytes()));
                 }
-                Token::new(TokenKind::Illegal, "string contains invalid UTF-8", pos)
+                Token::new(TokenKind::Illegal, INVALID_UTF8_STRING, pos)
             }
         }
     }

@@ -9,7 +9,7 @@
 //! Contract:
 //!
 //! ```text
-//! check-decode --format <pxf|pxf-pb|pb|pb-render|pb-text|sbe|envelope> \
+//! check-decode --format <pxf|pxf-pb|pxf-fmt|pb|pb-render|pb-text|sbe|envelope> \
 //!              --schema <fully.qualified.MessageType> \
 //!              --proto  <path-to-adversarial.proto> \
 //!              --input  <path> \
@@ -24,6 +24,10 @@
 //! `pxf-pb` also writes the message's PB bytes on stdout, map entries in
 //! key order, for the write gate (`protowire/scripts/cross_write_check.sh`,
 //! protowire#509).
+//!
+//! `pxf-fmt` writes the formatted document on stdout, for the format gate
+//! (`protowire/scripts/cross_fmt_check.sh`, protowire#584). It needs no
+//! `--schema` or `--proto`.
 //!
 //! `pb-text` reads PB bytes with the stock runtime and writes the message's
 //! PXF on stdout, for the text gate (`protowire/scripts/cross_text_check.sh`,
@@ -396,8 +400,10 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
+    // Formatting reads no schema, so pxf-fmt alone may leave --schema out.
     let schema = match schema {
         Some(s) => s,
+        None if format == "pxf-fmt" => String::new(),
         None => {
             eprintln!("check-decode: --schema required");
             return ExitCode::from(2);
@@ -436,6 +442,7 @@ fn run(
             let proto = proto.ok_or_else(|| "--proto required for format=pxf-pb".to_string())?;
             pxf_pb(input, schema, proto, limits)
         }
+        "pxf-fmt" => pxf_fmt(input),
         "pb" => pb_decode(input, schema, limits),
         "pb-render" => {
             let proto = proto.ok_or_else(|| "--proto required for format=pb-render".to_string())?;
@@ -576,6 +583,20 @@ fn pxf_decode(input: &Path, schema: &str, proto: &Path, limits: &LimitFlags) -> 
     pxf_unmarshal(&text, &desc, options)
         .map(|_| ())
         .map_err(|e| e.to_string())
+}
+
+/// The formatted document, on stdout, for the format gate
+/// (`protowire/scripts/cross_fmt_check.sh`, protowire#584). Formatting works
+/// on the parsed document, not a message, so it keeps comments, directives
+/// and dataset rows and needs no schema. A document that does not parse is
+/// a rejection.
+fn pxf_fmt(input: &Path) -> Result<(), String> {
+    use std::io::Write as _;
+    let text = std::fs::read_to_string(input).map_err(|e| format!("read input: {e}"))?;
+    let doc = protowire_pxf::parse(&text).map_err(|e| e.to_string())?;
+    std::io::stdout()
+        .write_all(protowire_pxf::format(&doc).as_bytes())
+        .map_err(|e| format!("write stdout: {e}"))
 }
 
 /// The PB bytes for a PXF document, on stdout, for the write gate
