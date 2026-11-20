@@ -349,17 +349,17 @@ fn every_case_meets_the_reference() {
         failures.join("\n")
     );
     // This port's counts. The oracle file gives protowire-go's: 287 read by
-    // `parse`, 471 with errors, 880 errors and 189 placeholders. The two
+    // `parse`, 478 with errors, 828 errors and 159 placeholders. The two
     // rows decided on #191 make the difference: the first is refused by
     // `parse`, and each holds one more error and one more placeholder here.
     assert_eq!(
         seen,
         Marker {
-            cases: 758,
+            cases: 765,
             strict_ok: 286,
-            with_errors: 472,
-            errors: 882,
-            placeholders: 191,
+            with_errors: 479,
+            errors: 830,
+            placeholders: 161,
             not_utf8_by_decision: 5,
         }
     );
@@ -385,4 +385,58 @@ fn an_input_past_the_size_limit_is_one_error() {
     let (_, errs) = protowire_pxf::parse_tolerant_with_limits("a =", limits);
     assert_eq!(errs.len(), 1, "{errs:?}");
     assert_eq!(errs[0].to_string(), "1:4: expected value, got EOF (\"\")");
+}
+
+/// protowire-go's `TestParseTolerantDirectiveRecovery` (protowire-go#312,
+/// #207): a malformed directive gives one error, and recovery reads neither
+/// the rest of its line nor the rows of a dataset whose header failed as
+/// entries. Each document here used to give one error per stray token and
+/// lose what followed. The oracle holds the same documents whole.
+#[test]
+fn a_malformed_directive_is_one_error() {
+    for (src, err, type_url, entries) in [
+        (
+            "@proto 5\n@type a.v1.M\n\nx = 1\n",
+            "1:8: expected '{', dotted identifier",
+            "a.v1.M",
+            1,
+        ),
+        (
+            "@proto a.b c\n@type a.v1.M\n\nx = 1\n",
+            "1:12: expected '{' after @proto a.b",
+            "a.v1.M",
+            1,
+        ),
+        (
+            "@type 5\n\nx = 1\n",
+            "1:7: expected type name after @type",
+            "",
+            1,
+        ),
+        (
+            "@dataset T 5\n(1)\n(2, \"a\")\n",
+            "1:12: expected '(' to start @dataset column list",
+            "",
+            0,
+        ),
+    ] {
+        let (doc, errs) = parse_tolerant(src);
+        assert_eq!(errs.len(), 1, "{src:?}: {errs:?}");
+        assert!(errs[0].to_string().contains(err), "{src:?}: {}", errs[0]);
+        assert_eq!(doc.type_url, type_url, "{src:?}");
+        assert_eq!(doc.entries.len(), entries, "{src:?}");
+    }
+
+    // A key on the directive's line that starts an entry still starts one:
+    // the dangling-@type recovery reads `x = 1` as the first entry.
+    let (doc, errs) = parse_tolerant("@type x = 1\ny = 2\n");
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    assert_eq!(doc.entries.len(), 2);
+
+    // A valid dataset after a failed one still parses.
+    let (doc, errs) = parse_tolerant("@dataset T 5\n(1)\n@dataset U (a)\n(2)\n");
+    assert_eq!(errs.len(), 1, "{errs:?}");
+    assert_eq!(doc.datasets.len(), 1);
+    assert_eq!(doc.datasets[0].r#type, "U");
+    assert_eq!(doc.datasets[0].rows.len(), 1);
 }
