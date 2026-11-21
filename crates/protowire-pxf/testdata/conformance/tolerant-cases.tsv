@@ -82,6 +82,14 @@ a { @type = }\n
 @proto """syntax = "proto3";"""\nx = 1\n
 @proto\n"""\nsyntax = "proto3";\n"""\nx = 1\n
 @proto b""\nx = 1\n
+# protowire-go#312's table (#207): recovery after a malformed directive.
+@proto 5\n@type a.v1.M\n\nx = 1\n
+@proto a.b c\n@type a.v1.M\n\nx = 1\n
+@type 5\n\nx = 1\n
+@dataset T 5\n(1)\n(2, "a")\n
+@type x = 1\ny = 2\n
+@dataset T 5\n(1)\n@dataset U (a)\n(2)\n
+@header 5 6\nx = 1\n
 @dataset T (a, b)\n(1, 2)\n(3)\n
 @dataset T (a)\n({ x = 1 )\n(2)\n
 @dataset T (a)\n([1, 2 )\n(3)\n

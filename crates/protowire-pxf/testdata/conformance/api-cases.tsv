@@ -356,3 +356,8 @@ keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "nope.v
 keyed-entry-name-test.binpb	keyedname.v1.P	marshal	payload { @type = "nope.v1.Missing" }
 keyed-entry-name-test.binpb	keyedname.v1.P	marshal-any	payload { @type = "nope.v1.Bell\u0007" }
 test.binpb	test.v1.AllTypes	full	@type "test.v1.AllTypes" string_field = "x"
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	backup_keys = ["a", "b", "c"]
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	tenant_keys = { "acme": "k1" "evil_corp": "k2" }
+secret-hook-test.binpb	secret_hook_test.v1.SecretDemo	full	db_password = "x" backup_keys = [{ value = "a" hint = "h" }, "b"] tenant_keys = { "acme": "k" "z": { value = "v" } }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	full	by_id = { 7: "s" -1: "t" }
+secret-hook-test.binpb	secret_hook_test.v1.Holder	full	by_flag = { true: "s" }
