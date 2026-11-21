@@ -320,7 +320,7 @@ fn every_case_meets_the_reference() {
             "default"
         ]
         .map(count),
-        [95, 13, 5, 6, 7, 10, 37, 37, 6, 130, 3, 9]
+        [100, 13, 5, 6, 7, 10, 37, 37, 6, 130, 3, 9]
     );
     assert_eq!(count("pinned"), WAITS_ON_98.len() + PINNED.len());
     assert!(

@@ -472,6 +472,21 @@ impl<'a> Decoder<'a> {
         })
     }
 
+    /// Mark `value` present under the list element or map value `elem`
+    /// names (`keys[1]`, `by_key["k"]`) when `sub` is a `pxf.Secret` its
+    /// literal just set, with or without the hook, as its block form there
+    /// and a field's literal do (protowire-go#299). The other well-known
+    /// types' literals record the element alone in that position.
+    fn mark_secret_value(&mut self, sub: &DynamicMessage, elem: impl FnOnce() -> String) {
+        if self.presence.is_none() || !is_secret(&sub.descriptor()) {
+            return;
+        }
+        let path = format!("{}{}.value", self.path_prefix, elem());
+        if let Some(p) = self.presence.as_mut() {
+            p.mark_present(path);
+        }
+    }
+
     fn mark_present(&mut self, fd: &FieldDescriptor) {
         if let Some(p) = self.presence.as_mut() {
             p.mark_present(format!("{}{}", self.path_prefix, fd.name()));
@@ -1411,6 +1426,7 @@ impl<'a> Decoder<'a> {
                     }
                     return Ok(Elem::Body(sub));
                 }
+                self.mark_secret_value(&sub, || format!("{}[{n}]", fd.name()));
                 Value::Message(sub)
             }
             Kind::Enum(_) => self.consume_enum(fd)?,
@@ -1732,6 +1748,7 @@ impl<'a> Decoder<'a> {
                 self.advance();
                 return Ok((key, Elem::Body(sub)));
             }
+            self.mark_secret_value(&sub, || format!("{}[{}]", fd.name(), shown_key(&key)));
             Value::Message(sub)
         } else if matches!(val_fd.kind(), Kind::Enum(_)) {
             self.consume_enum_as(val_fd, fd)?
@@ -1842,7 +1859,7 @@ impl<'a> Decoder<'a> {
     /// was consumed, `None` to fall through to a regular `{ ... }` block
     /// decode. A singular field marks those inner fields present, as
     /// protowire-go's `markInnerPresent` does; a list element or map value
-    /// does not.
+    /// does not, except a `pxf.Secret`'s `value` (`mark_secret_value`).
     fn try_decode_wkt(
         &mut self,
         target: &mut DynamicMessage,
