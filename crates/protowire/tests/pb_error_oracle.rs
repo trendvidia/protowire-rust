@@ -5,9 +5,14 @@
 //! protowire-go said about it. The rows are every prefix of a full encoding
 //! of each message and a list of hand-made damage: cut-off values, varints
 //! past 64 bits, bad tags and wire types, unknown groups, text that is not
-//! UTF-8, and the limits. `scripts/gen-pb-error-oracle.sh` regenerates the
-//! file; `scripts/pb-error-oracle/main.go` holds the Go structs, which the
-//! structs here mirror, field names and all.
+//! UTF-8, and the limits. Then every field gets a record of every wire type,
+//! well formed and cut short, alone and inside each message and map field:
+//! protowire-go's wire-type test (`encoding/pb/wire_type_test.go`), whose
+//! verdicts are protobuf-go's (protowire#614, #204). On an accept the row
+//! holds what protowire-go's `Marshal` writes for the decoded value, and
+//! this port must decode the same value. `scripts/gen-pb-error-oracle.sh`
+//! regenerates the file; `scripts/pb-error-oracle/main.go` holds the Go
+//! structs, which the structs here mirror, field names and all.
 //!
 //! The umbrella crate hosts the test because it reads the envelope too.
 
@@ -15,7 +20,8 @@ use std::collections::BTreeMap;
 
 use protowire::envelope::Envelope;
 use protowire::pb::{
-    read_map_entry, read_message, unmarshal_with, BigFloat, BigInt, Decimal, Limits, Message,
+    marshal, read_map_entry, read_message, unmarshal_with, write_big_float, write_big_int,
+    write_decimal, write_map_entry, write_message, BigFloat, BigInt, Decimal, Limits, Message,
     Reader, Result, WireType, Writer,
 };
 
@@ -34,7 +40,16 @@ struct Inner {
 }
 
 impl Message for Inner {
-    fn encode_to(&self, _: &mut Writer) {}
+    fn encode_to(&self, w: &mut Writer) {
+        if !self.name.is_empty() {
+            w.tag(1, WireType::LengthDelimited);
+            w.string(&self.name);
+        }
+        if self.n != 0 {
+            w.tag(2, WireType::Varint);
+            w.varint_i64(self.n);
+        }
+    }
 
     fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
         match num {
@@ -75,8 +90,84 @@ struct All {
     float: Option<BigFloat>,
 }
 
+/// What protowire-go's `Marshal` writes for the Go runner's `All`: a zero
+/// singular field left out, a packed `Ints`, both fields of a map entry.
 impl Message for All {
-    fn encode_to(&self, _: &mut Writer) {}
+    fn encode_to(&self, w: &mut Writer) {
+        if self.b {
+            w.tag(1, WireType::Varint);
+            w.varint(1);
+        }
+        if self.i32 != 0 {
+            w.tag(2, WireType::Varint);
+            w.varint_i32(self.i32);
+        }
+        if self.i64 != 0 {
+            w.tag(3, WireType::Varint);
+            w.varint_i64(self.i64);
+        }
+        if self.u32 != 0 {
+            w.tag(4, WireType::Varint);
+            w.varint(u64::from(self.u32));
+        }
+        if self.u64 != 0 {
+            w.tag(5, WireType::Varint);
+            w.varint(self.u64);
+        }
+        if self.s64 != 0 {
+            w.tag(6, WireType::Varint);
+            w.zigzag64(self.s64);
+        }
+        if self.f32 != 0.0 {
+            w.tag(7, WireType::Fixed32);
+            w.float(self.f32);
+        }
+        if self.f64 != 0.0 {
+            w.tag(8, WireType::Fixed64);
+            w.double(self.f64);
+        }
+        if !self.str.is_empty() {
+            w.tag(9, WireType::LengthDelimited);
+            w.string(&self.str);
+        }
+        if !self.raw.is_empty() {
+            w.tag(10, WireType::LengthDelimited);
+            w.bytes(&self.raw);
+        }
+        if let Some(m) = &self.msg {
+            write_message(w, 11, m);
+        }
+        if !self.ints.is_empty() {
+            let mut packed = Writer::new();
+            for v in &self.ints {
+                packed.varint_i64(*v);
+            }
+            w.tag(12, WireType::LengthDelimited);
+            w.bytes(&packed.finish());
+        }
+        for s in &self.strs {
+            w.tag(13, WireType::LengthDelimited);
+            w.string(s);
+        }
+        for k in &self.kids {
+            write_message(w, 14, k);
+        }
+        for (k, v) in &self.smap {
+            write_map_entry(w, 15, k.as_str(), v.as_str());
+        }
+        for (k, v) in &self.imap {
+            write_map_entry(w, 16, k, v);
+        }
+        if let Some(v) = &self.big {
+            write_big_int(w, 17, v);
+        }
+        if let Some(v) = &self.dec {
+            write_decimal(w, 18, v);
+        }
+        if let Some(v) = &self.float {
+            write_big_float(w, 19, v);
+        }
+    }
 
     fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
         match num {
@@ -167,16 +258,6 @@ impl Message for Node {
     }
 }
 
-/// Inputs whose verdict differs, by message and hex. Each fails the day it
-/// matches, so its pin is removed.
-///
-/// A known field with wire type 6 or 7: protowire-go reads it by its kind
-/// and accepts it. Those wire types name no encoding, and [`WireType`] has
-/// no variant for them, so this port refuses the field as `corrupt field N`,
-/// as protobuf-go's own wire reader refuses them. The owner chose to keep
-/// refusing and have the spec settle it: trendvidia/protowire#614.
-const PINNED: &[(&str, &str)] = &[("All", "1e01"), ("All", "4f0161")];
-
 fn limits(spec: &str) -> Limits {
     let mut limits = Limits::default();
     if spec == "-" {
@@ -200,11 +281,16 @@ fn unhex(s: &str) -> Vec<u8> {
         .collect()
 }
 
-/// What this port says about one input: `OK`, or `ERR` and the error.
+/// What this port says about one input: `OK` and the decoded value as
+/// protowire-go's `Marshal` would write it, or `ERR` and the error.
 fn verdict(message: &str, data: &[u8], limits: Limits) -> String {
     fn of<M: Message>(r: Result<M>) -> String {
         match r {
-            Ok(_) => "OK".into(),
+            Ok(m) => {
+                let out = marshal(&m).expect("marshal");
+                let hex: String = out.iter().map(|b| format!("{b:02x}")).collect();
+                format!("OK\t{hex}")
+            }
             Err(e) => format!("ERR\t{e}"),
         }
     }
@@ -220,20 +306,12 @@ fn verdict(message: &str, data: &[u8], limits: Limits) -> String {
 fn every_input_meets_the_reference() {
     let mut rows: BTreeMap<(&str, bool), usize> = BTreeMap::new();
     let mut diffs = Vec::new();
-    let mut pinned = 0;
     for line in ORACLE.lines().filter(|l| !l.starts_with('#')) {
         let c: Vec<&str> = line.split('\t').collect();
         let (message, spec, data) = (c[0], c[1], unhex(c[2]));
         let want = c[3..].join("\t");
         let got = verdict(message, &data, limits(spec));
-        *rows.entry((message, want == "OK")).or_default() += 1;
-        if PINNED.contains(&(message, c[2])) {
-            pinned += 1;
-            if got == want {
-                diffs.push(format!("{message} {}: matches now; remove its pin", c[2]));
-            }
-            continue;
-        }
+        *rows.entry((message, c[3] == "OK")).or_default() += 1;
         if got != want {
             diffs.push(format!(
                 "{message} {spec} {}\n   got: {got}\n  want: {want}",
@@ -253,10 +331,9 @@ fn every_input_meets_the_reference() {
             count("Node", true),
             count("Node", false),
         ],
-        [25, 185, 5, 54, 0, 3],
+        [291, 552, 68, 145, 0, 3],
         "rows by message and verdict"
     );
-    assert_eq!(pinned, PINNED.len());
     assert!(
         diffs.is_empty(),
         "{} rows differ from protowire-go:\n{}",

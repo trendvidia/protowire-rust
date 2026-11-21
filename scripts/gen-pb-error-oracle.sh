@@ -22,7 +22,7 @@ out="$repo_root/crates/protowire/testdata/conformance/pb-error-oracle.tsv"
 {
   echo "# What protowire-go at $sha's pb.Unmarshal says about each input."
   echo "# Produced by scripts/gen-pb-error-oracle.sh. Do not edit."
-  echo "# Columns: message, limits, input hex, then OK, or ERR and the error."
+  echo "# Columns: message, limits, input hex, then OK and what pb.Marshal writes for the decoded value, or ERR and the error."
   (cd "$work" && GOWORK=off go run ./scripts/pb_error_oracle)
 } > "$out.tmp"
 mv "$out.tmp" "$out"

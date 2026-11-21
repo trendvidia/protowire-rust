@@ -41,10 +41,17 @@ pub trait Message: Sized + Default {
     ///
     /// Read each field with the [`Reader`] method of its type
     /// ([`Reader::int32`], [`Reader::bool`], [`Reader::string`],
-    /// [`read_message`], [`read_map_entry`], …), so a field that cannot be
-    /// read is reported as protowire-go reports it: `corrupt int`,
-    /// `corrupt bool`, and so on. Name the fields with [`Message::field_name`]
-    /// to have the error say which one.
+    /// [`read_message`], [`read_map_entry`], …), and pass its error on with
+    /// `?`. A field that cannot be read is then reported as protowire-go
+    /// reports it: `corrupt int`, `corrupt bool`, and so on. Name the fields
+    /// with [`Message::field_name`] to have the error say which one.
+    ///
+    /// The method also checks the tag's wire type, as protobuf does
+    /// (protowire#614): a field whose wire type does not match its type is
+    /// an unknown field. The method refuses to read it, and the decoder
+    /// skips it and leaves the field as it was. A repeated numeric field
+    /// reads its own wire type and the packed form: match on `wire_type`
+    /// for [`Reader::packed`] when it is [`WireType::LengthDelimited`].
     fn merge_field(
         &mut self,
         field_number: u32,
@@ -79,28 +86,54 @@ pub trait Message: Sized + Default {
     fn corrupt_tag() -> Error {
         Error::Corrupt(Kind::Tag)
     }
+
+    /// The message an unknown field that cannot be skipped is said to be in,
+    /// as protowire-go says it for the big numbers: `corrupt field 9 in
+    /// BigInt: unexpected EOF`.
+    #[doc(hidden)]
+    fn within() -> Option<&'static str> {
+        None
+    }
 }
 
 /// Reads fields into `msg` until `r` ends, putting each field's error in
 /// protowire-go's words: wrapped in its name, or `corrupt field N` for a
-/// field with none.
+/// field with none. A field read with another wire type than its tag's is
+/// skipped as unknown, as protobuf skips it (protowire#614).
 fn merge_fields<M: Message>(msg: &mut M, r: &mut Reader<'_>) -> Result<()> {
+    r.within = M::within();
     while !r.eof() {
         let (num, wt) = r.tag().map_err(|e| match e {
             Error::Corrupt(Kind::Tag) => M::corrupt_tag(),
             e => e,
         })?;
-        msg.merge_field(num, wt, r)
-            .map_err(|e| match (M::field_name(num), e) {
-                (Some(name), e) => Error::Field {
-                    name,
-                    inner: Box::new(e),
-                },
-                (None, Error::Corrupt(_)) => Error::CorruptField(num),
-                (None, e) => e,
-            })?;
+        let start = r.pos;
+        match msg.merge_field(num, wt, r) {
+            Ok(()) => {}
+            Err(Error::WireTypeMismatch) => skip_from(r, start, num, wt)?,
+            Err(e) => {
+                return Err(match (M::field_name(num), e) {
+                    (Some(name), e) => Error::Field {
+                        name,
+                        inner: Box::new(e),
+                    },
+                    (None, Error::Corrupt(_)) => Error::CorruptField(num),
+                    (None, e) => e,
+                })
+            }
+        }
     }
     Ok(())
+}
+
+/// Skips the value of field `num`, which starts at `start`, as an unknown
+/// field of wire type `wt`. The field's own read refused it before taking
+/// anything, so `start` is where `r` stands unless the impl read a tag of
+/// its own first; then the whole field is skipped.
+fn skip_from(r: &mut Reader<'_>, start: usize, num: u32, wt: WireType) -> Result<()> {
+    r.pos = start;
+    r.last_field = num;
+    r.skip(wt)
 }
 
 /// The options of one encode.
@@ -354,14 +387,16 @@ fn descend<'a>(r: &Reader<'a>, body: &'a [u8]) -> Result<Reader<'a>> {
 
 /// Read one entry of a `map<K, V>` field, the entry's tag already consumed:
 /// a length-delimited `MapEntry { key = 1; value = 2 }`, with `key` and
-/// `value` reading each field. A field the entry lacks keeps its default,
-/// and a field other than those two is skipped. The entry is one descent,
-/// whatever its value's type (HARDENING.md § Recursion; protowire#449).
-/// Check the map's length with [`Reader::check_map`] before inserting.
+/// `value` reading each field. A field the entry lacks keeps its default.
+/// A field other than those two, or one whose wire type does not match its
+/// type, is skipped, as protobuf skips it (protowire#614). The entry is one
+/// descent, whatever its value's type (HARDENING.md § Recursion;
+/// protowire#449). Check the map's length with [`Reader::check_map`] before
+/// inserting.
 ///
 /// Errors are protowire-go's: `corrupt map entry`, `corrupt tag in map
-/// entry`, `map key: …`, `map value: …` and `corrupt unknown field N in map
-/// entry`.
+/// entry`, `map key: …`, `map value: …` and `corrupt field N in map entry:
+/// unexpected EOF`.
 pub fn read_map_entry<K: Default, V: Default>(
     r: &mut Reader<'_>,
     mut key: impl FnMut(&mut Reader<'_>) -> Result<K>,
@@ -369,19 +404,25 @@ pub fn read_map_entry<K: Default, V: Default>(
 ) -> Result<(K, V)> {
     let body = r.len_view(Kind::MapEntry)?;
     let mut entry = descend(r, body)?;
+    entry.within = Some("map entry");
     let (mut k, mut v) = (K::default(), V::default());
     while !entry.eof() {
         let (num, wt) = entry.tag().map_err(|e| match e {
             Error::Corrupt(Kind::Tag) => Error::Corrupt(Kind::TagInMapEntry),
-            Error::CorruptField(num) => Error::CorruptMapEntryField(num),
             e => e,
         })?;
-        match num {
-            1 => k = key(&mut entry).map_err(|e| Error::MapKey(Box::new(e)))?,
-            2 => v = value(&mut entry).map_err(|e| Error::MapValue(Box::new(e)))?,
-            _ => entry
-                .skip(wt)
-                .map_err(|_| Error::CorruptMapEntryField(num))?,
+        let start = entry.pos;
+        let read = match num {
+            1 => key(&mut entry).map(|x| k = x),
+            2 => value(&mut entry).map(|x| v = x),
+            _ => entry.skip(wt),
+        };
+        match read {
+            Ok(()) => {}
+            Err(Error::WireTypeMismatch) => skip_from(&mut entry, start, num, wt)?,
+            Err(e) if num == 1 => return Err(Error::MapKey(Box::new(e))),
+            Err(e) if num == 2 => return Err(Error::MapValue(Box::new(e))),
+            Err(e) => return Err(e),
         }
     }
     Ok((k, v))
@@ -870,18 +911,7 @@ mod tests {
         fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
             match num {
                 1 => {
-                    let len = r.varint()? as usize;
-                    let end = r.pos + len;
-                    let mut k = String::new();
-                    let mut v = String::new();
-                    while r.pos < end {
-                        let (n, w) = r.tag()?;
-                        match n {
-                            1 => k = r.string()?,
-                            2 => v = r.string()?,
-                            _ => r.skip(w)?,
-                        }
-                    }
+                    let (k, v) = read_map_entry(r, |r| r.string(), |r| r.string())?;
                     self.meta.insert(k, v);
                 }
                 _ => r.skip(wt)?,
@@ -935,18 +965,7 @@ mod tests {
         fn merge_field(&mut self, num: u32, wt: WireType, r: &mut Reader<'_>) -> Result<()> {
             match num {
                 1 => {
-                    let len = r.varint()? as usize;
-                    let end = r.pos + len;
-                    let mut k: i32 = 0;
-                    let mut v = String::new();
-                    while r.pos < end {
-                        let (n, w) = r.tag()?;
-                        match n {
-                            1 => k = r.varint()? as i32,
-                            2 => v = r.string()?,
-                            _ => r.skip(w)?,
-                        }
-                    }
+                    let (k, v) = read_map_entry(r, |r| r.int32(), |r| r.string())?;
                     self.codes.insert(k, v);
                 }
                 _ => r.skip(wt)?,

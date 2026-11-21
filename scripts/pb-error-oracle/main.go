@@ -6,10 +6,12 @@
 // scripts/gen-pb-error-oracle.sh.
 //
 // For each message below it encodes one full value with pb.Marshal, then
-// decodes every prefix of those bytes, and a list of hand-made inputs. Each
-// row is the message, the limits, the input in hex, then OK or ERR and the
-// error. The Rust side (crates/protowire/tests/pb_error_oracle.rs) holds
-// structs of the same shape, with the same field names.
+// decodes every prefix of those bytes, a list of hand-made inputs, and a
+// record of every wire type at every field (protowire#614). Each row is the
+// message, the limits, the input in hex, then OK and what pb.Marshal writes
+// for the decoded value, or ERR and the error. The Rust side
+// (crates/protowire/tests/pb_error_oracle.rs) holds structs of the same
+// shape, with the same field names.
 package main
 
 import (
@@ -87,6 +89,60 @@ func envelopeValue() *envelope.Envelope {
 	}
 }
 
+// wireRecords returns single records for field num: every wire type, each
+// with a well-formed value and a value cut short. It is protowire-go's
+// encoding/pb/wire_type_test.go's, as is wireTypeInputs.
+func wireRecords(num protowire.Number) [][]byte {
+	tag := func(typ protowire.Type) []byte { return protowire.AppendTag(nil, num, typ) }
+	cat := func(parts ...[]byte) []byte {
+		var b []byte
+		for _, p := range parts {
+			b = append(b, p...)
+		}
+		return b
+	}
+	return [][]byte{
+		cat(tag(protowire.VarintType), []byte{0x01}),
+		cat(tag(protowire.VarintType), []byte{0x80}), // cut short
+		cat(tag(protowire.Fixed64Type), []byte{1, 0, 0, 0, 0, 0, 0, 0}),
+		cat(tag(protowire.Fixed64Type), []byte{1, 0, 0}), // cut short
+		cat(tag(protowire.BytesType), []byte{0x00}),
+		cat(tag(protowire.BytesType), []byte{0x01, 0x01}),
+		cat(tag(protowire.BytesType), []byte{0x01}), // cut short
+		cat(tag(protowire.StartGroupType), tag(protowire.EndGroupType)),
+		tag(protowire.StartGroupType), // never ended
+		tag(protowire.EndGroupType),   // ends nothing
+		cat(tag(protowire.Fixed32Type), []byte{1, 0, 0, 0}),
+		cat(tag(protowire.Fixed32Type), []byte{1, 0}), // cut short
+		cat(protowire.AppendVarint(nil, uint64(num)<<3|6), []byte{0x01}),
+		cat(protowire.AppendVarint(nil, uint64(num)<<3|7), []byte{0x01}),
+	}
+}
+
+// wireTypeInputs is every record for each of fields, alone, and carried
+// inside each message or map field of inner, which gives the highest field
+// number to send there: the message's fields and one it does not have, or
+// a map entry's key 1, value 2 and an unknown 3.
+func wireTypeInputs(fields []protowire.Number, inner map[protowire.Number]protowire.Number) [][]byte {
+	var out [][]byte
+	for _, num := range fields {
+		out = append(out, wireRecords(num)...)
+	}
+	for _, outer := range fields {
+		last, ok := inner[outer]
+		if !ok {
+			continue
+		}
+		for in := protowire.Number(1); in <= last; in++ {
+			for _, rec := range wireRecords(in) {
+				b := protowire.AppendTag(nil, outer, protowire.BytesType)
+				out = append(out, protowire.AppendBytes(b, rec))
+			}
+		}
+	}
+	return out
+}
+
 // Hand-made inputs, by message.
 func handMade() map[string][][]byte {
 	tag := func(b []byte, n protowire.Number, t protowire.Type) []byte { return protowire.AppendTag(b, n, t) }
@@ -154,6 +210,38 @@ func handMade() map[string][][]byte {
 		msg(4, msg(5, []byte{0x00})),
 		msg(4, cat(tag(nil, 3, protowire.BytesType), []byte{0x05})),
 	}
+	all = append(all, wireTypeInputs(
+		[]protowire.Number{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20},
+		map[protowire.Number]protowire.Number{11: 3, 14: 3, 15: 3, 16: 3, 17: 3, 18: 4, 19: 5},
+	)...)
+	// A matching record after a mismatched one: the mismatch leaves the
+	// field as it was, and the match still sets it.
+	all = append(all,
+		cat(tag(nil, 3, protowire.VarintType), []byte{0x07}, tag(nil, 3, protowire.Fixed32Type), []byte{1, 0, 0, 0}),
+		cat(str(9, "a"), tag(nil, 9, protowire.VarintType), []byte{0x01}),
+		cat(msg(12, []byte{0x01}), tag(nil, 12, protowire.VarintType), []byte{0x02}),
+		cat(tag(nil, 12, protowire.VarintType), []byte{0x01}, tag(nil, 12, protowire.Fixed32Type), []byte{1, 0, 0, 0}),
+		cat(tag(nil, 12, protowire.VarintType), []byte{0x01}, tag(nil, 12, protowire.StartGroupType), tag(nil, 12, protowire.EndGroupType)),
+		msg(15, cat(str(1, "k"), tag(nil, 1, protowire.VarintType), []byte{0x01}, str(2, "v"), tag(nil, 2, protowire.Fixed64Type), []byte{1, 0, 0, 0, 0, 0, 0, 0})),
+		msg(16, cat(tag(nil, 1, protowire.VarintType), []byte{0x05}, tag(nil, 2, protowire.VarintType), []byte{0x01})),
+		msg(17, cat(tag(nil, 1, protowire.BytesType), []byte{0x01, 0x05}, tag(nil, 2, protowire.BytesType), []byte{0x01, 0x01})),
+		msg(18, cat(tag(nil, 1, protowire.BytesType), []byte{0x01, 0x0f}, tag(nil, 2, protowire.Fixed32Type), []byte{1, 0, 0, 0})),
+		msg(19, cat(tag(nil, 1, protowire.BytesType), []byte{0x01, 0x01}, tag(nil, 2, protowire.BytesType), []byte{0x01, 0x01}, tag(nil, 3, protowire.VarintType), []byte{0x35})),
+		// Wire types 6 and 7 inside a skipped group, and a group that
+		// holds a field number past 2^29-1, which a skip reads as protobuf
+		// does.
+		cat(tag(nil, 99, protowire.StartGroupType), tag(nil, 1, 6), tag(nil, 99, protowire.EndGroupType)),
+		cat(tag(nil, 99, protowire.StartGroupType), protowire.AppendVarint(nil, 1<<32|0), []byte{0x01}, tag(nil, 99, protowire.EndGroupType)),
+		cat(tag(nil, 99, protowire.StartGroupType), protowire.AppendVarint(nil, uint64(1<<31)<<3), []byte{0x01}, tag(nil, 99, protowire.EndGroupType)),
+		cat(tag(nil, 99, protowire.StartGroupType), protowire.AppendVarint(nil, 0), tag(nil, 99, protowire.EndGroupType)),
+		cat(tag(nil, 99, protowire.StartGroupType), tag(nil, 1, protowire.VarintType), overflow, tag(nil, 99, protowire.EndGroupType)),
+		cat(tag(nil, 99, protowire.StartGroupType), tag(nil, 1, protowire.EndGroupType)),
+		cat(tag(nil, 99, protowire.VarintType), overflow),
+	)
+	env = append(env, wireTypeInputs(
+		[]protowire.Number{1, 2, 3, 4, 5},
+		map[protowire.Number]protowire.Number{4: 6},
+	)...)
 	deep := []byte{}
 	for i := 0; i < 101; i++ {
 		deep = msg(1, deep)
@@ -161,25 +249,41 @@ func handMade() map[string][][]byte {
 	return map[string][][]byte{"All": all, "Envelope": env, "Node": {deep, msg(1, msg(1, cat(tag(nil, 2, protowire.VarintType), overflow)))}}
 }
 
-func decode(name string, lim pb.UnmarshalOptions, data []byte) error {
+// decode returns the decoded value, or the error.
+func decode(name string, lim pb.UnmarshalOptions, data []byte) (any, error) {
+	var v any
 	switch name {
 	case "All":
-		return lim.Unmarshal(data, &All{})
+		v = &All{}
 	case "Envelope":
-		return lim.Unmarshal(data, &envelope.Envelope{})
+		v = &envelope.Envelope{}
 	case "Node":
-		return lim.Unmarshal(data, &Node{})
+		v = &Node{}
+	default:
+		panic(name)
 	}
-	panic(name)
+	return v, lim.Unmarshal(data, v)
 }
 
 func main() {
 	out := bufio.NewWriter(os.Stdout)
 	defer out.Flush()
 	row := func(name, limits string, lim pb.UnmarshalOptions, data []byte) {
-		verdict := "OK"
-		if err := decode(name, lim, data); err != nil {
-			verdict = "ERR\t" + strings.ReplaceAll(err.Error(), "\n", `\n`)
+		var verdict string
+		if v, err := decode(name, lim, data); err != nil {
+			// protobuf-go writes "proto: " with a no-break space in some
+			// binaries, chosen by a hash of the binary; the plain space is
+			// the text.
+			text := strings.ReplaceAll(err.Error(), "proto:\u00a0", "proto: ")
+			verdict = "ERR\t" + strings.ReplaceAll(text, "\n", `\n`)
+		} else {
+			// What the decoded value holds, as pb.Marshal writes it. A map
+			// holds at most one entry here, so the bytes are stable.
+			out, err := pb.Marshal(v)
+			if err != nil {
+				panic(err)
+			}
+			verdict = "OK\t" + hex.EncodeToString(out)
 		}
 		fmt.Fprintf(out, "%s\t%s\t%s\t%s\n", name, limits, hex.EncodeToString(data), verdict)
 	}
